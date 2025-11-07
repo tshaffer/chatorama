@@ -7,7 +7,8 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "seed": "ts-node backend/scripts/seedFromData.ts"
+    "seed": "tsx scripts/seedFromData.ts",
+    "seed:reset": "RESET_DB=1 tsx scripts/seedFromData.ts"
   },
   "dependencies": {
     "@chatorama/chat-md-core": "file:../../chat-md-core",
