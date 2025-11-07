@@ -10,7 +10,7 @@
     "seed": "ts-node backend/scripts/seedFromData.ts"
   },
   "dependencies": {
-    "@chatorama/chat-md-core": "workspace:*",
+    "@chatorama/chat-md-core": "file:../../chat-md-core",
     "@types/unzipper": "^0.10.11",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
