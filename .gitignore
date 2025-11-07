@@ -8,3 +8,16 @@ node_modules
 
 # TypeScript incremental build info
 **/*.tsbuildinfo
+
+# Declaration build artifacts (don’t track generated .d.ts/.map in source trees)
+packages/chatalog/frontend/src/**/*.d.ts
+packages/chatalog/frontend/src/**/*.d.ts.map
+packages/chatalog/shared/src/**/*.d.ts.map
+
+packages/**/src/**/*.js
+packages/**/src/**/*.js.map
+packages/**/src/**/*.d.ts
+packages/**/src/**/*.d.ts.map
+
+# Always ignore build outputs
+**/tsconfig.tsbuildinfo
