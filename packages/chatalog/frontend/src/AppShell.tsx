@@ -3,9 +3,17 @@ import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { AppBar, Toolbar, Typography, Button, Stack, Box } from '@mui/material';
 import ImportChatworthyButton from './components/ImportChatworthyButton';
+import { useEffect } from 'react';
+import { fetchJSON } from './lib/api';
 
 export default function AppShell() {
   const { pathname } = useLocation();
+
+  useEffect(() => {
+  fetchJSON<{ ok: boolean }>('/health')
+    .then(x => console.log('Health:', x))
+    .catch(err => console.error('Health failed:', err));
+}, []);
 
   const isActive = (to: string) =>
     pathname === to ||
