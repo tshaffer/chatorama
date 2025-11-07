@@ -178,10 +178,10 @@ td.use(gfm);
 
 // Preserve fenced code blocks with language
 td.addRule('fencedCodeWithLang', {
-  filter: (node) =>
+  filter: (node: any) =>
     node.nodeName === 'PRE' &&
     (node as HTMLElement).firstElementChild?.nodeName === 'CODE',
-  replacement: (_content, node) => {
+  replacement: (_content: string, node: any) => {
     const codeEl = (node as HTMLElement).querySelector('code')!;
     const cls = codeEl.getAttribute('class') || '';
     const match = cls.match(/language-([\w+#-]+)/i);
@@ -193,20 +193,20 @@ td.addRule('fencedCodeWithLang', {
 
 // Inline code (avoid wrapping PRE > CODE)
 td.addRule('inlineCode', {
-  filter: (node) =>
+  filter: (node: any) =>
     node.nodeName === 'CODE' &&
     node.parentElement?.nodeName !== 'PRE',
-  replacement: (content) => '`' + content + '`'
+  replacement: (content: string) => '`' + content + '`'
 });
 
 // KaTeX math → Markdown math
 td.addRule('katexMath', {
-  filter: (node) => {
-    if (node.nodeType !== 1) return false;
+  filter: (node: any) => {
+    if ((node as any).nodeType !== 1) return false;
     const el = node as Element;
     return el.classList.contains('katex') || el.classList.contains('katex-display');
   },
-  replacement: (_content, node) => {
+  replacement: (_content: string, node: any) => {
     const el = node as Element;
     const ann = el.querySelector('annotation[encoding="application/x-tex"]');
     const tex = ann?.textContent || '';
@@ -218,7 +218,7 @@ td.addRule('katexMath', {
 // Images
 td.addRule('images', {
   filter: 'img',
-  replacement: (_content, node) => {
+  replacement: (_content: string, node: any) => {
     const img = node as HTMLImageElement;
     const alt = img.alt?.trim() || 'image';
     const src = img.src || '';
@@ -230,8 +230,8 @@ td.addRule('images', {
 // Tighter blockquotes (avoid extra blank lines)
 td.addRule('blockquoteTight', {
   filter: 'blockquote',
-  replacement: (content) =>
-    '\n' + content.split('\n').map(l => (l ? '> ' + l : '>')).join('\n') + '\n'
+  replacement: (content: string) =>
+    '\n' + content.split('\n').map((l: string) => (l ? '> ' + l : '>')).join('\n') + '\n'
 });
 
 // Cleanup
