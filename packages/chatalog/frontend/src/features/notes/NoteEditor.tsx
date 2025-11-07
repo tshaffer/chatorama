@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { useGetNoteQuery, useUpdateNoteMutation } from './notesApi';
-import type { Note } from '@shared/types';
+import type { Note } from '@chatorama/chatalog-shared';
 import {
   Box,
   Stack,

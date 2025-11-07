@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@chatorama/chat-md-core": "file:../../chat-md-core",
+    "@chatorama/chatalog-shared": "file:../shared",
     "@types/unzipper": "^0.10.11",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",

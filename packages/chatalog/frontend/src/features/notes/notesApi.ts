@@ -1,4 +1,4 @@
-import type { Note } from '@shared/types';
+import type { Note } from '@chatorama/chatalog-shared';
 import { chatalogApi as baseApi } from '../api/chatalogApi';
 
 type CreateNoteRequest = Partial<Pick<Note, 'subjectId' | 'topicId' | 'title' | 'markdown' | 'summary' | 'tags'>>;

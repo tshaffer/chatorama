@@ -1,5 +1,5 @@
 // frontend/src/features/subjects/subjectsApi.ts
-import type { Subject, Topic, NotePreview } from '@shared/types';
+import type { Subject, Topic, NotePreview } from '@chatorama/chatalog-shared';
 import { chatalogApi as baseApi } from '../api/chatalogApi';
 
 const safeId = (o: { id?: string } | undefined) => o?.id ?? '';

@@ -21,7 +21,11 @@
     },
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "declarationMap": false,
+    "sourceMap": true
   },
   "include": [
     "src"

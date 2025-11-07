@@ -71,7 +71,7 @@ module.exports = {
 
     // Make CHATALOG_API_BASE available in code as process.env.CHATALOG_API_BASE
     new webpack.DefinePlugin({
-      'process.env.CHATALOG_API_BASE': JSON.stringify(CHATALOG_API_BASE || ''),
+      'process.env.CHATALOG_API_BASE': JSON.stringify(process.env.CHATALOG_API_BASE || '/api/v1')
     }),
   ]
 };

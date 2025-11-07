@@ -14,7 +14,7 @@ import {
 } from '@mui/material';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { useGetSubjectsQuery, useGetTopicsForSubjectQuery } from '../features/subjects/subjectsApi';
-import { Topic } from '@shared/types';
+import { Topic } from '@chatorama/chatalog-shared';
 
 // at top of the file
 const slugify = (s: string) =>

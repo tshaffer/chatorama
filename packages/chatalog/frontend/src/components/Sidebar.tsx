@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { List, ListItemButton, ListSubheader, Typography, Divider } from '@mui/material';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { useGetSubjectsQuery, useGetTopicsForSubjectQuery } from '../features/subjects/subjectsApi';
-import type { Topic } from '@shared/types';
+import type { Topic } from '@chatorama/chatalog-shared';
 
 const slugify = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
