@@ -1,8 +1,14 @@
 // Mark as a module (good for TS/isolatedModules)
 
 import { getChatTitleAndProject } from './domExtractors';
-import type { ExportNoteMetadata, ExportTurn } from './types';
-import { buildMarkdownExportByFormat } from './utils/exporters';
+import {
+  buildMarkdownExportByFormat,
+  toMarkdownWithFrontMatter
+} from "@chatorama/chat-md-core";
+import type {
+  ExportTurn,
+  ExportNoteMetadata
+} from "@chatorama/chat-md-core";
 
 /**
  * ------------------------------------------------------------

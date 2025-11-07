@@ -15,6 +15,7 @@
     "tsx": "^4.19.0"
   },
   "dependencies": {
+    "@chatorama/chat-md-core": "workspace:*",
     "turndown": "^7.2.2",
     "turndown-plugin-gfm": "^1.0.2"
   }
