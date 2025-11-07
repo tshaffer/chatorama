@@ -1,2 +1,1 @@
-export * from "./types";
-export * from "./utils/exporters";
+export const version = "0.0.1";
