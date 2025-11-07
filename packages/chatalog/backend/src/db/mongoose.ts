@@ -4,6 +4,10 @@ import { ENV } from '../config/env';
 let isConnecting = false;
 
 export async function connectToDatabase() {
+
+  console.log(`[db] connecting to ${ENV.MONGO_URI}...`);
+  console.log('mongoose.connection.readyState:', mongoose.connection.readyState);
+
   if (mongoose.connection.readyState === 1 || isConnecting) return;
   isConnecting = true;
 
@@ -14,6 +18,10 @@ export async function connectToDatabase() {
   }
 
   await mongoose.connect(ENV.MONGO_URI, opts);
+
+  console.log(`[db] connected to ${ENV.MONGO_URI}`);
+  console.log('mongoose.connection.readyState:', mongoose.connection.readyState);
+  
   isConnecting = false;
 
   // Optional event logs

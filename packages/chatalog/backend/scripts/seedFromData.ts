@@ -1,4 +1,3 @@
-// packages/chatalog/backend/scripts/seedFromData.ts
 import 'dotenv/config';
 import mongoose from 'mongoose';
 
@@ -16,19 +15,36 @@ const Subject = mongoose.model('Subject', SubjectSchema);
 const Topic = mongoose.model('Topic', TopicSchema);
 const Note = mongoose.model('Note', NoteSchema);
 
+async function clearAllCollections() {
+  const db = mongoose.connection.db;
+  if (!db) throw new Error('No db connection');
+  const cols = await db.listCollections().toArray();
+  for (const c of cols) {
+    // drop one by one to remove empty collections too
+    await db.collection(c.name).drop().catch(async (err: any) => {
+      // If drop fails (cap or system), fall back to deleteMany
+      if (err?.codeName !== 'NamespaceNotFound') {
+        await db.collection(c.name).deleteMany({});
+      }
+    });
+  }
+  console.log('✅ Cleared all collections');
+}
+
 async function main() {
   const uri = process.env.MONGO_URI;
-  if (!uri) {
-    throw new Error('MONGO_URI missing. Create .env or export it in your shell.');
-  }
+  if (!uri) throw new Error('MONGO_URI missing. Create backend/.env');
 
   await mongoose.connect(uri);
 
-  // Optional reset
   if (process.env.RESET_DB === '1') {
-    // This avoids the "possibly undefined" typing:
-    await mongoose.connection.dropDatabase();
-    console.log('✅ Dropped database');
+    try {
+      await mongoose.connection.dropDatabase();
+      console.log('✅ Dropped database');
+    } catch (err) {
+      console.warn('⚠️  dropDatabase not permitted on this user — falling back to per-collection clear');
+      await clearAllCollections();
+    }
   }
 
   // seed a tiny sample so the UI has something
