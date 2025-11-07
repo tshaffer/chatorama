@@ -18,14 +18,17 @@ const Note = mongoose.model('Note', NoteSchema);
 
 async function main() {
   const uri = process.env.MONGO_URI;
-  if (!uri) throw new Error('MONGO_URI missing (see .env.example)');
+  if (!uri) {
+    throw new Error('MONGO_URI missing. Create .env or export it in your shell.');
+  }
 
   await mongoose.connect(uri);
-  console.log('✅ connected');
 
-  if (process.env.RESET_DB) {
-    await mongoose.connection.db.dropDatabase();
-    console.log('🧹 dropped database');
+  // Optional reset
+  if (process.env.RESET_DB === '1') {
+    // This avoids the "possibly undefined" typing:
+    await mongoose.connection.dropDatabase();
+    console.log('✅ Dropped database');
   }
 
   // seed a tiny sample so the UI has something
@@ -39,13 +42,11 @@ async function main() {
       '# Hello Chatalog\n\nThis is a seeded note. If you can read this in the app, your DB wiring works. 🎉',
   });
 
-  console.log('🌱 seeded');
+  await mongoose.disconnect();
+  console.log('✅ Seed complete');
 }
 
-main()
-  .then(() => mongoose.disconnect().then(() => console.log('👋 done')))
-  .catch(async (err) => {
-    console.error('❌ seed failed:', err);
-    try { await mongoose.disconnect(); } catch {}
-    process.exit(1);
-  });
+main().catch(err => {
+  console.error(err);
+  process.exit(1);
+});
