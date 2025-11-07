@@ -1,0 +1,12 @@
+{
+  "name": "chatorama",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "packageManager": "npm@10",
+  "scripts": {
+    "build": "npm -ws run build",
+    "test": "npm -ws run test",
+    "lint": "npm -ws run lint"
+  }
+}
+

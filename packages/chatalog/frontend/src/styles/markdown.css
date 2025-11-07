@@ -1,0 +1,60 @@
+/* markdown.css */
+.markdown-body {
+  line-height: 1.6;
+  word-wrap: break-word;
+  color: var(--mui-palette-text-primary, #24292f);
+}
+
+/* Headings */
+.markdown-body h1 { font-size: 1.75rem; margin: 1.2em 0 .6em; }
+.markdown-body h2 { font-size: 1.5rem;  margin: 1.1em 0 .55em; }
+.markdown-body h3 { font-size: 1.25rem; margin: 1em 0 .5em; }
+.markdown-body h4, .markdown-body h5, .markdown-body h6 { margin: .9em 0 .45em; }
+
+/* Paragraphs & lists */
+.markdown-body p       { margin: .5em 0 1em; }
+.markdown-body ul, .markdown-body ol { padding-left: 1.5em; margin: .4em 0 1em; }
+.markdown-body li + li { margin-top: .2em; }
+
+/* Blockquotes */
+.markdown-body blockquote {
+  margin: 1em 0;
+  padding: .5em 1em;
+  border-left: 4px solid #d0d7de;
+  color: #57606a;
+  background: #f6f8fa;
+}
+
+/* Code */
+.markdown-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  padding: .15em .35em;
+  border-radius: 4px;
+  background: rgba(175,184,193,.2);
+}
+.markdown-body pre {
+  padding: 12px 16px;
+  overflow: auto;
+  border-radius: 6px;
+  background: #f6f8fa;
+}
+.markdown-body pre code {
+  padding: 0; background: transparent;
+}
+
+/* Tables */
+.markdown-body table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+.markdown-body th, .markdown-body td {
+  border: 1px solid #d0d7de;
+  padding: .4em .6em;
+}
+.markdown-body thead th { background: #f6f8fa; }
+
+/* Horizontal rule */
+.markdown-body hr {
+  border: 0; border-top: 1px solid #d0d7de; margin: 1.5em 0;
+}
+
+/* Links */
+.markdown-body a { color: #0969da; text-decoration: none; }
+.markdown-body a:hover { text-decoration: underline; }
