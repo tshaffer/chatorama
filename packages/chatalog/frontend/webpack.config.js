@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 const path = require('path');
+const fs = require('fs');
+const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 const ROOT = __dirname;
@@ -7,6 +9,21 @@ const BACKEND_PUBLIC = path.resolve(ROOT, '../backend/public');
 const BUILD_DIR = path.join(BACKEND_PUBLIC, 'build');
 
 const isProd = process.env.NODE_ENV === 'production';
+
+// --- Load CHATALOG_API_BASE from .env.local (simple parser) ---
+const envPath = path.resolve(__dirname, '.env.local');
+let CHATALOG_API_BASE = process.env.CHATALOG_API_BASE || '';
+if (fs.existsSync(envPath)) {
+  const lines = fs.readFileSync(envPath, 'utf8').split('\n');
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#') || !line.includes('=')) continue;
+    const i = line.indexOf('=');
+    const k = line.slice(0, i).trim();
+    const v = line.slice(i + 1).trim();
+    if (k === 'CHATALOG_API_BASE' && !CHATALOG_API_BASE) CHATALOG_API_BASE = v;
+  }
+}
 
 module.exports = {
   mode: isProd ? 'production' : 'development',
@@ -22,7 +39,7 @@ module.exports = {
   resolve: {
     extensions: ['.ts', '.tsx', '.mjs', '.js', '.jsx'],
     alias: {
-      '@shared': require('path').resolve(__dirname, '../shared/src'),
+      '@shared': path.resolve(__dirname, '../shared/src'),
     },
   },
   module: {
@@ -50,7 +67,11 @@ module.exports = {
       `,
       inject: 'body',
       scriptLoading: 'defer'
-    })
+    }),
+
+    // Make CHATALOG_API_BASE available in code as process.env.CHATALOG_API_BASE
+    new webpack.DefinePlugin({
+      'process.env.CHATALOG_API_BASE': JSON.stringify(CHATALOG_API_BASE || ''),
+    }),
   ]
 };
-

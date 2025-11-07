@@ -11,6 +11,8 @@ import { store } from './store';
 import { theme } from './theme';
 import { router } from './router';  // <-- make sure this matches your new router.tsx export
 
+import { API_BASE } from './lib/apiBase';
+
 setupListeners(store.dispatch);
 
 function Root() {
@@ -26,3 +28,12 @@ function Root() {
 
 const container = document.getElementById('root')!;
 createRoot(container).render(<Root />);
+
+(async () => {
+  try {
+    const r = await fetch(`${API_BASE}/health`);
+    console.log('Health:', r.ok ? await r.text() : r.status);
+  } catch (e) {
+    console.error('Health check failed:', e);
+  }
+})();
