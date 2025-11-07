@@ -1,14 +1,18 @@
 {
   "name": "chatorama",
   "private": true,
+  "packageManager": "npm@10.8.2",
   "workspaces": [
     "packages/*",
-    "packages/chatalog/*"
+    "packages/*/*"
   ],
   "scripts": {
-    "build": "npm -ws run build",
-    "dev": "npm -ws run dev",
-    "test": "npm -ws run test"
+    "build": "npm run -ws build",
+    "dev": "npm run -ws dev",
+    "clean": "rimraf **/dist **/node_modules || true"
   },
-  "engines": { "node": ">=20" }
+  "devDependencies": {
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3"
+  }
 }
