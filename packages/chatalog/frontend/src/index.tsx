@@ -11,7 +11,7 @@ import { store } from './store';
 import { theme } from './theme';
 import { router } from './router';  // <-- make sure this matches your new router.tsx export
 
-import { API_BASE } from './lib/apiBase';
+import { API_BASE, apiUrl } from './lib/apiBase';
 
 setupListeners(store.dispatch);
 
@@ -31,8 +31,12 @@ createRoot(container).render(<Root />);
 
 (async () => {
   try {
-    const r = await fetch(`${API_BASE}/health`);
-    console.log('Health:', r.ok ? await r.text() : r.status);
+    const r = await fetch(apiUrl('health'));
+    console.log(
+      'Health:',
+      r.ok ? await r.text() : r.status,
+      '(API_BASE:', API_BASE || '(same-origin)', ')'
+    );
   } catch (e) {
     console.error('Health check failed:', e);
   }
