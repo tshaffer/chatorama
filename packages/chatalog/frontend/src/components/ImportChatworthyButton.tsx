@@ -32,13 +32,14 @@ export default function ImportChatworthyButton({ onDone }: { onDone?: () => void
         msg: res.imported === 1 ? 'Imported 1 note' : `Imported ${res.imported} notes`,
         severity: 'success',
       });
+        onDone?.();
       // If exactly one note was imported, jump directly to it using the ID-only route.
       // NotePage supports /n/:noteId, so we don’t need slugs here.
-      if (res.results?.length === 1 && res.results[0]?.noteId) {
-        navigate(`/n/${res.results[0].noteId}`);
-      } else {
-        onDone?.();
-      }
+      // if (res.results?.length === 1 && res.results[0]?.noteId) {
+      //   navigate(`/n/${res.results[0].noteId}`);
+      // } else {
+      //   onDone?.();
+      // }
     } catch (err: any) {
       const msg =
         err?.data?.message ||
