@@ -15,6 +15,32 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // ---------------- helpers ----------------
 
+/** Remove ToC block, anchor lines, and meta rows so Chatalog keeps the body clean. */
+function stripForChatalog(md: string): string {
+  let out = md;
+
+  // 1) Drop the "## Table of Contents" section consisting of:
+  //    heading, an optional blank line, then one or more lines like "1. [Title](#p-1)"
+  //    We stop at the first non-TOC-ish line.
+  out = out.replace(
+    /^\s*##\s*Table of Contents\s*\r?\n(?:\r?\n)?(?:^\d+\.\s+\[.*?\]\(#p-\d+\)\s*\r?\n)+/gmi,
+    ''
+  );
+
+  // 2) Remove standalone anchor lines like <a id="p-2"></a>
+  //    (they’re inserted just before each Prompt)
+  out = out.replace(/^\s*<a id="p-\d+"><\/a>\s*$(?:\r?\n)?/gmi, '');
+
+  // 3) Remove the meta row lines the exporter may include (we don't want them in Chatalog)
+  out = out.replace(/^Source:\s.*$\r?\n?/gmi, '');
+  out = out.replace(/^Exported:\s.*$\r?\n?/gmi, '');
+
+  // 4) Collapse excessive blank lines
+  out = out.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trimEnd();
+
+  return out;
+}
+
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
@@ -82,31 +108,31 @@ type ParsedMd = {
 function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd {
   const raw = buf.toString('utf8');
   const gm = matter(raw);
-  const fm = gm.data as Record<string, unknown>;
+  const fm = gm.data as Record<string, any>;
 
-  // Title precedence:
-  // 1) fm.chatTitle (shared exporter’s standard)
-  // 2) first H1 in body
-  // 3) filename (sans .md)
-  const h1 = gm.content.match(/^#\s+(.+?)\s*$/m)?.[1]?.trim();
-  const titleFromFm = typeof fm.chatTitle === 'string' ? fm.chatTitle.trim() : '';
+  const titleFromH1 = gm.content.match(/^#\s+(.+)\s*$/m)?.[1]?.trim();
   const title =
-    titleFromFm ||
-    h1 ||
+    (typeof fm.title === 'string' && fm.title.trim()) ||
+    (typeof fm.chatTitle === 'string' && fm.chatTitle.trim()) ||
+    titleFromH1 ||
     fileName.replace(/\.(md|markdown)$/i, '');
 
-  // Keep the full Markdown body (including H1 + meta row + ToC + content)
-  const markdown = gm.content.trim();
+  // 👇 Use the cleaned body instead of the raw content
+  const markdown = stripForChatalog(gm.content).trim();
 
-  // Optional metadata
   const tags = toArrayTags(fm.tags);
   const summary = typeof fm.summary === 'string' ? fm.summary : undefined;
   const provenanceUrl = typeof fm.pageUrl === 'string' ? fm.pageUrl : undefined;
 
-  const subjectName = typeof fm.subject === 'string' ? (fm.subject as string).trim() : undefined;
-  const topicName   = typeof fm.topic   === 'string' ? (fm.topic as string).trim()   : undefined;
-
-  return { title, markdown, tags, summary, provenanceUrl, subjectName, topicName };
+  return {
+    title,
+    markdown,
+    tags,
+    summary,
+    provenanceUrl,
+    subjectName: typeof fm.subject === 'string' ? fm.subject : undefined,
+    topicName: typeof fm.topic === 'string' ? fm.topic : undefined,
+  };
 }
 
 /** Ensure Subject/Topic exist and return their ids (string). */
