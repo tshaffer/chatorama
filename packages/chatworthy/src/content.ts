@@ -212,6 +212,7 @@ function buildSelectedPayload(): { turns: ExportTurn[]; htmlBodies: string[] } {
     .filter((n, i, arr) => arr.indexOf(n) === i)
     .sort((a, b) => a - b);
 
+  // only user turns are valid “start” indices
   selected = selected.filter(idx => idx >= 0 && idx < allTurns.length && allTurns[idx].role === 'user');
 
   if (selected.length === 0) return { turns: [], htmlBodies: [] };
@@ -221,9 +222,19 @@ function buildSelectedPayload(): { turns: ExportTurn[]; htmlBodies: string[] } {
 
   for (let i = 0; i < selected.length; i++) {
     const uIdx = selected[i];
-    const nextCut = (i + 1 < selected.length) ? selected[i + 1] : allTurns.length;
-    const start = Math.max(0, Math.min(uIdx, allTurns.length));
-    const end = Math.max(start + 1, Math.min(nextCut, allTurns.length));
+
+    // hard boundary: first user turn after uIdx (or end if none)
+    const nextUserAfter = allTurns.findIndex((t, k) => k > uIdx && t.role === 'user');
+    const userBoundary = nextUserAfter === -1 ? allTurns.length : nextUserAfter;
+
+    // soft boundary: start of the next *selected* user (keeps ranges if multiple are checked)
+    const nextSelectedStart = (i + 1 < selected.length) ? selected[i + 1] : userBoundary;
+
+    // actual end: whichever comes first
+    const end = Math.min(userBoundary, nextSelectedStart);
+
+    // safety: always include at least the selected user turn (and at most its immediate assistant if present)
+    const start = uIdx;
 
     for (let j = start; j < end; j++) {
       const el = allEls[j];
@@ -233,11 +244,8 @@ function buildSelectedPayload(): { turns: ExportTurn[]; htmlBodies: string[] } {
     }
   }
 
-  console.log(JSON.stringify(turns, null, 2));
-
   return { turns, htmlBodies };
 }
-
 function getSelectionStats(): { total: number; selected: number } {
   const root = document.getElementById(ROOT_ID);
   if (!root) return { total: 0, selected: 0 };
