@@ -3,10 +3,12 @@ import { useRef, useState } from 'react';
 import { Button, CircularProgress, Snackbar, Alert, Tooltip } from '@mui/material';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { useImportChatworthyMutation } from '../features/imports/importsApi';
+import { useNavigate } from 'react-router-dom';
 
 export default function ImportChatworthyButton({ onDone }: { onDone?: () => void }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [importChatworthy, { isLoading }] = useImportChatworthyMutation();
+  const navigate = useNavigate();
   const [snack, setSnack] = useState<{ open: boolean; msg: string; severity: 'success' | 'error' }>({
     open: false,
     msg: '',
@@ -30,7 +32,13 @@ export default function ImportChatworthyButton({ onDone }: { onDone?: () => void
         msg: res.imported === 1 ? 'Imported 1 note' : `Imported ${res.imported} notes`,
         severity: 'success',
       });
-      onDone?.();
+      // If exactly one note was imported, jump directly to it using the ID-only route.
+      // NotePage supports /n/:noteId, so we don’t need slugs here.
+      if (res.results?.length === 1 && res.results[0]?.noteId) {
+        navigate(`/n/${res.results[0].noteId}`);
+      } else {
+        onDone?.();
+      }
     } catch (err: any) {
       const msg =
         err?.data?.message ||
