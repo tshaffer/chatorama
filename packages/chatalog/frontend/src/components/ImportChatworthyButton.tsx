@@ -19,7 +19,10 @@ export default function ImportChatworthyButton({ onDone }: { onDone?: () => void
     const file = e.target.files?.[0];
     e.currentTarget.value = ''; // allow re-picking same file later
     if (!file) return;
-
+    if (file.size > 100 * 1024 * 1024) {
+      setSnack({ open: true, msg: 'File is too large (>100MB).', severity: 'error' });
+      return;
+    }
     try {
       const res = await importChatworthy(file).unwrap();
       setSnack({
@@ -29,11 +32,12 @@ export default function ImportChatworthyButton({ onDone }: { onDone?: () => void
       });
       onDone?.();
     } catch (err: any) {
-      setSnack({
-        open: true,
-        msg: err?.data?.message ?? 'Import failed',
-        severity: 'error',
-      });
+      const msg =
+        err?.data?.message ||
+        err?.error ||
+        (typeof err === 'string' ? err : '') ||
+        'Import failed';
+      setSnack({ open: true, msg, severity: 'error' });
     }
   };
 
@@ -42,11 +46,11 @@ export default function ImportChatworthyButton({ onDone }: { onDone?: () => void
       <input
         ref={inputRef}
         type="file"
-        accept=".md,.markdown"
+        accept=".zip,.cbz,.tar,.tgz,.gz,.md,.markdown"
         hidden
         onChange={onFileChosen}
       />
-      <Tooltip title="Import Chatworthy Markdown">
+      <Tooltip title="Import Chatworthy export (ZIP or Markdown)">
         <span>
           <Button
             size="small"
