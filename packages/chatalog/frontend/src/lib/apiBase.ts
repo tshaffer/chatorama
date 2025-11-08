@@ -3,46 +3,57 @@
  * Single source of truth for the API base URL.
  *
  * Resolution order:
- *  1) Runtime override: (window as any).__CHATALOG_API_BASE__
- *  2) Build-time env: process.env.CHATALOG_API_BASE (Webpack DefinePlugin)
- *     or import.meta.env.VITE_API_BASE (Vite)
- *  3) Default: same-origin (empty string)
+ *  1) Runtime override (global): (window as any).__CHATALOG_API_BASE__
+ *  2) Runtime override (meta):   <meta name="chatalog-api-base" content="...">
+ *  3) Build-time (Webpack):      process.env.CHATALOG_API_BASE
+ *  4) Build-time (Vite):         import.meta.env.VITE_API_BASE
+ *  5) Default:                   '/api/v1'
  *
- * Always normalized to have NO trailing slash.
+ * Always normalized to NO trailing slash.
  */
 
 function stripTrailingSlash(s: string) {
   return s.replace(/\/+$/, '');
 }
 
-const runtime =
-  typeof window !== 'undefined' && (window as any).__CHATALOG_API_BASE__;
+function clean(v: unknown): string {
+  // Guard against undefined/null and literal strings like "undefined"
+  if (v == null) return '';
+  const s = String(v).trim();
+  return s && s !== 'undefined' && s !== 'null' ? s : '';
+}
 
-const buildWebpack =
-  typeof process !== 'undefined' &&
-  (process as any).env &&
-  (process as any).env.CHATALOG_API_BASE;
+function readMeta(name: string): string {
+  if (typeof document === 'undefined') return '';
+  const el = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
+  return el?.content ? el.content.trim() : '';
+}
 
-const buildVite =
-  typeof import.meta !== 'undefined' &&
-  (import.meta as any).env &&
-  (import.meta as any).env.VITE_API_BASE;
+const runtimeGlobal = typeof window !== 'undefined'
+  ? clean((window as any).__CHATALOG_API_BASE__)
+  : '';
 
-const resolved =
-  (runtime as string) ||
-  (buildWebpack as string) ||
-  (buildVite as string) ||
-  '';
+const runtimeMeta = readMeta('chatalog-api-base');
 
-export const API_BASE = stripTrailingSlash(resolved);
+const buildWebpack = typeof process !== 'undefined' && (process as any).env
+  ? clean((process as any).env.CHATALOG_API_BASE)
+  : '';
 
-/**
- * Join helper that safely builds URLs:
- *   apiUrl('imports/chatworthy') -> '/imports/chatworthy' (same-origin)
- *   apiUrl('/imports/chatworthy') -> '/imports/chatworthy'
- *   apiUrl('health') -> '/health' or 'https://api.example.com/health'
- */
+const buildVite = typeof import.meta !== 'undefined' && (import.meta as any).env
+  ? clean((import.meta as any).env.VITE_API_BASE)
+  : '';
+
+// Pick the first non-empty; fall back to '/api/v1'
+const resolvedRaw =
+  runtimeGlobal ||
+  runtimeMeta ||
+  buildWebpack ||
+  buildVite ||
+  '/api/v1';
+
+export const API_BASE = stripTrailingSlash(resolvedRaw);
+
 export function apiUrl(path: string): string {
   const p = path.startsWith('/') ? path : `/${path}`;
-  return API_BASE ? `${API_BASE}${p}` : p;
+  return `${API_BASE}${p}`;
 }
