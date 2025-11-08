@@ -9,10 +9,13 @@
   "scripts": {
     "build": "npm run -ws build",
     "dev": "npm run -ws dev",
-    "clean": "rimraf **/dist **/node_modules || true"
+    "clean": "rimraf **/dist **/node_modules || true",
+    "probe": "ts-node scripts/probe.ts"
   },
   "devDependencies": {
+    "glob": "^11.0.3",
     "rimraf": "^6.0.1",
-    "typescript": "^5.6.3"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }
