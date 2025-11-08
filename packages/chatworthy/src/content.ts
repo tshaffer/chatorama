@@ -362,7 +362,7 @@ function buildExportFromTurns(
     visibility: 'private',
   } satisfies ExportNoteMetadata;
 
-  return buildMarkdownExportByFormat(
+  const markdownExportByFormat: string = buildMarkdownExportByFormat(
     exportFormat,
     meta,
     turns,
@@ -373,6 +373,15 @@ function buildExportFromTurns(
       htmlBodies
     }
   );
+
+  console.log('Inputs to buildMarkdownExportByFormat:');
+  console.log('exportFormat:', exportFormat);
+  console.log('meta:', meta);
+  console.log('turns:', turns);
+  console.log('htmlBodies:', htmlBodies);
+  console.log('Generated Markdown:\n', markdownExportByFormat);
+  
+  return markdownExportByFormat;
 }
 
 function downloadExport(filename: string, data: string | Blob) {

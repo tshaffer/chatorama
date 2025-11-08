@@ -5,7 +5,13 @@ import { buildMarkdownExportByFormat } from '../utils/exporters';
 import type { ExportNoteMetadata, ExportTurn } from '../types';
 
 /*
-npx tsx scripts/golden-check.ts \
+from:
+~/Documents/Projects/chatorama/packages/chatworthy
+
+npx tsx src/scripts/golden-check.ts \
+  /Users/tedshaffer/Documents/ChatGPTExports/chatMonorepo/chatalog-tiny-turns-joke-202511062056
+
+npx tsx src/scripts/golden-check.ts \
   /Users/tedshaffer/Documents/ChatGPTExports/chatMonorepo/clean-mold-from-feeder-202511062057 \
   /Users/tedshaffer/Documents/ChatGPTExports/chatMonorepo/chatalog-tiny-turns-joke-202511062056 \
   /Users/tedshaffer/Documents/ChatGPTExports/chatMonorepo/21-day-italy-itinerary-with-puglia-bologna-and-rome-202511062056
@@ -139,6 +145,12 @@ function run(pairBase: string) {
       freeformNotes: ''
     }
   );
+
+  // console.log('turnsPath:', turnsPath);
+  // console.log('mdFromTurns:\n', mdFromTurns);
+
+  console.log('mdPath:', mdPath);
+  console.log('mdGolden:\n', mdGolden);
 
   const A = normalizeDynamic(mdFromTurns);
   const B = normalizeDynamic(mdGolden);
