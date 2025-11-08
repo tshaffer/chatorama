@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: Launch (tsx)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/packages/chatalog/backend",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--loader=tsx", "--inspect"],
+      "program": "${workspaceFolder}/packages/chatalog/backend/src/server.ts",
+      "envFile": "${workspaceFolder}/packages/chatalog/backend/.env",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true
+    },
+    {
+      "name": "Backend: Attach (9229)",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "restart": true,
+      "timeout": 30000,
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}
