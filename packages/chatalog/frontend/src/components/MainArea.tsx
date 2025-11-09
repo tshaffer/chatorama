@@ -16,7 +16,7 @@ const MAX_LIST = 720;
 const DEFAULT_LIST = 420;
 
 const safeId = (o: { id?: string } | undefined) => o?.id ?? '';
-  
+
 function slugify(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
@@ -53,16 +53,16 @@ export default function MainArea() {
   const { data: note } = useGetNoteQuery(noteIdOnly ? noteIdOnly : skipToken); // ← CHANGED
 
   // Canonicalize note slug if needed (we keep the current subject/topic segments)
-if (note && subjectSlug && topicSlug) {
-  const expectedSlug = slugify(note.title);
-  const currentSlug = noteSlug ?? '';
-  if (expectedSlug !== currentSlug) {
-    const next = `/s/${subjectSlug}/t/${topicSlug}/n/${safeId(note)}-${expectedSlug}`;
-    if (next !== location.pathname) {
-      queueMicrotask(() => navigate(next, { replace: true }));
+  if (note && subjectSlug && topicSlug) {
+    const expectedSlug = slugify(note.title);
+    const currentSlug = noteSlug ?? '';
+    if (expectedSlug !== currentSlug) {
+      const next = `/s/${subjectSlug}/t/${topicSlug}/n/${safeId(note)}-${expectedSlug}`;
+      if (next !== location.pathname) {
+        queueMicrotask(() => navigate(next, { replace: true }));
+      }
     }
   }
-}
 
   const [noteListWidth, setNoteListWidth] = usePersistentState<number>(
     'ui.noteListWidth',
@@ -70,8 +70,11 @@ if (note && subjectSlug && topicSlug) {
   );
 
   const goToNote = (id: string, title: string) => {
+    console.log('goToNote', { id, title });
+    console.log('subjectSlug', subjectSlug, 'topicSlug', topicSlug);
     if (!subjectSlug || !topicSlug) return;
     const s = slugify(title);
+    console.log('navigate to', `/s/${subjectSlug}/t/${topicSlug}/n/${id}-${s}`);
     navigate(`/s/${subjectSlug}/t/${topicSlug}/n/${id}-${s}`);
   };
 
@@ -109,7 +112,8 @@ if (note && subjectSlug && topicSlug) {
                   ) : null}
                 </ListItemButton>
               );
-            })}            {previews.length === 0 && (
+            })}
+            {previews.length === 0 && (
               <Typography variant="body2" color="text.secondary" sx={{ mt: 1, ml: 1 }}>
                 No notes in this topic yet.
               </Typography>
