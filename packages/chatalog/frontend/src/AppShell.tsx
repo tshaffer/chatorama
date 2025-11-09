@@ -1,6 +1,6 @@
 // chatalog/frontend/src/AppShell.tsx
 import React from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, useParams } from 'react-router-dom';
 import { AppBar, Toolbar, Typography, Button, Stack, Box } from '@mui/material';
 import ImportChatworthyButton from './components/ImportChatworthyButton';
 import { useEffect } from 'react';
@@ -8,12 +8,13 @@ import { fetchJSON } from './lib/api';
 
 export default function AppShell() {
   const { pathname } = useLocation();
+  const { subjectSlug, topicSlug } = useParams();
 
   useEffect(() => {
-  fetchJSON<{ ok: boolean }>('/health')
-    .then(x => console.log('Health:', x))
-    .catch(err => console.error('Health failed:', err));
-}, []);
+    fetchJSON<{ ok: boolean }>('/health')
+      .then(x => console.log('Health:', x))
+      .catch(err => console.error('Health failed:', err));
+  }, []);
 
   const isActive = (to: string) =>
     pathname === to ||
@@ -50,7 +51,7 @@ export default function AppShell() {
           minWidth: 0,              // prevents child overflow clipping
         }}
       >
-        <Outlet />
+        <Outlet key={`${subjectSlug}/${topicSlug}`} />
       </Box>
     </Box>
   );

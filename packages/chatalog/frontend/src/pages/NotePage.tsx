@@ -14,5 +14,5 @@ export default function NotePage() {
     );
   }
 
-  return <NoteEditor noteId={noteId} debounceMs={1000} enableBeforeUnloadGuard />;
+  return <NoteEditor debounceMs={1000} enableBeforeUnloadGuard />;
 }

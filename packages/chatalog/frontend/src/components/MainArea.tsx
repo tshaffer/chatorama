@@ -140,7 +140,7 @@ export default function MainArea() {
             Pick a subject and topic to begin.
           </Typography>
         )}
-        {noteIdOnly && <NoteEditor noteId={noteIdOnly} debounceMs={1000} enableBeforeUnloadGuard />}
+        {noteIdOnly && <NoteEditor debounceMs={1000} enableBeforeUnloadGuard />}
       </Box>
     </Box>
   );

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
+import { useParams } from 'react-router-dom';
 import { useGetNoteQuery, useUpdateNoteMutation } from './notesApi';
 import type { Note } from '@chatorama/chatalog-shared';
 import {
@@ -158,18 +159,38 @@ function unescapeEscapes(s: string): string {
     .replace(/\\t/g, '\t');
 }
 
+// Extract leading 24-hex ObjectId from "<id>" or "<id>-<slug>"
+function takeObjectId(s?: string) {
+  const m = s?.match(/^[a-f0-9]{24}/i);
+  return m ? m[0] : undefined;
+}
+
 // ---------------- component ----------------
 
-type Props = { noteId?: string; enableBeforeUnloadGuard?: boolean; debounceMs?: number };
+type Props = { enableBeforeUnloadGuard?: boolean; debounceMs?: number };
 
-export default function NoteEditor({ noteId, enableBeforeUnloadGuard = true, debounceMs = 1000 }: Props) {
-  const { data: note, isLoading, isError, error } = useGetNoteQuery(noteId ? noteId : skipToken);
+// Extract "<id>" from "<id>-<slug>"
+function idFromNoteParam(param?: string): string | undefined {
+  if (!param) return undefined;
+  const dash = param.indexOf('-');
+  return dash === -1 ? param : param.slice(0, dash);
+}
+
+export default function NoteEditor({ enableBeforeUnloadGuard = true, debounceMs = 1000 }: Props) {
+  const { noteId } = useParams<{ noteId?: string }>();
+  const resolvedNoteId = useMemo(() => takeObjectId(noteId), [noteId]);
+
+  const { data: note, isLoading, isError, error } = useGetNoteQuery(
+    resolvedNoteId ?? skipToken,
+    { refetchOnMountOrArgChange: true }
+  );
+  
   const [updateNote, { isLoading: isSaving }] = useUpdateNoteMutation();
 
   // Preview-first UX: start with editor hidden
   const [editing, setEditing] = useState(false);
 
-  if (!noteId) {
+  if (!resolvedNoteId) {
     return <Box p={2}><Typography variant="body2" color="text.secondary">No note selected.</Typography></Box>;
   }
 
@@ -181,15 +202,14 @@ export default function NoteEditor({ noteId, enableBeforeUnloadGuard = true, deb
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestNoteRef = useRef<Note | undefined>(undefined);
 
-  // Load note -> form
-  const noteKey = note?.id;
+  // Load note -> form (reset when identity changes)
   useEffect(() => {
     if (!note) return;
     latestNoteRef.current = note;
     setTitle(note.title ?? '');
     setMarkdown(note.markdown ?? '');
     setDirty(false);
-  }, [noteKey]);
+  }, [resolvedNoteId, note]);
 
   // Debounced autosave
   useEffect(() => {
@@ -199,7 +219,7 @@ export default function NoteEditor({ noteId, enableBeforeUnloadGuard = true, deb
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       try {
-        await updateNote({ noteId, patch: { title, markdown } }).unwrap();
+        await updateNote({ noteId: resolvedNoteId, patch: { title, markdown } }).unwrap();
         setSnack({ open: true, msg: 'Saved', sev: 'success' });
         setDirty(false);
       } catch {
@@ -210,7 +230,7 @@ export default function NoteEditor({ noteId, enableBeforeUnloadGuard = true, deb
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [dirty, title, markdown, noteId, debounceMs, updateNote, note]);
+  }, [dirty, title, markdown, resolvedNoteId, debounceMs, updateNote, note]);
 
   // Cmd/Ctrl+S
   useEffect(() => {
@@ -221,7 +241,7 @@ export default function NoteEditor({ noteId, enableBeforeUnloadGuard = true, deb
         if (!note) return;
         if (saveTimer.current) clearTimeout(saveTimer.current);
         try {
-          await updateNote({ noteId, patch: { title, markdown } }).unwrap();
+          await updateNote({ noteId: resolvedNoteId, patch: { title, markdown } }).unwrap();
           setSnack({ open: true, msg: 'Saved', sev: 'success' });
           setDirty(false);
         } catch {
@@ -231,7 +251,7 @@ export default function NoteEditor({ noteId, enableBeforeUnloadGuard = true, deb
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [note, noteId, title, markdown, updateNote]);
+  }, [note, resolvedNoteId, title, markdown, updateNote]);
 
   // Before-unload dirty guard (optional)
   useEffect(() => {
