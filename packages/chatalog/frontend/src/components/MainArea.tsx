@@ -105,7 +105,7 @@ export default function MainArea() {
                   />
                   {n.tags?.length ? (
                     <Stack direction="row" gap={0.5}>
-                      {n.tags.slice(0, 2).map((tag) => (
+                      {n.tags.slice(0, 2).map((tag: any) => (
                         <Chip key={tag} size="small" label={tag} />
                       ))}
                     </Stack>

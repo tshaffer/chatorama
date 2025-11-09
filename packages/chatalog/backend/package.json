@@ -23,6 +23,7 @@
     "unzipper": "^0.12.3"
   },
   "devDependencies": {
+    "@chatorama/chatalog-shared": "file:../shared",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/mongoose": "^5.11.96",

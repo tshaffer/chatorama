@@ -1,7 +1,8 @@
 // frontend/src/store/index.ts
 import { configureStore } from '@reduxjs/toolkit';
 import { setupListeners } from '@reduxjs/toolkit/query';
-import { useDispatch, useSelector, TypedUseSelectorHook } from 'react-redux';
+import type { TypedUseSelectorHook } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { chatalogApi } from '../features/api/chatalogApi';
 
 // If/when you add more slices, import and add to reducer below.

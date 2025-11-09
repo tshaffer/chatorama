@@ -1,4 +1,4 @@
-import { ExportNoteMetadata, ExportTurn } from '../types';
+import type { ExportNoteMetadata, ExportTurn } from '../types';
 
 // If you bundle with esbuild/webpack, install these deps:
 //   npm i turndown turndown-plugin-gfm

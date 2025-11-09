@@ -7,13 +7,16 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-
     "lib": ["ES2021", "DOM"],
     "types": ["node"],
-
-    "rootDir": ".",           // ← include src/ and scripts/
+    "rootDir": ".",
     "outDir": "dist",
-    "composite": true
+    "composite": true,
+    "declaration": false,
+    "declarationMap": false,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true
   },
   "include": ["src/**/*", "scripts/**/*"],
   "exclude": ["dist"],

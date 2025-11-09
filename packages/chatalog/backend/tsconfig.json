@@ -1,17 +1,13 @@
 {
-  "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
     "target": "ES2021",
-    "module": "ESNext",
+    "module": "CommonJS",
     "moduleResolution": "Node",
+    "esModuleInterop": true,
     "rootDir": "src",
     "outDir": "dist",
-    "strict": true,
-    "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node"],
-    "composite": true,
+    "strict": true,
     "sourceMap": true
-  },
-  "include": ["src/**/*"]
+  }
 }

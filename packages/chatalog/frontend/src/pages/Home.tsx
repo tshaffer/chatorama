@@ -12,9 +12,8 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { skipToken } from '@reduxjs/toolkit/query';
 import { useGetSubjectsQuery, useGetTopicsForSubjectQuery } from '../features/subjects/subjectsApi';
-import { Topic } from '@chatorama/chatalog-shared';
+import type { Topic } from '@chatorama/chatalog-shared';
 
 // at top of the file
 const slugify = (s: string) =>
@@ -23,7 +22,6 @@ const safeId = (o: { id?: string } | undefined) => o?.id ?? '';
 
 
 export default function Home() {
-  const navigate = useNavigate();
   const { data: subjects = [], isLoading } = useGetSubjectsQuery();
 
   const topSubjects = subjects.slice(0, 3);

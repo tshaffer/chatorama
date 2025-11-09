@@ -7,14 +7,15 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-
     "lib": ["ES2021", "DOM"],
     "rootDir": "src",
     "outDir": "dist",
-
     "declaration": true,
     "declarationMap": true,
-    "composite": true
+    "composite": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true
   },
   "include": ["src/**/*"],
   "exclude": ["dist"]

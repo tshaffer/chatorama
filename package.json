@@ -12,7 +12,7 @@
     "clean": "rimraf **/dist **/node_modules || true"
   },
   "devDependencies": {
-    "rimraf": "^6.0.1",
-    "typescript": "^5.6.3"
+    "rimraf": "^6.1.0",
+    "typescript": "^5.9.3"
   }
 }

@@ -27,6 +27,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@chatorama/chatalog-shared": "file:../shared",
     "@types/node": "^24.10.0",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
