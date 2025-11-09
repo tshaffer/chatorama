@@ -7,7 +7,7 @@
       "request": "launch",
       "cwd": "${workspaceFolder}/packages/chatalog/backend",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["--loader=tsx", "--inspect"],
+      "runtimeArgs": ["--import=tsx", "--inspect"],
       "program": "${workspaceFolder}/packages/chatalog/backend/src/server.ts",
       "envFile": "${workspaceFolder}/packages/chatalog/backend/.env",
       "console": "integratedTerminal",
