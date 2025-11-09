@@ -11,7 +11,11 @@ import {
   Snackbar,
   Alert,
   Divider,
+  Button,
+  Tooltip,
 } from '@mui/material';
+import EditIcon from '@mui/icons-material/Edit';
+import DoneIcon from '@mui/icons-material/Done';
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -36,7 +40,6 @@ function normalizeTurns(md: string): string {
   let out = '';
 
   while (i < md.length) {
-    // find start marker
     startRE.lastIndex = i;
     const startMatch = startRE.exec(md);
     if (!startMatch) {
@@ -45,10 +48,8 @@ function normalizeTurns(md: string): string {
     }
 
     const beforeBlock = md.slice(i, startMatch.index);
-    const blockStart = startMatch.index; // at first ':' of ':::turns'
-    const bodyStart = startMatch.index + startMatch[0].length; // char after newline of marker
+    const bodyStart = startMatch.index + startMatch[0].length;
 
-    // find end marker (prefer explicit end-turns)
     endRE1.lastIndex = bodyStart;
     endRE2.lastIndex = bodyStart;
     const end1 = endRE1.exec(md);
@@ -59,7 +60,6 @@ function normalizeTurns(md: string): string {
     const afterMarker = endMatch ? endMatch.index + endMatch[0].length : bodyEnd;
     const body = md.slice(bodyStart, bodyEnd);
 
-    // ---- DEBUG
     if (process.env.NODE_ENV === 'development') {
       const head = body.slice(0, 240);
       console.log('[turns body head]', JSON.stringify(head));
@@ -68,23 +68,20 @@ function normalizeTurns(md: string): string {
 
     const turns = scanYamlTurns(body);
 
-    out += beforeBlock; // keep text before the block
+    out += beforeBlock;
     if (!turns.length) {
       console.warn('[turns] parse yielded 0 items; preserving raw block');
-      out += md.slice(blockStart, afterMarker);
+      out += md.slice(startMatch.index, afterMarker);
     } else {
-      // Build replacement markdown with separators between turns
       const rep: string[] = [];
       turns.forEach((t, idx) => {
-        if (idx > 0) rep.push('\n* * *\n'); // ← separator between turns
-
+        if (idx > 0) rep.push('\n* * *\n');
         if ((t.role || '').toLowerCase() === 'user') {
           rep.push('**Prompt**', '', toBlockquote(t.text), '');
         } else {
           rep.push('**Response**', '', t.text, '');
         }
       });
-
       out += '\n' + rep.join('\n').trim() + '\n';
     }
 
@@ -168,6 +165,9 @@ type Props = { noteId?: string; enableBeforeUnloadGuard?: boolean; debounceMs?: 
 export default function NoteEditor({ noteId, enableBeforeUnloadGuard = true, debounceMs = 1000 }: Props) {
   const { data: note, isLoading, isError, error } = useGetNoteQuery(noteId ? noteId : skipToken);
   const [updateNote, { isLoading: isSaving }] = useUpdateNoteMutation();
+
+  // Preview-first UX: start with editor hidden
+  const [editing, setEditing] = useState(false);
 
   if (!noteId) {
     return <Box p={2}><Typography variant="body2" color="text.secondary">No note selected.</Typography></Box>;
@@ -270,50 +270,64 @@ export default function NoteEditor({ noteId, enableBeforeUnloadGuard = true, deb
   }
 
   const body = stripFrontMatter(markdown ?? '');
-  console.log('[has :::turns (manual)]', /:::\s*turns/i.test(body));
   const previewBody = normalizeTurns(body.replace(/^#\s*Transcript\s*\r?\n?/, ''));
-
-  console.log('[counts]', {
-    prompts: (previewBody.match(/\*\*Prompt\*\*/g) || []).length,
-    responses: (previewBody.match(/\*\*Response\*\*/g) || []).length,
-  });
-
-  console.log('[normalizeTurns OUTPUT]\\n', previewBody);
 
   return (
     <Box p={2} sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
+      {/* Top bar: title (in preview) + status + Edit/Done */}
       <Stack direction="row" alignItems="center" justifyContent="space-between">
-        <Typography variant="h6">Edit Note</Typography>
-        <Chip
-          size="small"
-          label={status}
-          color={status === 'Saved' ? 'success' : status === 'Saving...' ? 'warning' : dirty ? 'warning' : 'default'}
-          variant="outlined"
-        />
+        <Typography variant="h6">{editing ? 'Edit Note' : 'Note'}</Typography>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Chip
+            size="small"
+            label={status}
+            color={status === 'Saved' ? 'success' : status === 'Saving...' ? 'warning' : dirty ? 'warning' : 'default'}
+            variant="outlined"
+          />
+          <Tooltip title={editing ? 'Finish editing' : 'Edit'}>
+            <span>
+              <Button
+                size="small"
+                variant={editing ? 'contained' : 'outlined'}
+                color={editing ? 'primary' : 'inherit'}
+                startIcon={editing ? <DoneIcon /> : <EditIcon />}
+                onClick={() => setEditing(e => !e)}
+                disabled={isLoading || isSaving}
+              >
+                {editing ? 'Done' : 'Edit'}
+              </Button>
+            </span>
+          </Tooltip>
+        </Stack>
       </Stack>
 
-      <TextField
-        label="Title"
-        value={title}
-        onChange={(e) => { setTitle(e.target.value); setDirty(true); }}
-        size="small"
-        fullWidth
-      />
+      {/* Editor (hidden when not editing) */}
+      {editing && (
+        <>
+          <TextField
+            label="Title"
+            value={title}
+            onChange={(e) => { setTitle(e.target.value); setDirty(true); }}
+            size="small"
+            fullWidth
+          />
 
-      {/* Editor */}
-      <TextField
-        label="Markdown"
-        value={markdown}
-        onChange={(e) => { setMarkdown(e.target.value); setDirty(true); }}
-        fullWidth
-        multiline
-        minRows={10}
-        placeholder="Write in Markdown…"
-        sx={{ flex: 1, overflow: 'auto' }}
-      />
+          <TextField
+            label="Markdown"
+            value={markdown}
+            onChange={(e) => { setMarkdown(e.target.value); setDirty(true); }}
+            fullWidth
+            multiline
+            minRows={10}
+            placeholder="Write in Markdown…"
+            sx={{ flex: 1, overflow: 'auto' }}
+          />
+          <Divider />
+        </>
+      )}
 
-      {/* Live Preview */}
-      <Divider />
+      {/* Preview */}
+      {!editing && <Divider />}
       <Typography variant="subtitle2" color="text.secondary">Preview</Typography>
       <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
         <Typography variant="h5" sx={{ mb: 1 }}>{title || 'Untitled'}</Typography>
