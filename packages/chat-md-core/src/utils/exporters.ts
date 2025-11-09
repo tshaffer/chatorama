@@ -5,75 +5,6 @@ import { ExportNoteMetadata, ExportTurn } from '../types';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
 
-// ---------------- YAML Front Matter (legacy path stays intact) ----------------
-
-function yamlEscape(val: string) {
-  // Wrap in double quotes & escape inner quotes/newlines/backslashes
-  return `"${val.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
-}
-
-function toYAML(meta: ExportNoteMetadata): string {
-  const lines: string[] = [];
-  lines.push('---');
-  lines.push(`noteId: ${yamlEscape(meta.noteId)}`);
-  lines.push(`source: ${yamlEscape(meta.source)}`);
-  if (meta.chatId) lines.push(`chatId: ${yamlEscape(meta.chatId)}`);
-  if (meta.chatTitle) lines.push(`chatTitle: ${yamlEscape(meta.chatTitle)}`);
-  lines.push(`pageUrl: ${yamlEscape(meta.pageUrl)}`);
-  lines.push(`exportedAt: ${yamlEscape(meta.exportedAt)}`);
-  if (meta.model) lines.push(`model: ${yamlEscape(meta.model)}`);
-
-  lines.push(`subject: ${yamlEscape((meta as any).subject ?? '')}`);
-  lines.push(`topic: ${yamlEscape((meta as any).topic ?? '')}`);
-
-  const summaryVal = (meta as any).summary;
-  lines.push(`summary: ${summaryVal === null ? 'null' : yamlEscape(summaryVal ?? '')}`);
-  const tagsVal = (meta as any).tags ?? [];
-  lines.push(`tags: [${(tagsVal as string[]).map(t => yamlEscape(t)).join(', ')}]`);
-
-  const ag = (meta as any).autoGenerate ?? { summary: true, tags: true };
-  lines.push(`autoGenerate:`);
-  lines.push(`  summary: ${ag.summary}`);
-  lines.push(`  tags: ${ag.tags}`);
-
-  if ((meta as any).noteMode) lines.push(`noteMode: ${yamlEscape((meta as any).noteMode)}`);
-  if (typeof (meta as any).turnCount === 'number') lines.push(`turnCount: ${(meta as any).turnCount}`);
-  if ((meta as any).splitHints?.length) {
-    lines.push(`splitHints: [${(meta as any).splitHints.map((h: string) => yamlEscape(h)).join(', ')}]`);
-  }
-
-  if ((meta as any).author) lines.push(`author: ${yamlEscape((meta as any).author)}`);
-  if ((meta as any).visibility) lines.push(`visibility: ${yamlEscape((meta as any).visibility)}`);
-  lines.push('---');
-  return lines.join('\n');
-}
-
-export function toMarkdownWithFrontMatter(
-  meta: ExportNoteMetadata,
-  turns: ExportTurn[],
-  freeformNotes?: string
-): string {
-  const frontMatter = toYAML(meta);
-
-  const turnsBlock = [
-    ':::turns',
-    ...turns.map(t => {
-      const r = `- role: ${t.role}`;
-      const time = t.time ? `\n  time: "${t.time}"` : '';
-      // Ensure text is single-line safe YAML-like; importer will handle \n
-      const text = `\n  text: "${t.text.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
-      return r + time + text;
-    }),
-    ':::end-turns',
-  ].join('\n');
-
-  const notesSection = freeformNotes?.trim()
-    ? `\n\n## Notes\n${freeformNotes.trim()}\n`
-    : '\n';
-
-  return `${frontMatter}\n\n# Transcript\n\n${turnsBlock}${notesSection}`;
-}
-
 // ---------------- Shared helpers ----------------
 
 function roleLabel(role: ExportTurn['role']): 'Prompt' | 'Response' | 'System' | 'Tool' {
@@ -344,8 +275,7 @@ function toPureMarkdownChatStyleFromHtml(
  * - 'markdown_pure'  => ChatGPT Exporter–style Markdown using per-turn HTML bodies (now with ToC + anchors)
  * - 'markdown_html'  => your existing YAML + transcript block (legacy)
  */
-export function buildMarkdownExportByFormat(
-  format: 'markdown_html' | 'markdown_pure',
+export function buildMarkdownExport(
   meta: ExportNoteMetadata,
   turns: ExportTurn[],
   opts?: {
@@ -361,72 +291,69 @@ export function buildMarkdownExportByFormat(
     ? { ...meta, chatTitle: opts.title }
     : meta;
 
-  if (format === 'markdown_pure') {
-    const htmlBodies = opts?.htmlBodies ?? [];
-    const includeToc = opts?.includeToc ?? true;
 
-    // Fallback: if not provided, degrade to text-only, but still add ToC + anchors
-    if (!htmlBodies.length || htmlBodies.length !== turns.length) {
-      const head = (opts?.includeFrontMatter ?? true) ? renderFrontMatter(metaWithTitle) : '';
-      const title = metaWithTitle.chatTitle || 'Chat Export';
-      const metaLines = [
-        head,
-        `# ${title}`,
-        '',
-        metaWithTitle.pageUrl ? `Source: ${metaWithTitle.pageUrl}` : '',
-        metaWithTitle.exportedAt ? `Exported: ${metaWithTitle.exportedAt}` : '',
-        ''
-      ].filter(Boolean).join('\n');
+  const htmlBodies = opts?.htmlBodies ?? [];
+  const includeToc = opts?.includeToc ?? true;
 
-      // Build prompt list for ToC from plain text
-      const prompts: { idx: number; title: string; anchor: string }[] = [];
-      let pc = 0;
-      for (const t of turns) {
-        if (t.role === 'user') {
-          pc += 1;
-          prompts.push({
-            idx: pc,
-            title: firstLineTitle(t.text, `Prompt ${pc}`),
-            anchor: `p-${pc}`,
-          });
-        }
+  // Fallback: if not provided, degrade to text-only, but still add ToC + anchors
+  if (!htmlBodies.length || htmlBodies.length !== turns.length) {
+    const head = (opts?.includeFrontMatter ?? true) ? renderFrontMatter(metaWithTitle) : '';
+    const title = metaWithTitle.chatTitle || 'Chat Export';
+    const metaLines = [
+      head,
+      `# ${title}`,
+      '',
+      metaWithTitle.pageUrl ? `Source: ${metaWithTitle.pageUrl}` : '',
+      metaWithTitle.exportedAt ? `Exported: ${metaWithTitle.exportedAt}` : '',
+      ''
+    ].filter(Boolean).join('\n');
+
+    // Build prompt list for ToC from plain text
+    const prompts: { idx: number; title: string; anchor: string }[] = [];
+    let pc = 0;
+    for (const t of turns) {
+      if (t.role === 'user') {
+        pc += 1;
+        prompts.push({
+          idx: pc,
+          title: firstLineTitle(t.text, `Prompt ${pc}`),
+          anchor: `p-${pc}`,
+        });
       }
-
-      const toc = includeToc ? buildToc(prompts) : [];
-
-      // Render body with anchors
-      let currentPrompt = 0;
-      const blocks = turns.map((t) => {
-        const body = (t.text || '').replace(/\r\n/g, '\n').trimEnd();
-        if (t.role === 'user') {
-          currentPrompt += 1;
-          return renderPromptBlockquoteWithAnchor(body, `p-${currentPrompt}`);
-        }
-        if (t.role === 'assistant') return renderResponseSection(body);
-        const label = roleLabel(t.role);
-        return `**${label}**\n\n${body}`;
-      });
-
-      const body = blocks.join('\n\n');
-      const notes = opts?.freeformNotes?.trim() ? `\n\n## Notes\n\n${opts.freeformNotes.trim()}\n` : '';
-      return `${metaLines}${toc.join('\n')}${body}${notes}${body.endsWith('\n') ? '' : '\n'}`;
     }
 
-    return toPureMarkdownChatStyleFromHtml(
-      metaWithTitle,
-      turns,
-      htmlBodies,
-      {
-        title: metaWithTitle.chatTitle,
-        includeFrontMatter: opts?.includeFrontMatter ?? true,
-        includeMetaRow: opts?.includeMetaRow ?? true,
-        hrBetween: true,
-        freeformNotes: opts?.freeformNotes,
-        includeToc,
+    const toc = includeToc ? buildToc(prompts) : [];
+
+    // Render body with anchors
+    let currentPrompt = 0;
+    const blocks = turns.map((t) => {
+      const body = (t.text || '').replace(/\r\n/g, '\n').trimEnd();
+      if (t.role === 'user') {
+        currentPrompt += 1;
+        return renderPromptBlockquoteWithAnchor(body, `p-${currentPrompt}`);
       }
-    );
+      if (t.role === 'assistant') return renderResponseSection(body);
+      const label = roleLabel(t.role);
+      return `**${label}**\n\n${body}`;
+    });
+
+    const body = blocks.join('\n\n');
+    const notes = opts?.freeformNotes?.trim() ? `\n\n## Notes\n\n${opts.freeformNotes.trim()}\n` : '';
+    return `${metaLines}${toc.join('\n')}${body}${notes}${body.endsWith('\n') ? '' : '\n'}`;
   }
 
-  // Legacy exporter
-  return toMarkdownWithFrontMatter(metaWithTitle, turns, opts?.freeformNotes);
+  return toPureMarkdownChatStyleFromHtml(
+    metaWithTitle,
+    turns,
+    htmlBodies,
+    {
+      title: metaWithTitle.chatTitle,
+      includeFrontMatter: opts?.includeFrontMatter ?? true,
+      includeMetaRow: opts?.includeMetaRow ?? true,
+      hrBetween: true,
+      freeformNotes: opts?.freeformNotes,
+      includeToc,
+    }
+  );
+
 }

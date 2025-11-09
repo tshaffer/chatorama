@@ -34,5 +34,3 @@ export interface ExportNoteMetadata {
   author?: string;
   visibility?: 'private' | 'shared' | 'public';
 }
-
-export type ExportFormat = 'markdown_html' | 'markdown_pure';

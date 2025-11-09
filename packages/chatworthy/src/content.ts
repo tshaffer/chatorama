@@ -1,7 +1,7 @@
 // Mark as a module (good for TS/isolatedModules)
 
 import { getChatTitleAndProject } from './domExtractors';
-import { buildMarkdownExportByFormat } from '@chatorama/chat-md-core';
+import { buildMarkdownExport } from '@chatorama/chat-md-core';
 import type {
   ExportTurn,
   ExportNoteMetadata
@@ -12,7 +12,6 @@ import type {
  *  chatworthy Content Script (v2 — Chatalog-ready)
  *  - Floating “Export” UI (collapsible)
  *  - Robust observer for new messages
- *  - Adds a "Pure Markdown" export option (no embedded HTML)
  *  - Relabels "You/ChatGPT" -> "Prompt/Response"
  *  - Works even when the page lacks data-message-author-role (uses our own tags)
  *  - NEW: Click an item in the list to scroll to that Prompt
@@ -28,13 +27,9 @@ const EXPORT_BTN_ID = 'chatworthy-export-btn';
 const TOGGLE_BTN_ID = 'chatworthy-toggle-btn';
 const ALL_BTN_ID = 'chatworthy-all-btn';
 const NONE_BTN_ID = 'chatworthy-none-btn';
-const PURE_MD_CHECKBOX_ID = 'chatworthy-pure-md';
 
 const OBSERVER_THROTTLE_MS = 200;
 const COLLAPSE_LS_KEY = 'chatworthy:collapsed';
-const FORMAT_LS_KEY = 'chatworthy:export-format';
-
-type ExportFormat = 'markdown_html' | 'markdown_pure';
 
 let repairTimer: number | null = null;
 
@@ -281,21 +276,6 @@ function getChatIdFromUrl(href: string): string | undefined {
   return match?.[1];
 }
 
-function getInitialExportFormat(): ExportFormat {
-  try {
-    const raw = localStorage.getItem(FORMAT_LS_KEY);
-    if (raw === 'markdown_pure' || raw === 'markdown_html') return raw;
-  } catch { /* ignore */ }
-  return 'markdown_html';
-}
-
-let exportFormat: ExportFormat = getInitialExportFormat();
-
-function setExportFormat(fmt: ExportFormat) {
-  exportFormat = fmt;
-  try { localStorage.setItem(FORMAT_LS_KEY, fmt); } catch { /* ignore */ }
-}
-
 function escapeRegex(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -362,8 +342,7 @@ function buildExportFromTurns(
     visibility: 'private',
   } satisfies ExportNoteMetadata;
 
-  const markdownExportByFormat: string = buildMarkdownExportByFormat(
-    exportFormat,
+  const markdownExport: string = buildMarkdownExport(
     meta,
     turns,
     {
@@ -374,14 +353,13 @@ function buildExportFromTurns(
     }
   );
 
-  console.log('Inputs to buildMarkdownExportByFormat:');
-  console.log('exportFormat:', exportFormat);
+  console.log('Inputs to buildMarkdownExport:');
   console.log('meta:', meta);
   console.log('turns:', turns);
   console.log('htmlBodies:', htmlBodies);
-  console.log('Generated Markdown:\n', markdownExportByFormat);
+  console.log('Generated Markdown:\n', markdownExport);
   
-  return markdownExportByFormat;
+  return markdownExport;
 }
 
 function downloadExport(filename: string, data: string | Blob) {
@@ -631,23 +609,6 @@ function ensureFloatingUI() {
         updateControlsState();
       };
 
-      const pureLabel = d.createElement('label');
-      pureLabel.className = 'chatworthy-toggle';
-      pureLabel.htmlFor = PURE_MD_CHECKBOX_ID;
-
-      const pureCb = d.createElement('input');
-      pureCb.type = 'checkbox';
-      pureCb.id = PURE_MD_CHECKBOX_ID;
-      pureCb.checked = (exportFormat === 'markdown_pure');
-      pureCb.addEventListener('change', () => {
-        setExportFormat(pureCb.checked ? 'markdown_pure' : 'markdown_html');
-      });
-
-      const pureSpan = d.createElement('span');
-      pureSpan.textContent = 'Pure MD';
-      pureLabel.appendChild(pureCb);
-      pureLabel.appendChild(pureSpan);
-
       const exportBtn = d.createElement('button');
       exportBtn.id = EXPORT_BTN_ID;
       exportBtn.type = 'button';
@@ -670,7 +631,6 @@ function ensureFloatingUI() {
       controls.appendChild(toggleBtn);
       controls.appendChild(btnAll);
       controls.appendChild(btnNone);
-      controls.appendChild(pureLabel);
       controls.appendChild(exportBtn);
       root.appendChild(controls);
     } else {
