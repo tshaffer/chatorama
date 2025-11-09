@@ -15,25 +15,67 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // ---------------- helpers ----------------
 
-/** Remove ToC block, anchor lines, and meta rows so Chatalog keeps the body clean. */
-function stripForChatalog(md: string): string {
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildCompositeTitle(subject?: string, topic?: string): string | undefined {
+  if (!subject || !topic) return undefined;
+  return `${subject.trim()} - ${topic.trim()}`;
+}
+
+type StripOpts = {
+  subject?: string;
+  topic?: string;
+  chatTitle?: string;
+  fmTitle?: string;
+};
+
+/** Remove ToC block, anchors, meta rows, and a duplicate first H1 title. */
+function stripForChatalog(md: string, opts: StripOpts = {}): string {
   let out = md;
 
-  // 1) Drop the "## Table of Contents" section consisting of:
-  //    heading, an optional blank line, then one or more lines like "1. [Title](#p-1)"
-  //    We stop at the first non-TOC-ish line.
+  // 1) Drop the "## Table of Contents" section
   out = out.replace(
     /^\s*##\s*Table of Contents\s*\r?\n(?:\r?\n)?(?:^\d+\.\s+\[.*?\]\(#p-\d+\)\s*\r?\n)+/gmi,
     ''
   );
 
   // 2) Remove standalone anchor lines like <a id="p-2"></a>
-  //    (they’re inserted just before each Prompt)
   out = out.replace(/^\s*<a id="p-\d+"><\/a>\s*$(?:\r?\n)?/gmi, '');
 
-  // 3) Remove the meta row lines the exporter may include (we don't want them in Chatalog)
+  // 3) Remove exporter meta rows
   out = out.replace(/^Source:\s.*$\r?\n?/gmi, '');
   out = out.replace(/^Exported:\s.*$\r?\n?/gmi, '');
+
+  // 3.5) Remove a duplicate top-level H1 that matches our computed title(s).
+  const candidates: string[] = [];
+  const composite = buildCompositeTitle(opts.subject, opts.topic);
+  if (composite) candidates.push(composite);
+  if (opts.chatTitle) candidates.push(opts.chatTitle);
+  if (opts.fmTitle) candidates.push(opts.fmTitle);
+
+  if (opts.subject && opts.topic) {
+    const sub = escapeRe(opts.subject.trim());
+    const top = escapeRe(opts.topic.trim());
+    const reComposite =
+      new RegExp(
+        String.raw`^(?:\uFEFF)?\s*#\s*${sub}\s*[–—\-:]\s*${top}\s*\r?\n+`,
+        'i'
+      );
+    out = out.replace(reComposite, '');
+  }
+
+  for (const t of candidates) {
+    const esc = escapeRe(t.trim());
+    const re =
+      new RegExp(
+        String.raw`^(?:\uFEFF)?\s*#\s*${esc}\s*\r?\n+`,
+        'i'
+      );
+    const next = out.replace(re, '');
+    if (next !== out) { out = next; break; }
+  }
 
   // 4) Collapse excessive blank lines
   out = out.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trimEnd();
@@ -70,10 +112,7 @@ async function dedupeNoteSlug(topicId: string | undefined, base: string): Promis
   let slug = seed;
   let i = 2;
 
-  // Note slug is unique within (topicId) scope in your current model
-  // If topicId is empty/undefined, store empty string in scope for uniqueness.
   const scope: any = { slug, topicId: topicId ?? '' };
-
   while (await NoteModel.exists(scope)) {
     slug = `${seed}-${i++}`;
     scope.slug = slug;
@@ -111,14 +150,24 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd {
   const fm = gm.data as Record<string, any>;
 
   const titleFromH1 = gm.content.match(/^#\s+(.+)\s*$/m)?.[1]?.trim();
+  const fmTitle = typeof fm.title === 'string' ? fm.title.trim() : undefined;
+  const fmChatTitle = typeof fm.chatTitle === 'string' ? fm.chatTitle.trim() : undefined;
+  const subject = typeof fm.subject === 'string' ? fm.subject : undefined;
+  const topic = typeof fm.topic === 'string' ? fm.topic : undefined;
+
   const title =
-    (typeof fm.title === 'string' && fm.title.trim()) ||
-    (typeof fm.chatTitle === 'string' && fm.chatTitle.trim()) ||
+    fmTitle ||
+    fmChatTitle ||
     titleFromH1 ||
     fileName.replace(/\.(md|markdown)$/i, '');
 
-  // 👇 Use the cleaned body instead of the raw content
-  const markdown = stripForChatalog(gm.content).trim();
+  // Use the cleaned body (including duplicate-title stripping)
+  const markdown = stripForChatalog(gm.content, {
+    subject,
+    topic,
+    chatTitle: fmChatTitle,
+    fmTitle,
+  }).trim();
 
   const tags = toArrayTags(fm.tags);
   const summary = typeof fm.summary === 'string' ? fm.summary : undefined;
@@ -130,8 +179,8 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd {
     tags,
     summary,
     provenanceUrl,
-    subjectName: typeof fm.subject === 'string' ? fm.subject : undefined,
-    topicName: typeof fm.topic === 'string' ? fm.topic : undefined,
+    subjectName: subject,
+    topicName: topic,
   };
 }
 
@@ -175,15 +224,15 @@ async function persistParsedMd(p: ParsedMd): Promise<{ id: string; title: string
 
   const doc: NoteDoc = await NoteModel.create({
     subjectId: subjectId ?? '',
-    topicId:   topicId ?? '',
-    title:     p.title || 'Untitled',
+    topicId: topicId ?? '',
+    title: p.title || 'Untitled',
     slug,
-    markdown:  p.markdown,
-    summary:   p.summary,
-    tags:      p.tags,
-    links:     [],
+    markdown: p.markdown,
+    summary: p.summary,
+    tags: p.tags,
+    links: [],
     backlinks: [],
-    sources:   p.provenanceUrl
+    sources: p.provenanceUrl
       ? [{ type: 'chatworthy', url: p.provenanceUrl }]
       : [{ type: 'chatworthy' }],
   });
