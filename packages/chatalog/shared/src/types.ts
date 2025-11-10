@@ -49,3 +49,12 @@ export interface NotePreview {
   tags: string[];
   updatedAt: string;         // ISO
 }
+
+// ADD near your Subject/Topic interfaces
+export interface RenameSubjectRequest {
+  name: string; // new name
+}
+
+export interface RenameTopicRequest {
+  name: string; // new name
+}

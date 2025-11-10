@@ -2,6 +2,10 @@ import { Request, Response } from 'express';
 import { TopicModel } from '../models/Topic';
 import { NoteModel } from '../models/Note';
 
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
 export async function listTopicsForSubjectId(req: Request, res: Response) {
   const { subjectId } = req.params;
   const docs = await TopicModel.find({ subjectId }).sort({ name: 1 }).exec();
@@ -21,4 +25,40 @@ export async function listNotesForSubjectTopicIds(req: Request, res: Response) {
     .exec();
 
   res.json(docs.map(d => d.toJSON()));
+}
+
+/**
+ * PATCH /api/v1/subjects/:subjectId/topics/:topicId
+ * Body: { name: string }
+ * Query: preserveSlug=1 to keep existing slug (default: regenerate to match name)
+ */
+export async function renameTopic(req: Request, res: Response) {
+  try {
+    const { subjectId, topicId } = req.params;
+    const { name } = req.body as { name?: string };
+    const preserveSlug = req.query.preserveSlug === '1';
+
+    if (!name?.trim()) {
+      return res.status(400).json({ message: 'Name is required.' });
+    }
+
+    const topic = await TopicModel.findOne({ _id: topicId, subjectId }).orFail();
+    topic.name = name.trim();
+
+    if (!preserveSlug) {
+      topic.slug = slugify(topic.name);
+    }
+
+    await topic.save(); // respects (subjectId,name) and (subjectId,slug) uniqueness
+    return res.json(topic.toJSON());
+  } catch (err: any) {
+    if (err?.name === 'DocumentNotFoundError') {
+      return res.status(404).json({ message: 'Topic not found.' });
+    }
+    if (err?.code === 11000) {
+      return res.status(409).json({ message: 'A topic with that name/slug already exists for this subject.' });
+    }
+    console.error('renameTopic error', err);
+    return res.status(500).json({ message: 'Internal error.' });
+  }
 }

@@ -6,5 +6,5 @@ export const chatalogApi = createApi({
   reducerPath: 'chatalogApi',
   baseQuery: fetchBaseQuery({ baseUrl: API_BASE || '' }), // same-origin if ''
   tagTypes: ['Subject', 'Topic', 'Note'],
-  endpoints: () => ({}),
+  endpoints: () => ({}), // no queries/mutations here — use injectEndpoints elsewhere
 });
