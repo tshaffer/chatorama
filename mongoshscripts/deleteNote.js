@@ -1,6 +1,6 @@
 // === Delete a note + cascade cleanup (topics, subjects) ===
 // SET THIS:
-const NOTE_ID_HEX = '690fd7a934fbc675eca704e9';  // <-- put note's _id hex here
+const NOTE_ID_HEX = '6910c4f9aa8439b5666c520e';  // <-- put note's _id hex here
 const DRY_RUN = false;                            // true = preview only
 
 function oidOrNull(s) { try { return s ? ObjectId(s) : null; } catch (e) { return null; } }
