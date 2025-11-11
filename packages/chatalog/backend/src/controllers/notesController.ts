@@ -22,19 +22,26 @@ async function dedupeNoteSlug(topicId: string | undefined, base: string, exclude
   return slug;
 }
 
+// controllers/notesController.ts (only listNotes shown; others unchanged)
 export async function listNotes(req: Request, res: Response) {
   const { subjectId, topicId } = req.query as { subjectId?: string; topicId?: string };
   const filter: any = {};
   if (subjectId) filter.subjectId = subjectId;
   if (topicId) filter.topicId = topicId;
 
-  const docs = await NoteModel.find(
-    filter,
-    { title: 1, summary: 1, tags: 1, updatedAt: 1 }
-  )
-    .sort({ updatedAt: -1 })
-    .exec();
+  const projection = { title: 1, summary: 1, tags: 1, updatedAt: 1 };
 
+  let query = NoteModel.find(filter, projection);
+
+  if (topicId) {
+    // Persistent order within topic (stable with _id)
+    query = query.sort({ order: 1, _id: 1 });
+  } else {
+    // Default list: most recently updated first
+    query = query.sort({ updatedAt: -1 });
+  }
+
+  const docs = await query.exec();
   res.json(docs.map(d => d.toJSON()));
 }
 
@@ -48,7 +55,26 @@ export async function getNote(req: Request, res: Response) {
 export async function createNote(req: Request, res: Response) {
   const { subjectId, topicId, title = 'Untitled', markdown = '', summary, tags = [] } = req.body ?? {};
   const slug = (title || 'untitled').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-  const doc = await NoteModel.create({ subjectId, topicId, title, slug, markdown, summary, tags });
+
+  const min = await NoteModel
+    .findOne({ topicId })
+    .sort({ order: 1 }) // lowest first
+    .select({ order: 1 })
+    .lean();
+
+  const topOrder = (min?.order ?? 0) - 1;
+
+  const doc = await NoteModel.create({
+    subjectId,
+    topicId,
+    title,
+    slug,
+    markdown,
+    summary,
+    tags,
+    order: topOrder,
+  });
+
   res.status(201).json(doc.toJSON());
 }
 

@@ -27,19 +27,54 @@ export async function listTopicsForSubjectId(req: Request, res: Response, next: 
   }
 }
 
-// notes list for a topic (previews), ID-based
+// GET /api/v1/subjects/:subjectId/topics/:topicId/notes
 export async function listNotesForSubjectTopicIds(req: Request, res: Response) {
   const { subjectId, topicId } = req.params;
-  // (optional) verify the topic belongs to subjectId
 
-  const docs = await NoteModel.find(
-    { topicId },
-    { title: 1, summary: 1, tags: 1, updatedAt: 1 }
-  )
-    .sort({ updatedAt: -1 })
+  // Optional: verify topic belongs to subject
+  const topic = await TopicModel.findOne({ _id: topicId, subjectId }).select({ _id: 1 }).lean();
+  if (!topic) return res.status(404).json({ message: 'Topic not found for subject' });
+
+  const notes = await NoteModel
+    .find({ topicId }, { title: 1, summary: 1, tags: 1, updatedAt: 1, order: 1 })
+    .sort({ order: 1, _id: 1 })
     .exec();
 
-  res.json(docs.map(d => d.toJSON()));
+  res.json(notes.map(n => n.toJSON()));
+}
+
+// PATCH /api/v1/subjects/:subjectId/topics/:topicId/notes/reorder
+export async function reorderNotesForTopic(req: Request, res: Response) {
+  const { subjectId, topicId } = req.params;
+  const { noteIdsInOrder } = req.body as { noteIdsInOrder: string[] };
+
+  if (!Array.isArray(noteIdsInOrder) || noteIdsInOrder.length === 0) {
+    return res.status(400).json({ error: 'noteIdsInOrder must be a non-empty array' });
+  }
+
+  // verify topic exists and belongs to subject
+  const topic = await TopicModel.findOne({ _id: topicId, subjectId }).select({ _id: 1 }).lean();
+  if (!topic) return res.status(404).json({ error: 'Topic not found for subject' });
+
+  // verify all notes belong to this topic
+  const count = await NoteModel.countDocuments({ _id: { $in: noteIdsInOrder }, topicId });
+  if (count !== noteIdsInOrder.length) {
+    return res.status(400).json({ error: 'All noteIds must belong to the specified topic' });
+  }
+
+  // compact rewrite 0..N
+  const ops = noteIdsInOrder.map((id, idx) => ({
+    updateOne: { filter: { _id: id, topicId }, update: { $set: { order: idx } } }
+  }));
+  if (ops.length) await NoteModel.bulkWrite(ops);
+
+  // return freshly sorted list
+  const notes = await NoteModel
+    .find({ topicId })
+    .sort({ order: 1, _id: 1 })
+    .exec();
+
+  res.json(notes.map(n => n.toJSON()));
 }
 
 /**

@@ -10,6 +10,9 @@
   "dependencies": {
     "@chatorama/chat-md-core": "file:../../chat-md-core",
     "@chatorama/chatalog-shared": "file:../shared",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/modifiers": "^9.0.0",
+    "@dnd-kit/sortable": "^10.0.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^7.3.4",

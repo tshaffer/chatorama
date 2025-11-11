@@ -16,7 +16,6 @@ export const subjectsApi = baseApi.injectEndpoints({
 
     getTopicsForSubject: build.query<Topic[], string>({
       query: (subjectId) => ({ url: `subjects/${subjectId}/topics` }),
-      // NOTE: third param is the original query arg (subjectId)
       providesTags: (res, _err, subjectId) => {
         const listTag = { type: 'Topic' as const, id: `LIST:${subjectId}` };
         if (!res) return [listTag];
@@ -29,10 +28,12 @@ export const subjectsApi = baseApi.injectEndpoints({
 
     getNotePreviewsForTopic: build.query<NotePreview[], { subjectId: string; topicId: string }>({
       query: ({ subjectId, topicId }) => ({ url: `subjects/${subjectId}/topics/${topicId}/notes` }),
-      providesTags: (res) =>
-        res
-          ? [{ type: 'Note' as const, id: 'LIST' }, ...res.map(n => ({ type: 'Note' as const, id: safeId(n as any) }))]
-          : [{ type: 'Note' as const, id: 'LIST' }],
+      providesTags: (res, _err, { subjectId, topicId }) => {
+        const listTag = { type: 'Note' as const, id: `LIST:${subjectId}:${topicId}` };
+        return res
+          ? [listTag, ...res.map(n => ({ type: 'Note' as const, id: safeId(n as any) }))]
+          : [listTag];
+      },
     }),
 
     createSubject: build.mutation<Subject, { name: string }>({
@@ -45,7 +46,6 @@ export const subjectsApi = baseApi.injectEndpoints({
       invalidatesTags: (_r, _e, { subjectId }) => [
         { type: 'Subject', id: 'LIST' },
         { type: 'Subject', id: subjectId },
-        // also nuke this subject’s topic list
         { type: 'Topic', id: `LIST:${subjectId}` },
       ],
     }),
@@ -59,7 +59,6 @@ export const subjectsApi = baseApi.injectEndpoints({
           body: { name },
         }),
         async onQueryStarted({ subjectId, name }, { dispatch, queryFulfilled }) {
-          // Use subjectsApi.util, not baseApi.util
           const patch = dispatch(
             subjectsApi.util.updateQueryData('getSubjects', undefined, (draft: Subject[]) => {
               const s = draft.find(d => d.id === subjectId);

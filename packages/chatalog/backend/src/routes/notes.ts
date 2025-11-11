@@ -18,4 +18,3 @@ notesRouter.patch('/:id', patchNote);   // PATCH  /api/v1/notes/:id
 notesRouter.delete('/:id', deleteNote); // DELETE /api/v1/notes/:id
 
 export default notesRouter;
-``

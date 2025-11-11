@@ -58,3 +58,8 @@ export interface RenameSubjectRequest {
 export interface RenameTopicRequest {
   name: string; // new name
 }
+
+// packages/chatalog/shared/src/types.ts (or wherever you keep shared types)
+export type ReorderNotesRequest = {
+  noteIdsInOrder: string[];
+};

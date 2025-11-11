@@ -2,47 +2,42 @@
 import { createBrowserRouter } from 'react-router-dom';
 import AppShell from './AppShell';
 import Home from './pages/Home';
-import Notes from './pages/Notes';
 import SubjectsPage from './pages/Subjects';
 import QuickNotesPage from './features/quickNotes/QuickNotesPage';
+import TopicNotesPage from './pages/TopicNotesPage';
+import NotePage from './pages/NotePage';
+import NotesIndex from './pages/NotesIndex';
+import SubjectIndex from './pages/SubjectIndex';
 
 export const router = createBrowserRouter([
   {
     path: '/',
     element: <AppShell />,
     children: [
-      // Home
       { index: true, element: <Home /> },
-      { path: 'home', element: <Home /> }, // optional alias
+      { path: 'home', element: <Home /> },
 
-      // Notes hierarchy
-      // List all subjects
-      { path: 's', element: <Notes /> },
+      // Toolbar "Notes" → choose first subject (or /subjects if none)
+      { path: 's', element: <NotesIndex /> },
 
-      { path: '/subjects', element: <SubjectsPage /> },
+      // Selecting a subject → auto-jump to its first topic
+      { path: 's/:subjectSlug', element: <SubjectIndex /> },
 
-      // Subject-level list
-      { path: 's/:subjectSlug', element: <Notes /> },
+      // Topic view → show notes list (drag-to-reorder lives here)
+      { path: 's/:subjectSlug/t/:topicSlug', element: <TopicNotesPage /> },
 
-      // Topic-level list
-      { path: 's/:subjectSlug/t/:topicSlug', element: <Notes /> },
+      // Note view (with/without slug)
+      { path: 's/:subjectSlug/t/:topicSlug/n/:noteId-:noteSlug', element: <NotePage /> },
+      { path: 's/:subjectSlug/t/:topicSlug/n/:noteId', element: <NotePage /> },
 
-      // NOTE DETAIL (ID-first, slug cosmetic):
-      // Preferred canonical pattern → /s/{subject}/t/{topic}/n/{noteId}-{noteSlug}
-      // Example: /s/aiux/t/prompt-design/n/66ff2ad4a2f0c8e7d1b2c3d4-designing-effective-prompts
-      { path: 's/:subjectSlug/t/:topicSlug/n/:noteId-:noteSlug', element: <Notes /> },
+      // Direct deep link to a note id
+      { path: 'n/:noteId', element: <NotePage /> },
 
-      // Optional: allow ID-only (no slug) — still renders the same page
-      { path: 's/:subjectSlug/t/:topicSlug/n/:noteId', element: <Notes /> },
+      { path: 'subjects', element: <SubjectsPage /> },
+      { path: 'quick-notes', element: <QuickNotesPage /> },
 
-      { path: '/quick-notes', element: <QuickNotesPage /> },
-
-      // Catch-all (inside shell)
       { path: '*', element: <div style={{ padding: 16 }}>Not found (inside AppShell)</div> },
     ],
   },
-
-  // Fallback (outside shell)
   { path: '*', element: <div style={{ padding: 16 }}>Not found</div> },
 ]);
-

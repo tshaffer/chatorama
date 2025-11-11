@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { listSubjects, getSubjectById, renameSubject } from '../controllers/subjectsController';
-import { listTopicsForSubjectId, listNotesForSubjectTopicIds, renameTopic } from '../controllers/topicsController';
+import { listTopicsForSubjectId, listNotesForSubjectTopicIds, renameTopic, reorderNotesForTopic } from '../controllers/topicsController';
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
 import { deleteSubjectCascade, deleteTopicCascade } from '../models/hooks/cascade';
@@ -19,6 +19,9 @@ subjectsRouter.get('/:subjectId/topics', listTopicsForSubjectId);
 
 // /api/v1/subjects/:subjectId/topics/:topicId/notes
 subjectsRouter.get('/:subjectId/topics/:topicId/notes', listNotesForSubjectTopicIds);
+
+// PATCH /api/v1/subjects/:subjectId/topics/:topicId/notes/reorder
+subjectsRouter.patch('/:subjectId/topics/:topicId/notes/reorder', reorderNotesForTopic);
 
 // /api/v1/subjects/:subjectId/topics/:topicId
 subjectsRouter.patch('/:subjectId/topics/:topicId', renameTopic);

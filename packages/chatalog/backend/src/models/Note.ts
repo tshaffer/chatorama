@@ -15,6 +15,8 @@ export interface NoteDoc extends Document {
   links: string[];
   backlinks: string[];
   sources?: { url?: string; type?: 'chatworthy'|'clip'|'manual' }[];
+  /** Persistent display ordering within a topic (lower = earlier) */
+  order: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,7 +34,7 @@ const SourceSchema = new Schema<Source>(
 const NoteSchema = new Schema<NoteDoc>(
   {
     subjectId: { type: String },
-    topicId:   { type: String },
+    topicId:   { type: String, index: true },
     title:     { type: String, required: true, default: 'Untitled' },
     slug:      { type: String, required: true, index: true },
     markdown:  { type: String, required: true, default: '' },
@@ -41,17 +43,22 @@ const NoteSchema = new Schema<NoteDoc>(
     links:     { type: [String], default: [] },
     backlinks: { type: [String], default: [] },
     sources:   { type: [SourceSchema], default: [] },
+
+    // NEW: persistent ordering within a topic; lower values appear first
+    order:     { type: Number, required: true, default: 0, index: true },
   },
   { timestamps: true }
 );
 
 // ---- Indexes ----
-// Ensure each (topicId, slug) pair is unique. If you scope by subject instead,
-// change the first key to subjectId. Partial filter keeps the index lean.
+// Keep slugs unique per topic (or change to subjectId if you scope differently)
 NoteSchema.index(
   { topicId: 1, slug: 1 },
   { unique: true, partialFilterExpression: { slug: { $type: 'string' } } }
 );
+
+// Fast stable sort when listing notes by topic
+NoteSchema.index({ topicId: 1, order: 1, _id: 1 });
 
 // Optional: if you want fast search by title/markdown later
 // NoteSchema.index({ title: 'text', markdown: 'text' });
