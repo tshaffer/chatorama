@@ -1,19 +1,58 @@
 // chatalog/frontend/src/AppShell.tsx
 import React from 'react';
-import { Outlet, Link, useLocation, useParams } from 'react-router-dom';
-import { AppBar, Toolbar, Typography, Button, Stack, Box } from '@mui/material';
+import { Outlet, Link, useLocation, useParams, useMatch } from 'react-router-dom';
+import { AppBar, Toolbar, Typography, Button, Stack, Box, alpha } from '@mui/material';
 import ImportChatworthyButton from './components/ImportChatworthyButton';
 import { useEffect } from 'react';
 import { fetchJSON } from './lib/api';
+import NoteAddIcon from '@mui/icons-material/NoteAdd';
+import { IconButton, Tooltip } from '@mui/material';
+import { useState } from 'react';
+import QuickCaptureDialog from './features/quickNotes/QuickCaptureDialog';
+
+function TopNavButton({ to, children }: { to: string; children: React.ReactNode }) {
+  const match = useMatch({ path: to === '/' ? '/' : `${to}/*`, end: to === '/' });
+  return (
+    <Button
+      component={Link}
+      to={to}
+      color="inherit"
+      variant="text"
+      sx={(theme) => ({
+        textTransform: 'uppercase',
+        fontWeight: 600,
+        letterSpacing: '0.06em',
+        px: 2,
+        borderRadius: 2,
+        '&:hover': { backgroundColor: alpha(theme.palette.common.white, 0.12) },
+        ...(match && { backgroundColor: alpha(theme.palette.common.white, 0.18) }), // active pill
+      })}
+    >
+      {children}
+    </Button>
+  );
+}
 
 export default function AppShell() {
   const { pathname } = useLocation();
   const { subjectSlug, topicSlug } = useParams();
+  const [qcOpen, setQcOpen] = useState(false);
 
   useEffect(() => {
     fetchJSON<{ ok: boolean }>('/health')
       .then(x => console.log('Health:', x))
       .catch(err => console.error('Health failed:', err));
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        setQcOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   const isActive = (to: string) =>
@@ -28,20 +67,39 @@ export default function AppShell() {
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             Chatalog
           </Typography>
+
+          {/* Destinations */}
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mr: 1 }}>
+            <TopNavButton to="/">Home</TopNavButton>
+            <TopNavButton to="/subjects">Subjects</TopNavButton>
+            <TopNavButton to="/s">Notes</TopNavButton>
+          </Stack>
+
+          {/* Actions */}
           <Stack direction="row" spacing={1} alignItems="center">
-            <Button component={Link} to="/" color="inherit" variant={isActive('/') ? 'outlined' : 'text'}>
-              Home
-            </Button>
-            <Button component={Link} to="/subjects" color="inherit" variant={isActive('/subjects') ? 'outlined' : 'text'}>
-              Subjects
-            </Button>
-            <Button component={Link} to="/s" color="inherit" variant={isActive('/s') ? 'outlined' : 'text'}>
-              Notes
-            </Button>
-            <ImportChatworthyButton />
+            {/* Import as an action icon */}
+            <ImportChatworthyButton mode="icon" />
+
+            {/* Quick Capture as an action icon */}
+            <Tooltip title="Quick Capture (⌘/Ctrl+Shift+N)">
+              <IconButton
+                size="small"
+                onClick={() => setQcOpen(true)}
+                aria-label="Quick Capture"
+                sx={(theme) => ({
+                  borderRadius: 2,
+                  backgroundColor: alpha(theme.palette.common.white, 0.18),
+                  '&:hover': { backgroundColor: alpha(theme.palette.common.white, 0.28) },
+                })}
+              >
+                <NoteAddIcon />
+              </IconButton>
+            </Tooltip>
           </Stack>
         </Toolbar>
       </AppBar>
+
+      <QuickCaptureDialog open={qcOpen} onClose={() => setQcOpen(false)} />
 
       {/* Full-width main area with small side padding */}
       <Box

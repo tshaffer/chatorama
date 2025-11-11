@@ -1,19 +1,26 @@
+// frontend/src/components/Sidebar.tsx
 import { useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { NavLink, useNavigate, useParams } from 'react-router-dom';
 import {
-  List,
-  ListItemButton,
-  ListSubheader,
+  Box,
   Typography,
-  Divider,
   Menu,
   MenuItem,
+  Skeleton,
 } from '@mui/material';
+import StickyNote2Icon from '@mui/icons-material/StickyNote2';
+import FolderIcon from '@mui/icons-material/Folder';
+import LabelIcon from '@mui/icons-material/Label';
 import { skipToken } from '@reduxjs/toolkit/query';
+
 import { useGetSubjectsQuery, useGetTopicsForSubjectQuery } from '../features/subjects/subjectsApi';
 import type { Topic } from '@chatorama/chatalog-shared';
 import { useRenameEntity } from '../hooks/useRenameEntity';
+
+// Shared visual building blocks
+import { NavRow } from '../components/nav/NavRow';
+import { Section } from '../components/nav/Section';
 
 const slugify = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -57,12 +64,10 @@ export default function Sidebar() {
     setMenuAnchor(e.currentTarget);
     setMenuTarget(target);
   };
-
   const handleCloseMenu = () => {
     setMenuAnchor(null);
     setMenuTarget(null);
   };
-
   const handleRename = () => {
     if (menuTarget) openRename(menuTarget);
     handleCloseMenu();
@@ -70,58 +75,92 @@ export default function Sidebar() {
 
   return (
     <nav aria-label="Chatalog hierarchy" style={{ borderRight: '1px solid #eee', overflow: 'auto' }}>
-      <List subheader={<ListSubheader component="div">Subjects</ListSubheader>} dense>
-        {sLoading && <Typography variant="caption" sx={{ px: 2, py: 1 }}>Loading…</Typography>}
-        {subjects.map((s) => {
-          const id = safeId(s);
-          const href = `/s/${id}-${slugify(s.name)}`;
-          const isSelected = id === subjectIdFromRoute;
-          return (
-            <ListItemButton
-              key={id || s.name}
-              selected={isSelected}
-              onClick={() => navigate(href)}
-              onContextMenu={(e) =>
-                handleOpenMenu(e, { kind: 'subject', subjectId: id, currentName: s.name })
-              }
-            >
-              <Typography variant="body2">{s.name}</Typography>
-            </ListItemButton>
-          );
-        })}
-      </List>
+      <Box sx={{ p: 1, pt: 0.5, height: '100%', overflow: 'auto' }}>
+        {/* Quick Notes */}
+        <Section title="Quick Notes">
+          <NavRow
+            to="/quick-notes"
+            icon={<StickyNote2Icon />}
+            label="Quick Notes"
+            selected={location.pathname.startsWith('/quick-notes')}
+          />
+        </Section>
 
-      <Divider />
+        {/* Subjects */}
+        <Section title="Subjects" denseDivider>
+          {sLoading
+            ? Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} variant="rounded" height={32} sx={{ my: 0.5 }} />
+            ))
+            : subjects.map((s) => {
+              const id = safeId(s);
+              const href = `/s/${id}-${slugify(s.name)}`;
+              const isSelected = id === subjectIdFromRoute;
+              return (
+                <NavRow
+                  key={id || s.name}
+                  to={href}
+                  icon={<FolderIcon />}
+                  label={s.name}
+                  selected={isSelected}
+                  onContextMenu={(e) =>
+                    handleOpenMenu(e, { kind: 'subject', subjectId: id, currentName: s.name })
+                  }
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigate(href);
+                  }}
+                />);
+            })}
+        </Section>
 
-      <List subheader={<ListSubheader component="div">Topics</ListSubheader>} dense>
-        {selectedSubject && tLoading && (
-          <Typography variant="caption" sx={{ px: 2, py: 1 }}>Loading…</Typography>
-        )}
-        {topics.map((t: Topic) => {
-          const subjId = safeId(selectedSubject);
-          const topicHref = `/s/${subjId}-${slugify(selectedSubject!.name)}/t/${safeId(t)}-${slugify(t.name)}`;
-          const isSelected = safeId(t) === topicIdFromRoute;
-          return (
-            <ListItemButton
-              key={safeId(t) || t.name}
-              selected={isSelected}
-              disabled={!selectedSubject}
-              onClick={() => navigate(topicHref)}
-              onContextMenu={(e) =>
-                selectedSubject &&
-                handleOpenMenu(e, {
-                  kind: 'topic',
-                  subjectId: subjId,
-                  topicId: safeId(t),
-                  currentName: t.name,
-                })
-              }
-            >
-              <Typography variant="body2">{t.name}</Typography>
-            </ListItemButton>
-          );
-        })}
-      </List>
+        {/* Topics */}
+        <Section title="Topics">
+          {selectedSubject ? (
+            tLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} variant="rounded" height={28} sx={{ my: 0.5 }} />
+              ))
+            ) : topics.length ? (
+              topics.map((t: Topic) => {
+                const subjId = safeId(selectedSubject);
+                const topicHref = `/s/${subjId}-${slugify(selectedSubject!.name)}/t/${safeId(t)}-${slugify(t.name)}`;
+                const isSelected = safeId(t) === topicIdFromRoute;
+
+                return (
+                  <NavRow
+                    key={safeId(t) || t.name}
+                    to={topicHref}
+                    icon={<LabelIcon />}
+                    label={t.name}
+                    selected={isSelected}
+                    onContextMenu={(e) =>
+                      handleOpenMenu(e, {
+                        kind: 'topic',
+                        subjectId: subjId,
+                        topicId: safeId(t),
+                        currentName: t.name,
+                      })
+                    }
+                    onClick={(e) => {
+                      e.preventDefault();
+                      navigate(topicHref);
+                    }}
+                  />
+                );
+              })
+            ) : (
+              <Box sx={{ px: 1.25, py: 0.5, color: 'text.secondary', fontSize: 13 }}>
+                No topics yet
+              </Box>
+            )
+          ) : (
+            <Box sx={{ px: 1.25, py: 0.5, color: 'text.secondary', fontSize: 13 }}>
+              Pick a subject to see topics
+            </Box>
+          )}
+        </Section>
+      </Box>
 
       {/* Shared context menu for Rename */}
       <Menu

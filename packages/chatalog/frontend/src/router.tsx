@@ -4,6 +4,7 @@ import AppShell from './AppShell';
 import Home from './pages/Home';
 import Notes from './pages/Notes';
 import SubjectsPage from './pages/Subjects';
+import QuickNotesPage from './features/quickNotes/QuickNotesPage';
 
 export const router = createBrowserRouter([
   {
@@ -33,6 +34,8 @@ export const router = createBrowserRouter([
 
       // Optional: allow ID-only (no slug) — still renders the same page
       { path: 's/:subjectSlug/t/:topicSlug/n/:noteId', element: <Notes /> },
+
+      { path: '/quick-notes', element: <QuickNotesPage /> },
 
       // Catch-all (inside shell)
       { path: '*', element: <div style={{ padding: 16 }}>Not found (inside AppShell)</div> },

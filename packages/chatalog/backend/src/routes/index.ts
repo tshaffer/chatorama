@@ -3,6 +3,7 @@ import { Router, Express, Request, Response } from 'express';
 import notesRouter from './notes';
 import subjectsRouter from './subjects';
 import importsChatworthyRouter from './imports.chatworthy';
+import quicknotesRouter from './quicknotes';
 
 export function createRoutes(app: Express) {
   const api = Router();
@@ -19,6 +20,9 @@ export function createRoutes(app: Express) {
 
   // Chatworthy imports
   api.use('/imports', importsChatworthyRouter);
+
+  // QuickNotes CRUD
+  api.use('/quicknotes', quicknotesRouter);
 
   app.use('/api/v1', api);
 }
