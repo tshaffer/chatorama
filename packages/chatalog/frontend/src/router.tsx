@@ -3,6 +3,7 @@ import { createBrowserRouter } from 'react-router-dom';
 import AppShell from './AppShell';
 import Home from './pages/Home';
 import Notes from './pages/Notes';
+import SubjectsPage from './pages/Subjects';
 
 export const router = createBrowserRouter([
   {
@@ -16,6 +17,8 @@ export const router = createBrowserRouter([
       // Notes hierarchy
       // List all subjects
       { path: 's', element: <Notes /> },
+
+      { path: '/subjects', element: <SubjectsPage /> },
 
       // Subject-level list
       { path: 's/:subjectSlug', element: <Notes /> },

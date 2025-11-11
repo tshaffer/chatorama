@@ -32,6 +32,9 @@ export default function AppShell() {
             <Button component={Link} to="/" color="inherit" variant={isActive('/') ? 'outlined' : 'text'}>
               Home
             </Button>
+            <Button component={Link} to="/subjects" color="inherit" variant={isActive('/subjects') ? 'outlined' : 'text'}>
+              Subjects
+            </Button>
             <Button component={Link} to="/s" color="inherit" variant={isActive('/s') ? 'outlined' : 'text'}>
               Notes
             </Button>

@@ -1,15 +1,30 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import { TopicModel } from '../models/Topic';
 import { NoteModel } from '../models/Note';
+import mongoose from 'mongoose';
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
-export async function listTopicsForSubjectId(req: Request, res: Response) {
-  const { subjectId } = req.params;
-  const docs = await TopicModel.find({ subjectId }).sort({ name: 1 }).exec();
-  res.json(docs.map(d => d.toJSON()));
+export async function listTopicsForSubjectId(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { subjectId } = req.params;
+
+    // If subjectId is an ObjectId in your schema, this avoids Mongoose CastError surfacing as 500s.
+    if (TopicModel.schema.path('subjectId') instanceof mongoose.Schema.Types.ObjectId) {
+      if (!mongoose.isValidObjectId(subjectId)) {
+        return res.status(400).json({ error: 'Invalid subjectId' });
+      }
+    }
+
+    const docs = await TopicModel.find({ subjectId }, null, { sort: { name: 1 } }).exec();
+
+    // Use toJSON so your schema transform sets `id` and drops _id/__v
+    res.json(docs.map(d => d.toJSON()));
+  } catch (err) {
+    next(err);
+  }
 }
 
 // notes list for a topic (previews), ID-based

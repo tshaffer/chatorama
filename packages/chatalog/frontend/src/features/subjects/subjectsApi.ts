@@ -16,10 +16,15 @@ export const subjectsApi = baseApi.injectEndpoints({
 
     getTopicsForSubject: build.query<Topic[], string>({
       query: (subjectId) => ({ url: `subjects/${subjectId}/topics` }),
-      providesTags: (res) =>
-        res
-          ? [{ type: 'Topic' as const, id: 'LIST' }, ...res.map(t => ({ type: 'Topic' as const, id: safeId(t as any) }))]
-          : [{ type: 'Topic' as const, id: 'LIST' }],
+      // NOTE: third param is the original query arg (subjectId)
+      providesTags: (res, _err, subjectId) => {
+        const listTag = { type: 'Topic' as const, id: `LIST:${subjectId}` };
+        if (!res) return [listTag];
+        return [
+          listTag,
+          ...res.map((t) => ({ type: 'Topic' as const, id: safeId(t as any) })),
+        ];
+      },
     }),
 
     getNotePreviewsForTopic: build.query<NotePreview[], { subjectId: string; topicId: string }>({
@@ -30,34 +35,68 @@ export const subjectsApi = baseApi.injectEndpoints({
           : [{ type: 'Note' as const, id: 'LIST' }],
     }),
 
-    // --- NEW: rename subject ---
-    renameSubject: build.mutation<
-      Subject,
-      { subjectId: string; name: string; preserveSlug?: boolean }
-    >({
-      query: ({ subjectId, name, preserveSlug }) => ({
-        url: `subjects/${subjectId}${preserveSlug ? '?preserveSlug=1' : ''}`,
-        method: 'PATCH',
-        body: { name },
-      }),
-      async onQueryStarted({ subjectId, name }, { dispatch, queryFulfilled }) {
-        // Use subjectsApi.util, not baseApi.util
-        const patch = dispatch(
-          subjectsApi.util.updateQueryData('getSubjects', undefined, (draft: Subject[]) => {
-            const s = draft.find(d => d.id === subjectId);
-            if (s) s.name = name;
-          })
-        );
-        try {
-          await queryFulfilled;
-        } catch {
-          patch.undo();
-        }
-      },
-      invalidatesTags: (_r, _e, { subjectId }) => [{ type: 'Subject', id: subjectId }],
+    createSubject: build.mutation<Subject, { name: string }>({
+      query: (body) => ({ url: 'subjects', method: 'POST', body }),
+      invalidatesTags: [{ type: 'Subject', id: 'LIST' }],
     }),
 
-    // --- NEW: rename topic ---
+    deleteSubject: build.mutation<void, { subjectId: string }>({
+      query: ({ subjectId }) => ({ url: `subjects/${subjectId}`, method: 'DELETE' }),
+      invalidatesTags: (_r, _e, { subjectId }) => [
+        { type: 'Subject', id: 'LIST' },
+        { type: 'Subject', id: subjectId },
+        // also nuke this subject’s topic list
+        { type: 'Topic', id: `LIST:${subjectId}` },
+      ],
+    }),
+
+    renameSubject: build.mutation<
+      Subject,
+      { subjectId: string; name: string; preserveSlug?: boolean }>({
+        query: ({ subjectId, name, preserveSlug }) => ({
+          url: `subjects/${subjectId}${preserveSlug ? '?preserveSlug=1' : ''}`,
+          method: 'PATCH',
+          body: { name },
+        }),
+        async onQueryStarted({ subjectId, name }, { dispatch, queryFulfilled }) {
+          // Use subjectsApi.util, not baseApi.util
+          const patch = dispatch(
+            subjectsApi.util.updateQueryData('getSubjects', undefined, (draft: Subject[]) => {
+              const s = draft.find(d => d.id === subjectId);
+              if (s) s.name = name;
+            })
+          );
+          try {
+            await queryFulfilled;
+          } catch {
+            patch.undo();
+          }
+        },
+        invalidatesTags: (_r, _e, { subjectId }) => [{ type: 'Subject', id: subjectId }],
+      }),
+
+    createTopic: build.mutation<Topic, { subjectId: string; name: string }>({
+      query: ({ subjectId, name }) => ({
+        url: `subjects/${subjectId}/topics`,
+        method: 'POST',
+        body: { name },
+      }),
+      invalidatesTags: (_r, _e, { subjectId }) => [
+        { type: 'Topic', id: `LIST:${subjectId}` },
+      ],
+    }),
+
+    deleteTopic: build.mutation<void, { subjectId: string; topicId: string }>({
+      query: ({ subjectId, topicId }) => ({
+        url: `subjects/${subjectId}/topics/${topicId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: (_r, _e, { subjectId, topicId }) => [
+        { type: 'Topic', id: `LIST:${subjectId}` },
+        { type: 'Topic', id: topicId },
+      ],
+    }),
+
     renameTopic: build.mutation<
       Topic,
       { subjectId: string; topicId: string; name: string; preserveSlug?: boolean }
@@ -90,7 +129,10 @@ export const {
   useGetSubjectsQuery,
   useGetTopicsForSubjectQuery,
   useGetNotePreviewsForTopicQuery,
-  // NEW hooks:
+  useCreateSubjectMutation,
+  useDeleteSubjectMutation,
+  useCreateTopicMutation,
+  useDeleteTopicMutation,
   useRenameSubjectMutation,
   useRenameTopicMutation,
 } = subjectsApi;
