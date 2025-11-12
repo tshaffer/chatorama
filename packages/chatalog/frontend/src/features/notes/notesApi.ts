@@ -2,6 +2,7 @@
 import type { Note, ReorderNotesRequest } from '@chatorama/chatalog-shared';
 import { chatalogApi as baseApi } from '../api/chatalogApi';
 import { subjectsApi } from '../subjects/subjectsApi'; // ← import to reach that cache
+import type { MoveNotesPayload, MoveNotesResult } from '@chatorama/chatalog-shared';
 
 type CreateNoteRequest = Partial<Pick<Note, 'subjectId' | 'topicId' | 'title' | 'markdown' | 'summary' | 'tags'>>;
 type UpdateNoteRequest = { noteId: string; patch: Partial<Pick<Note, 'title' | 'markdown' | 'summary' | 'tags' | 'links'>> };
@@ -78,6 +79,78 @@ export const notesApi = baseApi.injectEndpoints({
       query: ({ noteId }) => ({ url: `notes/${noteId}`, method: 'DELETE' }),
       invalidatesTags: [{ type: 'Note', id: 'LIST' }],
     }),
+
+    moveNotes: build.mutation<MoveNotesResult, MoveNotesPayload>({
+      query: (body) => ({
+        url: 'notes:move',
+        method: 'POST',
+        body,
+      }),
+      // 🔁 Cache strategy:
+      // invalidate source & dest note lists and their topic summaries
+      async onQueryStarted(arg, { dispatch, queryFulfilled, getState }) {
+        // Optional optimistic update (safe & fast UX).
+        // If your selectors differ, adjust accordingly.
+        const { noteIds, dest } = arg;
+
+        // Build cache keys you have:
+        // e.g., getNotesByTopic({ subjectId, topicId })
+        const patchUps: Array<() => void> = [];
+
+        try {
+          // Optimistically remove from any topic lists they’re currently in.
+          // If you only render one topic at a time, you can limit to visible list.
+          // Here’s a generic but safe approach if you have a cache for multiple topics:
+          // (Pseudo-code; adjust names to your actual endpoints)
+
+          // 1) remove from all visible topic lists (if you have them in cache)
+          //    change to your real cache names
+          // Example:
+          // const allQueries = baseApi.util.selectInvalidatedBy(getState() as any, [{ type: 'Note' }]);
+          // (Keeping this minimal—many teams simply rely on invalidatesTags.)
+
+          // 2) add to destination topic list end (if that list is in cache)
+          // If you have `getNotesByTopic`:
+          // patchUps.push(
+          //   dispatch(
+          //     notesApi.util.updateQueryData(
+          //       'getNotesByTopic',
+          //       { subjectId: dest.subjectId, topicId: dest.topicId },
+          //       (draft) => {
+          //         for (const id of noteIds) {
+          //           // pessimistic: skip; optimistic: push a lightweight placeholder
+          //           if (!draft.find(n => n.id === id)) {
+          //             draft.push({ id, subjectId: dest.subjectId, topicId: dest.topicId } as any);
+          //           }
+          //         }
+          //       }
+          //     )
+          //   ).undo
+          // );
+
+          // Keep it robust & simple: rely on invalidations after success.
+          await queryFulfilled;
+
+          // After success, proactively invalidate the impacted lists:
+          dispatch(
+            baseApi.util.invalidateTags([
+              // If you tag Note by id elsewhere:
+              ...noteIds.map(id => ({ type: 'Note' as const, id })),
+              // If you tag topic lists:
+              { type: 'TopicNotes' as const, id: `${dest.subjectId}:${dest.topicId}` },
+            ])
+          );
+        } catch {
+          // rollback optimistic changes if any
+          for (const undo of patchUps) undo();
+        }
+      },
+      // If you prefer tag-based invalidation instead of the manual call above:
+      // invalidatesTags: (res, err, { noteIds, dest }) => [
+      //   ...noteIds.map(id => ({ type: 'Note' as const, id })),
+      //   { type: 'TopicNotes' as const, id: `${dest.subjectId}:${dest.topicId}` },
+      // ],
+    }),
   }),
   overrideExisting: true,
 });
@@ -87,5 +160,6 @@ export const {
   useCreateNoteMutation,
   useUpdateNoteMutation,
   useDeleteNoteMutation,
-  useReorderNotesInTopicMutation
+  useReorderNotesInTopicMutation,
+  useMoveNotesMutation
 } = notesApi;

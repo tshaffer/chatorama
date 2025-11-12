@@ -4,22 +4,45 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from 
 import type { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { List, ListItem, ListItemButton, ListItemText, IconButton, ListItemIcon } from '@mui/material';
+import {
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemText,
+  IconButton,
+  ListItemIcon,
+  Checkbox,
+} from '@mui/material';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 
 type NoteLite = { id?: string; _id?: string; title?: string; order?: number };
 type Props = {
   topicId: string;
-  notes: NoteLite[];                 // already sorted by order on first render
-  onReordered: (noteIdsInOrder: string[]) => void; // callback to persist
-  onNoteClick?: (noteId: string) => void;
+  notes: NoteLite[];                             // already sorted by order on first render
+  onReordered: (noteIdsInOrder: string[]) => void;
+  onOpenNote?: (noteId: string) => void;
+  selectedIds: Set<string>;
+  onToggleSelect: (noteId: string) => void;
 };
 
-export default function ReorderableNotesList({ topicId, notes, onReordered, onNoteClick }: Props) {
+export default function ReorderableNotesList({
+  topicId,
+  notes,
+  onReordered,
+  onOpenNote,
+  selectedIds,
+  onToggleSelect,
+}: Props) {
   const [items, setItems] = useState(() =>
     [...notes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
   );
 
+  // If the incoming notes list changes (e.g., after refetch), resync local ordering state.
+  React.useEffect(() => {
+    setItems([...notes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
+  }, [notes]);
+
+  // Only start drag after small pointer move; and only from the handle (listeners attached to handle)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const ids = useMemo(
@@ -36,7 +59,6 @@ export default function ReorderableNotesList({ topicId, notes, onReordered, onNo
     const newItems = arrayMove(items, oldIndex, newIndex).map((n, idx) => ({ ...n, order: idx }));
     setItems(newItems);
 
-    // Persist
     onReordered(newItems.map(n => String(n.id ?? n._id)));
   };
 
@@ -44,21 +66,40 @@ export default function ReorderableNotesList({ topicId, notes, onReordered, onNo
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
         <List dense disablePadding>
-          {items.map(n => (
-            <SortableNoteRow
-              key={String(n.id ?? n._id)}
-              id={String(n.id ?? n._id)}
-              title={n.title || '(Untitled)'}
-              onClick={() => onNoteClick?.(String(n.id ?? n._id))}
-            />
-          ))}
+          {items.map(n => {
+            const id = String(n.id ?? n._id);
+            const title = n.title || '(Untitled)';
+            const selected = selectedIds.has(id);
+            return (
+              <SortableNoteRow
+                key={id}
+                id={id}
+                title={title}
+                selected={selected}
+                onToggleSelect={() => onToggleSelect(id)}
+                onOpen={() => onOpenNote?.(id)}
+              />
+            );
+          })}
         </List>
       </SortableContext>
     </DndContext>
   );
 }
 
-function SortableNoteRow({ id, title, onClick }: { id: string; title: string; onClick?: () => void }) {
+function SortableNoteRow({
+  id,
+  title,
+  selected,
+  onToggleSelect,
+  onOpen,
+}: {
+  id: string;
+  title: string;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onOpen?: () => void;
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
   const style: React.CSSProperties = {
@@ -69,14 +110,32 @@ function SortableNoteRow({ id, title, onClick }: { id: string; title: string; on
   };
 
   return (
-    <ListItem ref={setNodeRef} style={style} disablePadding secondaryAction={
-      <IconButton edge="end" size="small" {...listeners} {...attributes} aria-label="drag-handle">
-        <DragIndicatorIcon />
-      </IconButton>
-    }>
-      <ListItemButton onClick={onClick}>
-        <ListItemIcon sx={{ minWidth: 32 }}>
-          <DragIndicatorIcon fontSize="small" sx={{ opacity: 0.4 }} />
+    <ListItem
+      ref={setNodeRef}
+      style={style}
+      disablePadding
+      secondaryAction={
+        // Drag by handle only
+        <IconButton edge="end" size="small" {...listeners} {...attributes} aria-label="drag-handle">
+          <DragIndicatorIcon />
+        </IconButton>
+      }
+    >
+      {/* Row click should OPEN the note, not toggle selection */}
+      <ListItemButton
+        selected={selected}
+        onClick={onOpen}           // ← open preview on row click
+      >
+        <ListItemIcon sx={{ minWidth: 36 }}>
+          <Checkbox
+            edge="start"
+            tabIndex={-1}
+            disableRipple
+            checked={selected}
+            // Don’t let checkbox clicks bubble and trigger onOpen
+            onClick={(e) => e.stopPropagation()}
+            onChange={() => onToggleSelect()}
+          />
         </ListItemIcon>
         <ListItemText primary={title} />
       </ListItemButton>

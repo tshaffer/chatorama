@@ -63,3 +63,16 @@ export interface RenameTopicRequest {
 export type ReorderNotesRequest = {
   noteIdsInOrder: string[];
 };
+
+// Add near other API payloads
+export interface MoveNotesPayload {
+  noteIds: string[];
+  dest: { subjectId: string; topicId: string };
+}
+
+export interface MoveNotesResult {
+  movedCount: number;
+  // optional: for optimistic updates & cache surgery
+  source?: { subjectId: string; topicId: string };
+  dest: { subjectId: string; topicId: string; assignedOrders?: Record<string, number> };
+}

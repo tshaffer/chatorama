@@ -1,5 +1,5 @@
 // frontend/src/features/subjects/subjectsApi.ts
-import type { Subject, Topic, NotePreview } from '@chatorama/chatalog-shared';
+import type { Subject, Topic, NotePreview, Note } from '@chatorama/chatalog-shared';
 import { chatalogApi as baseApi } from '../api/chatalogApi';
 
 const safeId = (o: { id?: string } | undefined) => o?.id ?? '';
@@ -26,14 +26,14 @@ export const subjectsApi = baseApi.injectEndpoints({
       },
     }),
 
-    getNotePreviewsForTopic: build.query<NotePreview[], { subjectId: string; topicId: string }>({
-      query: ({ subjectId, topicId }) => ({ url: `subjects/${subjectId}/topics/${topicId}/notes` }),
-      providesTags: (res, _err, { subjectId, topicId }) => {
-        const listTag = { type: 'Note' as const, id: `LIST:${subjectId}:${topicId}` };
-        return res
-          ? [listTag, ...res.map(n => ({ type: 'Note' as const, id: safeId(n as any) }))]
-          : [listTag];
-      },
+    getNotePreviewsForTopic: build.query<Note[], { subjectId: string; topicId: string }>({
+      query: ({ subjectId, topicId }) => ({
+        url: `subjects/${subjectId}/topics/${topicId}/notes`,
+      }),
+      providesTags: (res, _err, { subjectId, topicId }) => [
+        { type: 'TopicNotes', id: `${subjectId}:${topicId}` },
+        ...(res ?? []).map(n => ({ type: 'Note' as const, id: n.id })),
+      ],
     }),
 
     createSubject: build.mutation<Subject, { name: string }>({

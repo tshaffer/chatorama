@@ -4,6 +4,7 @@ import notesRouter from './notes';
 import subjectsRouter from './subjects';
 import importsChatworthyRouter from './imports.chatworthy';
 import quicknotesRouter from './quicknotes';
+import notesMoveRouter from './notes.move';
 
 export function createRoutes(app: Express) {
   const api = Router();
@@ -24,5 +25,7 @@ export function createRoutes(app: Express) {
   // QuickNotes CRUD
   api.use('/quicknotes', quicknotesRouter);
 
+  app.use('/api/v1', notesMoveRouter);
+  
   app.use('/api/v1', api);
 }
