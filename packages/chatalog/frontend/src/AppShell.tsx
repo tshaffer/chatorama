@@ -1,13 +1,10 @@
 // chatalog/frontend/src/AppShell.tsx
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Outlet, Link, useLocation, useParams, useMatch } from 'react-router-dom';
-import { AppBar, Toolbar, Typography, Button, Stack, Box, alpha } from '@mui/material';
+import { AppBar, Toolbar, Typography, Button, Stack, Box, alpha, IconButton, Tooltip } from '@mui/material';
 import ImportChatworthyButton from './components/ImportChatworthyButton';
-import { useEffect } from 'react';
 import { fetchJSON } from './lib/api';
 import NoteAddIcon from '@mui/icons-material/NoteAdd';
-import { IconButton, Tooltip } from '@mui/material';
-import { useState } from 'react';
 import QuickCaptureDialog from './features/quickNotes/QuickCaptureDialog';
 
 function TopNavButton({ to, children }: { to: string; children: React.ReactNode }) {
@@ -55,6 +52,7 @@ export default function AppShell() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // NOTE: isActive is unused now but keeping in case you re-use it later
   const isActive = (to: string) =>
     pathname === to ||
     (to === '/s' && pathname.startsWith('/s')) ||
@@ -73,6 +71,8 @@ export default function AppShell() {
             <TopNavButton to="/">Home</TopNavButton>
             <TopNavButton to="/subjects">Subjects</TopNavButton>
             <TopNavButton to="/s">Notes</TopNavButton>
+            {/* NEW: Quick Notes top-level page */}
+            <TopNavButton to="/quick-notes">Quick Notes</TopNavButton>
           </Stack>
 
           {/* Actions */}

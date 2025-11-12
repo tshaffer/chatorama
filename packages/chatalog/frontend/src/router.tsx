@@ -3,11 +3,12 @@ import { createBrowserRouter } from 'react-router-dom';
 import AppShell from './AppShell';
 import Home from './pages/Home';
 import SubjectsPage from './pages/Subjects';
-import QuickNotesPage from './features/quickNotes/QuickNotesPage';
 import TopicNotesPage from './pages/TopicNotesPage';
 import NotePage from './pages/NotePage';
 import NotesIndex from './pages/NotesIndex';
 import SubjectIndex from './pages/SubjectIndex';
+import QuickNotesPage from './pages/QuickNotes';
+import QuickNotePage from './pages/QuickNotePage';
 
 export const router = createBrowserRouter([
   {
@@ -34,7 +35,9 @@ export const router = createBrowserRouter([
       { path: 'n/:noteId', element: <NotePage /> },
 
       { path: 'subjects', element: <SubjectsPage /> },
+
       { path: 'quick-notes', element: <QuickNotesPage /> },
+      { path: 'quick-notes/:quickNoteId', element: <QuickNotePage /> },
 
       { path: '*', element: <div style={{ padding: 16 }}>Not found (inside AppShell)</div> },
     ],
