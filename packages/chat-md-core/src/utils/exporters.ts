@@ -62,18 +62,18 @@ function buildToc(prompts: { idx: number; title: string; anchor: string }[]): st
 // --- Rendering helpers (Prompt/Response formatting) -----------------
 
 function renderPromptBlockquote(md: string): string {
-  // Render the Prompt label, then quote the entire prompt so it inherits body text styles
   const text = (md || '').trimEnd();
-  const quoted = text
-    .split('\n')
-    .map((l) => (l.length ? `> ${l}` : '>'))
-    .join('\n');
-  return `**Prompt**\n\n${quoted}`;
+  return `**Prompt**\n\n${text}`;
 }
 
 function renderPromptBlockquoteWithAnchor(md: string, anchorId: string): string {
+  const text = (md || '').trimEnd();
+  console.log(
+    '[chat-md-core] renderPromptBlockquoteWithAnchor V2',
+    { anchorId, sample: text.slice(0, 80) }
+  );
   const anchor = `<a id="${anchorId}"></a>`;
-  return `${anchor}\n${renderPromptBlockquote(md)}`;
+  return `${anchor}\n**Prompt**\n\n${text}`;
 }
 
 function normalizeSuggestionsSection(md: string): string {
@@ -225,8 +225,8 @@ function toPureMarkdownChatStyleFromHtml(
   turns.forEach((t, i) => {
     if (t.role === 'user') {
       promptCounter += 1;
-      const md = htmlToMarkdown(htmlBodies[i] || '');
-      const titleText = firstLineTitle(md, `Prompt ${promptCounter}`);
+      const raw = (t.text || '').replace(/\r\n/g, '\n');
+      const titleText = firstLineTitle(raw, `Prompt ${promptCounter}`);
       promptInfos.push({
         idx: promptCounter,
         title: titleText,
@@ -244,16 +244,28 @@ function toPureMarkdownChatStyleFromHtml(
 
   let currentPromptNumber = 0;
   const blocks = turns.map((t, i) => {
-    const bodyMd = htmlToMarkdown(htmlBodies[i] || '').replace(/\r\n/g, '\n').trimEnd();
+    let bodyMd: string;
+
+    if (t.role === 'user') {
+      // For Prompts, trust the plain text we captured in the content script.
+      // This preserves the original newlines much better than Turndown does.
+      bodyMd = (t.text || '').replace(/\r\n/g, '\n').trimEnd();
+    } else {
+      // For Responses (and system/tool), use HTML → Markdown so we keep lists, code, etc.
+      bodyMd = htmlToMarkdown(htmlBodies[i] || '').replace(/\r\n/g, '\n').trimEnd();
+    }
+
     if (t.role === 'user') {
       currentPromptNumber += 1;
       const anchorId = `p-${currentPromptNumber}`;
       return renderPromptBlockquoteWithAnchor(bodyMd, anchorId);
     }
+
     if (t.role === 'assistant') {
       return renderResponseSection(bodyMd);
     }
-    // system / tool (rare) — keep simple but styled
+
+    // system / tool (rare)
     const label = t.role === 'system' ? 'System' : 'Tool';
     return `**${label}**\n\n${bodyMd}`;
   });
