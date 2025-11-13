@@ -175,26 +175,7 @@ const SubjectCard = memo(function SubjectCard(props: {
           sx={{ mb: 1 }}
         >
           {/* Subject title: single-click navigates, double-click renames */}
-          <Box
-            sx={{ cursor: 'pointer', fontWeight: 600 }}
-            onClick={() => {
-              // arm a short timer so we can cancel if a double-click occurs
-              if (titleClickTimer) return;
-              const t = window.setTimeout(() => {
-                setTitleClickTimer(null);
-                navigate(subjectHref);
-              }, 250);
-              setTitleClickTimer(t);
-            }}
-            onDoubleClick={() => {
-              // cancel pending single-click navigation if it's actually a double-click
-              if (titleClickTimer) {
-                clearTimeout(titleClickTimer);
-                setTitleClickTimer(null);
-              }
-              // InlineEditableName handles entering edit mode
-            }}
-          >
+          <Box sx={{ fontWeight: 600 }}>
             <InlineEditableName
               value={props.subjectName}
               startEditingOn="doubleClick"
@@ -204,8 +185,6 @@ const SubjectCard = memo(function SubjectCard(props: {
                   name,
                 }).unwrap();
               }}
-              // stopPropagation stays at its default (true) but now only affects
-              // clicks while EDITING, not the display state.
             />
           </Box>
 
