@@ -35,6 +35,9 @@ module.exports = {
     clean: true
   },
   target: 'web',
+  stats: {
+    builtAt: true,
+  },
   devtool: isProd ? 'source-map' : 'eval-source-map',
   resolve: {
     extensions: ['.ts', '.tsx', '.mjs', '.js', '.jsx'],
