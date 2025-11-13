@@ -2,6 +2,22 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 import { applyToJSON } from '../db/toJsonPlugin';
 
+export type NoteRelationTargetType = 'note' | 'topic' | 'subject';
+
+export type NoteRelationKind =
+  | 'also-about'
+  | 'see-also'
+  | 'supports'
+  | 'contrasts-with'
+  | 'warning'
+  | 'background';
+
+export interface NoteRelation {
+  targetType: NoteRelationTargetType;
+  targetId: string;
+  kind: NoteRelationKind;
+}
+
 export interface NoteDoc extends Document {
   _id: Types.ObjectId;            // DB primary key (Mongo)
   // Outside of Mongo (API/FE), you'll expose `id` via toJSON transform.
@@ -14,6 +30,7 @@ export interface NoteDoc extends Document {
   tags: string[];
   links: string[];
   backlinks: string[];
+  relations?: NoteRelation[];
   sources?: { url?: string; type?: 'chatworthy'|'clip'|'manual' }[];
   /** Persistent display ordering within a topic (lower = earlier) */
   order: number;
@@ -31,6 +48,26 @@ const SourceSchema = new Schema<Source>(
   { _id: false }
 );
 
+const RelationSchema = new Schema<NoteRelation>(
+  {
+    targetType: {
+      type: String,
+      enum: ['note', 'topic', 'subject'],
+      required: true,
+    },
+    targetId: {
+      type: String,
+      required: true,
+    },
+    kind: {
+      type: String,
+      enum: ['also-about', 'see-also', 'supports', 'contrasts-with', 'warning', 'background'],
+      required: true,
+    },
+  },
+  { _id: false }
+);
+
 const NoteSchema = new Schema<NoteDoc>(
   {
     subjectId: { type: String },
@@ -43,6 +80,9 @@ const NoteSchema = new Schema<NoteDoc>(
     links:     { type: [String], default: [] },
     backlinks: { type: [String], default: [] },
     sources:   { type: [SourceSchema], default: [] },
+
+    // NEW: networked relationships
+    relations: { type: [RelationSchema], default: [] },
 
     // NEW: persistent ordering within a topic; lower values appear first
     order:     { type: Number, required: true, default: 0, index: true },

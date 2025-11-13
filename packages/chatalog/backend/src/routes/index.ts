@@ -5,6 +5,7 @@ import subjectsRouter from './subjects';
 import importsChatworthyRouter from './imports.chatworthy';
 import quicknotesRouter from './quicknotes';
 import notesMoveRouter from './notes.move';
+import topicsRouter from './topics';
 
 export function createRoutes(app: Express) {
   const api = Router();
@@ -18,6 +19,8 @@ export function createRoutes(app: Express) {
 
   // Subjects + nested Topics + topic-notes list
   api.use('/subjects', subjectsRouter);
+
+  api.use('/topics', topicsRouter);
 
   // Chatworthy imports
   api.use('/imports', importsChatworthyRouter);

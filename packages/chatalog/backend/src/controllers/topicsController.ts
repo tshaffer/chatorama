@@ -7,6 +7,11 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
+export async function listTopics(req: Request, res: Response) {
+  const docs = await TopicModel.find().sort({ name: 1 }).exec();
+  res.json(docs.map(d => d.toJSON()));
+}
+
 export async function listTopicsForSubjectId(req: Request, res: Response, next: NextFunction) {
   try {
     const { subjectId } = req.params;

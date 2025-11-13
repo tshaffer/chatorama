@@ -7,6 +7,11 @@
     "packages/*/*"
   ],
   "scripts": {
+    "build:md-core": "cd packages/chat-md-core && npm run build",
+    "build:shared": "cd packages/chatalog/shared && npm run build",
+    "build:chatalog-backend": "cd packages/chatalog/backend && npm run build",
+    "build:chatalog-frontend": "cd packages/chatalog/frontend && npm run build",
+    "build:chatalog": "npm run build:shared && npm run build:md-core && npm run build:chatalog-backend && npm run build:chatalog-frontend",
     "build": "npm run -ws build",
     "dev": "npm run -ws dev",
     "clean": "rimraf **/dist **/node_modules || true"

@@ -18,6 +18,24 @@ export interface Topic {
   updatedAt?: string;
 }
 
+// -------- Note relations (generic) --------
+
+export type NoteRelationTargetType = 'note' | 'topic' | 'subject';
+
+export type NoteRelationKind =
+  | 'also-about'      // generic association
+  | 'see-also'        // cross-reference
+  | 'supports'        // evidence / argument
+  | 'contrasts-with'  // comparison / disagreement
+  | 'warning'         // risk / negative effect
+  | 'background';     // background reading
+
+export interface NoteRelation {
+  targetType: NoteRelationTargetType;
+  targetId: string;      // id of note/topic/subject, depending on targetType
+  kind: NoteRelationKind;
+}
+
 // Notes (MVP)
 export interface Note {
   id: string;
@@ -34,6 +52,9 @@ export interface Note {
   links: string[];           // noteIds this note links to
   backlinks: string[];       // noteIds that link here
 
+  // Networked relationships (generic)
+  relations?: NoteRelation[];
+
   // Provenance (optional for now)
   sources?: { url?: string; type?: 'chatworthy'|'clip'|'manual' }[];
 
@@ -48,6 +69,23 @@ export interface NotePreview {
   summary?: string;
   tags: string[];
   updatedAt: string;         // ISO
+
+  // Include relations for smarter UIs (optional; may or may not be populated)
+  relations?: NoteRelation[];
+}
+
+export interface TopicNotesWithRelations {
+  /** Notes actually in the current subject/topic */
+  notes: NotePreview[];
+
+  /** Notes pulled in via topic relations (targetType: 'topic') */
+  relatedTopicNotes: NotePreview[];
+
+  /** Notes pulled in via subject relations (targetType: 'subject') */
+  relatedSubjectNotes: NotePreview[];
+
+  /** Notes pulled in via direct note relations (targetType: 'note') */
+  relatedDirectNotes: NotePreview[];
 }
 
 // ADD near your Subject/Topic interfaces
