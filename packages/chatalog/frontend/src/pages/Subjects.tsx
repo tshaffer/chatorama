@@ -1,9 +1,17 @@
 // src/pages/Subjects.tsx
 import { memo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  Box, Card, CardActionArea, CardContent, Stack, Typography, Chip,
-  Skeleton, Divider, TextField, Button, IconButton, Tooltip
+  Box,
+  Card,
+  CardContent,
+  Stack,
+  Typography,
+  Chip,
+  Skeleton,
+  Divider,
+  TextField,
+  Button,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -71,13 +79,14 @@ export default function SubjectsPage() {
           </>
         )}
 
-        {!isLoading && subjects.map((s) => (
-          <SubjectCard
-            key={safeId(s)}
-            subjectId={safeId(s)}
-            subjectName={s.name}
-          />
-        ))}
+        {!isLoading &&
+          subjects.map((s) => (
+            <SubjectCard
+              key={safeId(s)}
+              subjectId={safeId(s)}
+              subjectName={s.name}
+            />
+          ))}
 
         {!isLoading && subjects.length === 0 && (
           <Typography color="text.secondary">No subjects yet.</Typography>
@@ -110,7 +119,10 @@ const SubjectCard = memo(function SubjectCard(props: {
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const [editingTopicDraft, setEditingTopicDraft] = useState('');
 
-  const [cardClickTimer, setCardClickTimer] = useState<number | null>(null);
+  // timer for distinguishing single vs double click on the SUBJECT TITLE only
+  const [titleClickTimer, setTitleClickTimer] = useState<number | null>(null);
+
+  // timers for topic chips (single vs double click)
   const chipTimersRef = useRef<Record<string, number | null>>({});
 
   const subjectHref = `/s/${props.subjectId}-${slugify(props.subjectName)}`;
@@ -139,7 +151,7 @@ const SubjectCard = memo(function SubjectCard(props: {
   };
 
   const handleCreateTopic = async (e?: React.MouseEvent) => {
-    // don’t let the card navigate
+    // no card-level navigation anymore, but keep this just in case
     e?.stopPropagation();
     const name = newTopicName.trim();
     if (!name) return;
@@ -150,37 +162,53 @@ const SubjectCard = memo(function SubjectCard(props: {
   return (
     <Card
       variant="outlined"
-      onClick={(e) => {
-        // If a timer already exists, ignore (the second click will be handled by onDoubleClick)
-        if (cardClickTimer) return;
-        const t = window.setTimeout(() => {
-          setCardClickTimer(null);
-          navigate(subjectHref);
-        }, 250);
-        setCardClickTimer(t);
-      }}
-      onDoubleClick={(e) => {
-        // User is double-clicking (likely to rename). Cancel pending single-click navigation.
-        if (cardClickTimer) {
-          clearTimeout(cardClickTimer);
-          setCardClickTimer(null);
-        }
-        // do not navigate on double-click
-      }}
-      sx={{ cursor: 'pointer' }}
+      // No onClick / onDoubleClick here anymore:
+      // navigation is now handled ONLY via the subject title and topic chips.
+      sx={{ cursor: 'default' }}
     >
       <CardContent sx={{ pb: 2 }}>
-        {/* Header row: *not* a button, ok to contain IconButton */}
-        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-          <InlineEditableName
-            value={props.subjectName}
-            startEditingOn="doubleClick"
-            onSave={async (name) => {
-              await renameSubject({ subjectId: props.subjectId, name /*, preserveSlug: true*/ }).unwrap();
+        {/* Header row */}
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          sx={{ mb: 1 }}
+        >
+          {/* Subject title: single-click navigates, double-click renames */}
+          <Box
+            sx={{ cursor: 'pointer', fontWeight: 600 }}
+            onClick={() => {
+              // arm a short timer so we can cancel if a double-click occurs
+              if (titleClickTimer) return;
+              const t = window.setTimeout(() => {
+                setTitleClickTimer(null);
+                navigate(subjectHref);
+              }, 250);
+              setTitleClickTimer(t);
             }}
-            stopPropagation
-            sx={{ fontWeight: 600 }}
-          />
+            onDoubleClick={() => {
+              // cancel pending single-click navigation if it's actually a double-click
+              if (titleClickTimer) {
+                clearTimeout(titleClickTimer);
+                setTitleClickTimer(null);
+              }
+              // InlineEditableName handles entering edit mode
+            }}
+          >
+            <InlineEditableName
+              value={props.subjectName}
+              startEditingOn="doubleClick"
+              onSave={async (name) => {
+                await renameSubject({
+                  subjectId: props.subjectId,
+                  name,
+                }).unwrap();
+              }}
+              // stopPropagation stays at its default (true) but now only affects
+              // clicks while EDITING, not the display state.
+            />
+          </Box>
+
           <ConfirmIconButton
             title="Delete subject?"
             message="This will delete the subject and all its topics/notes."
@@ -188,16 +216,20 @@ const SubjectCard = memo(function SubjectCard(props: {
             icon={<DeleteIcon />}
             onConfirm={async () => {
               await deleteSubject({ subjectId: props.subjectId }).unwrap();
+              // Stay on /subjects; no navigation here.
             }}
-          // this already stops propagation internally
           />
         </Stack>
 
-        <Typography variant="overline" color="text.secondary">Topics</Typography>
+        <Typography variant="overline" color="text.secondary">
+          Topics
+        </Typography>
 
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           {topics.length === 0 && (
-            <Typography variant="caption" color="text.secondary">No topics yet</Typography>
+            <Typography variant="caption" color="text.secondary">
+              No topics yet
+            </Typography>
           )}
 
           {topics.map((t: Topic) => {
@@ -234,7 +266,6 @@ const SubjectCard = memo(function SubjectCard(props: {
                 onClick={(e) => {
                   e.stopPropagation();
                   // arm a per-chip nav timer
-                  // clear any prior timer just in case
                   const prev = chipTimersRef.current[tid];
                   if (prev) clearTimeout(prev);
                   chipTimersRef.current[tid] = window.setTimeout(() => {
@@ -285,7 +316,10 @@ const SubjectCard = memo(function SubjectCard(props: {
           <Button
             variant="outlined"
             startIcon={<AddIcon />}
-            onClick={(e) => (e.stopPropagation(), handleCreateTopic(e))}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCreateTopic(e);
+            }}
             disabled={creatingTopic || !newTopicName.trim()}
           >
             Add topic

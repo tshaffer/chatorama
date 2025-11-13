@@ -32,8 +32,7 @@ export default function InlineEditableName({
     if (!editing) setDraft(value);
   }, [value, editing]);
 
-  const begin = (e: React.MouseEvent) => {
-    if (stopPropagation) e.stopPropagation();
+  const begin = () => {
     setEditing(true);
   };
 
@@ -50,11 +49,6 @@ export default function InlineEditableName({
     setEditing(false);
   };
 
-  const commonHandlers =
-    startEditingOn === 'click'
-      ? { onClick: begin }
-      : { onDoubleClick: begin };
-
   if (editing) {
     return (
       <TextField
@@ -67,19 +61,35 @@ export default function InlineEditableName({
           if (e.key === 'Enter') save();
           if (e.key === 'Escape') cancel();
         }}
+        // While editing, block parent click handlers so typing/clicking
+        // inside the field never triggers navigation.
         onClick={(e) => stopPropagation && e.stopPropagation()}
         sx={{ ...sx, minWidth: 200 }}
       />
     );
   }
 
+  const handleClick = (e: React.MouseEvent) => {
+    if (startEditingOn === 'click') {
+      if (stopPropagation) e.stopPropagation();
+      begin();
+    }
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    if (startEditingOn === 'doubleClick') {
+      // We intentionally do NOT stop propagation here so a parent
+      // can still see the double-click (to cancel single-click nav).
+      begin();
+    }
+  };
+
   return (
     <Typography
       variant="body1"
       sx={{ ...sx, cursor: startEditingOn === 'click' ? 'text' : 'default' }}
-      // prevent parent Card's single-click navigation from arming
-      onClick={(e) => stopPropagation && e.stopPropagation()}
-      {...commonHandlers}
+      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
     >
       {value}
     </Typography>
