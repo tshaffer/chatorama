@@ -5,7 +5,6 @@ import Home from './pages/Home';
 import SubjectsPage from './pages/Subjects';
 import TopicNotesPage from './pages/TopicNotesPage';
 import NotePage from './pages/NotePage';
-import NotesIndex from './pages/NotesIndex';
 import SubjectIndex from './pages/SubjectIndex';
 import QuickNotesPage from './pages/QuickNotes';
 import QuickNotePage from './pages/QuickNotePage';
@@ -17,9 +16,6 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Home /> },
       { path: 'home', element: <Home /> },
-
-      // Toolbar "Notes" → choose first subject (or /subjects if none)
-      { path: 's', element: <NotesIndex /> },
 
       // Selecting a subject → auto-jump to its first topic
       { path: 's/:subjectSlug', element: <SubjectIndex /> },

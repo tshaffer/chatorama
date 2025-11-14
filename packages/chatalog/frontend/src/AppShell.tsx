@@ -70,8 +70,6 @@ export default function AppShell() {
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mr: 1 }}>
             <TopNavButton to="/">Home</TopNavButton>
             <TopNavButton to="/subjects">Subjects</TopNavButton>
-            <TopNavButton to="/s">Notes</TopNavButton>
-            {/* NEW: Quick Notes top-level page */}
             <TopNavButton to="/quick-notes">Quick Notes</TopNavButton>
           </Stack>
 
