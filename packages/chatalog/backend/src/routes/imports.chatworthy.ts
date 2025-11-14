@@ -58,23 +58,24 @@ function stripForChatalog(md: string, opts: StripOpts = {}): string {
   if (opts.subject && opts.topic) {
     const sub = escapeRe(opts.subject.trim());
     const top = escapeRe(opts.topic.trim());
-    const reComposite =
-      new RegExp(
-        String.raw`^(?:\uFEFF)?\s*#\s*${sub}\s*[–—\-:]\s*${top}\s*\r?\n+`,
-        'i'
-      );
+    const reComposite = new RegExp(
+      String.raw`^(?:\uFEFF)?\s*#\s*${sub}\s*[–—\-:]\s*${top}\s*\r?\n+`,
+      'i'
+    );
     out = out.replace(reComposite, '');
   }
 
   for (const t of candidates) {
     const esc = escapeRe(t.trim());
-    const re =
-      new RegExp(
-        String.raw`^(?:\uFEFF)?\s*#\s*${esc}\s*\r?\n+`,
-        'i'
-      );
+    const re = new RegExp(
+      String.raw`^(?:\uFEFF)?\s*#\s*${esc}\s*\r?\n+`,
+      'i'
+    );
     const next = out.replace(re, '');
-    if (next !== out) { out = next; break; }
+    if (next !== out) {
+      out = next;
+      break;
+    }
   }
 
   // 4) Collapse excessive blank lines
@@ -139,12 +140,49 @@ type ParsedMd = {
   topicName?: string;
 };
 
+type TurnSection = {
+  index: number;
+  markdown: string;
+};
+
 /**
- * Parse a Chatworthy “Pure MD” file:
- * - Front matter keys are produced by the shared exporter.
- * - Body (gm.content) is the entire Markdown after front matter, beginning at H1.
+ * Split the full Chatworthy markdown body into per-turn sections
+ * based on <a id="p-N"></a> anchors.
+ *
+ * If no anchors are present, returns [] and the caller can treat the
+ * entire document as a single note.
  */
-function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd {
+function splitIntoTurnSections(body: string): TurnSection[] {
+  const anchorRe = /(^|\r?\n)\s*<a id="p-(\d+)"><\/a>\s*\r?\n/gi;
+  const matches = [...body.matchAll(anchorRe)];
+  if (!matches.length) return [];
+
+  const sections: TurnSection[] = [];
+
+  for (let i = 0; i < matches.length; i++) {
+    const m = matches[i];
+    const idxStr = m[2];
+    const index = idxStr ? parseInt(idxStr, 10) : i + 1;
+
+    // For the first section, include everything from the very top
+    // (H1, ToC, etc.). For subsequent sections, start at this match.
+    const start = i === 0 ? 0 : (matches[i].index ?? 0);
+    const end = i + 1 < matches.length ? (matches[i + 1].index ?? body.length) : body.length;
+
+    const slice = body.slice(start, end);
+    sections.push({ index, markdown: slice });
+  }
+
+  return sections;
+}
+
+/**
+ * Parse a Chatworthy “Pure MD” file into one or more ParsedMd notes:
+ * - Front matter keys are produced by the shared exporter.
+ * - If there are no per-turn anchors, returns a single ParsedMd.
+ * - If there ARE per-turn anchors, returns one ParsedMd per turn.
+ */
+function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
   const raw = buf.toString('utf8');
   const gm = matter(raw);
   const fm = gm.data as Record<string, any>;
@@ -155,33 +193,85 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd {
   const subject = typeof fm.subject === 'string' ? fm.subject : undefined;
   const topic = typeof fm.topic === 'string' ? fm.topic : undefined;
 
-  const title =
+  const baseTitle =
     fmTitle ||
     fmChatTitle ||
     titleFromH1 ||
     fileName.replace(/\.(md|markdown)$/i, '');
 
-  // Use the cleaned body (including duplicate-title stripping)
-  const markdown = stripForChatalog(gm.content, {
-    subject,
-    topic,
-    chatTitle: fmChatTitle,
-    fmTitle,
-  }).trim();
-
   const tags = toArrayTags(fm.tags);
   const summary = typeof fm.summary === 'string' ? fm.summary : undefined;
   const provenanceUrl = typeof fm.pageUrl === 'string' ? fm.pageUrl : undefined;
 
-  return {
-    title,
-    markdown,
-    tags,
-    summary,
-    provenanceUrl,
-    subjectName: subject,
-    topicName: topic,
+  const opts: StripOpts = {
+    subject,
+    topic,
+    chatTitle: fmChatTitle,
+    fmTitle,
   };
+
+  const body = gm.content;
+  const turnSections = splitIntoTurnSections(body);
+
+  // No anchors → treat entire document as a single note (existing behavior).
+  if (!turnSections.length) {
+    const markdown = stripForChatalog(body, opts).trim();
+    return [
+      {
+        title: baseTitle,
+        markdown,
+        tags,
+        summary,
+        provenanceUrl,
+        subjectName: subject,
+        topicName: topic,
+      },
+    ];
+  }
+
+  // Multiple turns → produce one ParsedMd per section.
+  const notes: ParsedMd[] = [];
+
+  for (const section of turnSections) {
+    const cleaned = stripForChatalog(section.markdown, opts).trim();
+    if (!cleaned) continue;
+
+    // Try to pick a per-section heading (## ... or deeper) as a subtitle.
+    const sectionHeadingMatch = cleaned.match(/^\s*#{2,6}\s+(.+)\s*$/m);
+    const sectionHeading = sectionHeadingMatch?.[1]?.trim();
+
+    const noteTitle = sectionHeading
+      ? `${baseTitle} – ${sectionHeading}`
+      : `${baseTitle} – Turn ${section.index}`;
+
+    notes.push({
+      title: noteTitle,
+      markdown: cleaned,
+      tags,
+      summary,
+      provenanceUrl,
+      subjectName: subject,
+      topicName: topic,
+    });
+  }
+
+  // Fallback: if somehow everything got stripped, at least return one note.
+  if (!notes.length) {
+    const markdown = stripForChatalog(body, opts).trim();
+    return [
+      {
+        title: baseTitle,
+        markdown,
+        tags,
+        summary,
+        provenanceUrl,
+        subjectName: subject,
+        topicName: topic,
+      },
+    ];
+  }
+
+  return notes;
 }
 
 /** Ensure Subject/Topic exist and return their ids (string). */
@@ -242,9 +332,19 @@ async function persistParsedMd(p: ParsedMd): Promise<{ id: string; title: string
 
 // ---------------- main importers ----------------
 
-async function importOneMarkdown(buf: Buffer, fileName: string): Promise<{ id: string; title: string }> {
-  const parsed = parseChatworthyFile(buf, fileName);
-  return persistParsedMd(parsed);
+async function importOneMarkdown(
+  buf: Buffer,
+  fileName: string
+): Promise<{ id: string; title: string }[]> {
+  const parsedNotes = parseChatworthyFile(buf, fileName);
+  const created: { id: string; title: string }[] = [];
+
+  for (const p of parsedNotes) {
+    const note = await persistParsedMd(p);
+    created.push(note);
+  }
+
+  return created;
 }
 
 // POST /api/v1/imports/chatworthy
@@ -265,15 +365,20 @@ router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
           const chunks: Buffer[] = [];
           for await (const chunk of entry) chunks.push(chunk);
           const buf = Buffer.concat(chunks);
-          const note = await importOneMarkdown(buf, path);
-          results.push({ file: path, noteId: note.id, title: note.title });
+
+          const notes = await importOneMarkdown(buf, path);
+          for (const note of notes) {
+            results.push({ file: path, noteId: note.id, title: note.title });
+          }
         } else {
           entry.autodrain();
         }
       }
     } else if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
-      const note = await importOneMarkdown(req.file.buffer, req.file.originalname);
-      results.push({ file: req.file.originalname, noteId: note.id, title: note.title });
+      const notes = await importOneMarkdown(req.file.buffer, req.file.originalname);
+      for (const note of notes) {
+        results.push({ file: req.file.originalname, noteId: note.id, title: note.title });
+      }
     } else {
       return res.status(400).json({ message: 'Unsupported file type. Use .md or .zip.' });
     }
