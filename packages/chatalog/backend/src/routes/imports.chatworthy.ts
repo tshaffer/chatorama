@@ -236,13 +236,17 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
     const cleaned = stripForChatalog(section.markdown, opts).trim();
     if (!cleaned) continue;
 
-    // Try to pick a per-section heading (## ... or deeper) as a subtitle.
+    // Try to pick a per-section heading (## ... or deeper) as the title.
     const sectionHeadingMatch = cleaned.match(/^\s*#{2,6}\s+(.+)\s*$/m);
     const sectionHeading = sectionHeadingMatch?.[1]?.trim();
 
-    const noteTitle = sectionHeading
-      ? `${baseTitle} – ${sectionHeading}`
-      : `${baseTitle} – Turn ${section.index}`;
+    // 👇 New behavior:
+    // For multi-turn imports, default the title to the *unique* part only.
+    // No need to repeat the baseTitle (which often already includes subject/topic).
+    const noteTitle =
+      sectionHeading && sectionHeading.length > 0
+        ? sectionHeading
+        : `Turn ${section.index}`;
 
     notes.push({
       title: noteTitle,
