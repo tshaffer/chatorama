@@ -306,7 +306,17 @@ async function ensureSubjectTopic(
   return { subjectId, topicId };
 }
 
-async function persistParsedMd(p: ParsedMd): Promise<{ id: string; title: string }> {
+type CreatedNoteInfo = {
+  id: string;
+  title: string;
+  subjectId?: string;
+  subjectName?: string;
+  topicId?: string;
+  topicName?: string;
+  markdown: string;
+};
+
+async function persistParsedMd(p: ParsedMd): Promise<CreatedNoteInfo> {
   const { subjectId, topicId } = await ensureSubjectTopic(p.subjectName, p.topicName);
 
   const baseSlug = slugify(p.title || 'untitled');
@@ -327,7 +337,15 @@ async function persistParsedMd(p: ParsedMd): Promise<{ id: string; title: string
       : [{ type: 'chatworthy' }],
   });
 
-  return { id: doc.id, title: doc.title };
+  return {
+    id: doc.id,
+    title: doc.title,
+    subjectId,
+    subjectName: p.subjectName,
+    topicId,
+    topicName: p.topicName,
+    markdown: p.markdown,
+  };
 }
 
 // ---------------- main importers ----------------
@@ -335,9 +353,9 @@ async function persistParsedMd(p: ParsedMd): Promise<{ id: string; title: string
 async function importOneMarkdown(
   buf: Buffer,
   fileName: string
-): Promise<{ id: string; title: string }[]> {
+): Promise<CreatedNoteInfo[]> {
   const parsedNotes = parseChatworthyFile(buf, fileName);
-  const created: { id: string; title: string }[] = [];
+  const created: CreatedNoteInfo[] = [];
 
   for (const p of parsedNotes) {
     const note = await persistParsedMd(p);
@@ -352,7 +370,16 @@ router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
-    const results: Array<{ file: string; noteId: string; title: string }> = [];
+    const results: Array<{
+      file: string;
+      noteId: string;
+      title: string;
+      subjectId?: string;
+      subjectName?: string;
+      topicId?: string;
+      topicName?: string;
+      body: string;
+    }> = [];
 
     const lower = req.file.originalname.toLowerCase();
     if (lower.endsWith('.zip')) {
@@ -368,7 +395,16 @@ router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
 
           const notes = await importOneMarkdown(buf, path);
           for (const note of notes) {
-            results.push({ file: path, noteId: note.id, title: note.title });
+            results.push({
+              file: path,
+              noteId: note.id,
+              title: note.title,
+              subjectId: note.subjectId,
+              subjectName: note.subjectName,
+              topicId: note.topicId,
+              topicName: note.topicName,
+              body: note.markdown,
+            });
           }
         } else {
           entry.autodrain();
@@ -377,7 +413,16 @@ router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
     } else if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
       const notes = await importOneMarkdown(req.file.buffer, req.file.originalname);
       for (const note of notes) {
-        results.push({ file: req.file.originalname, noteId: note.id, title: note.title });
+        results.push({
+          file: req.file.originalname,
+          noteId: note.id,
+          title: note.title,
+          subjectId: note.subjectId,
+          subjectName: note.subjectName,
+          topicId: note.topicId,
+          topicName: note.topicName,
+          body: note.markdown,
+        });
       }
     } else {
       return res.status(400).json({ message: 'Unsupported file type. Use .md or .zip.' });

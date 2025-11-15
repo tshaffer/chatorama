@@ -1,9 +1,20 @@
-// features/imports/importsApi.ts
+// frontend/src/features/imports/importsApi.ts
 import { chatalogApi as baseApi } from '../api/chatalogApi';
+
+export type ImportedNoteSummary = {
+  file: string;
+  noteId: string;
+  title: string;
+  subjectId?: string;
+  subjectName?: string;
+  topicId?: string;
+  topicName?: string;
+  body: string;
+};
 
 export type ImportResponse = {
   imported: number;
-  results: { file: string; noteId: string; title: string }[];
+  results: ImportedNoteSummary[];
 };
 
 export const importsApi = baseApi.injectEndpoints({
