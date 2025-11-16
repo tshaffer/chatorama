@@ -36,7 +36,7 @@ export interface NoteRelation {
   kind: NoteRelationKind;
 }
 
-// Notes (MVP)
+// shared Note type
 export interface Note {
   id: string;
   subjectId?: string;
@@ -55,8 +55,10 @@ export interface Note {
   // Networked relationships (generic)
   relations?: NoteRelation[];
 
-  // Provenance (optional for now)
   sources?: { url?: string; type?: 'chatworthy'|'clip'|'manual' }[];
+
+  chatworthyNoteId?: string;
+  chatId?: string;
 
   createdAt: string;         // ISO
   updatedAt: string;         // ISO

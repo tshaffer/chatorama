@@ -59,6 +59,44 @@ function buildToc(prompts: { idx: number; title: string; anchor: string }[]): st
   return out;
 }
 
+// --- Chatalog meta helper -----------------
+
+// This is an internal shape for the JSON we embed in the HTML comment.
+// It’s intentionally derived from ExportNoteMetadata so we don’t need
+// any changes to external types.
+type ChatalogMetaV1 = {
+  schemaVersion: 1;
+  noteId: string;
+  chatId?: string;
+  chatTitle?: string;
+  pageUrl?: string;
+  exportedAt?: string;
+  source?: string;
+  model?: string;
+  subjectHint?: string;
+  topicHint?: string;
+};
+
+function renderChatalogMetaComment(meta: ExportNoteMetadata): string {
+  const chatalogMeta: ChatalogMetaV1 = {
+    schemaVersion: 1,
+    noteId: meta.noteId,
+    chatId: meta.chatId,
+    chatTitle: meta.chatTitle,
+    pageUrl: meta.pageUrl,
+    exportedAt: meta.exportedAt,
+    source: meta.source,
+    model: meta.model,
+    subjectHint: meta.subject,
+    topicHint: meta.topic,
+  };
+
+  const json = JSON.stringify(chatalogMeta);
+  // Single-line HTML comment so Chatalog can regex it easily.
+  // Markdown renderers / Chrome ignore this visually.
+  return `<!-- chatalog-meta ${json} -->`;
+}
+
 // --- Rendering helpers (Prompt/Response formatting) -----------------
 
 function renderPromptBlockquote(md: string): string {
@@ -209,7 +247,12 @@ function toPureMarkdownChatStyleFromHtml(
   } = opts || {};
 
   const out: string[] = [];
-  if (includeFrontMatter) out.push(renderFrontMatter(meta));
+
+  if (includeFrontMatter) {
+    out.push(renderFrontMatter(meta));
+    // Embed invisible chatalog metadata comment right after front matter
+    out.push(renderChatalogMetaComment(meta), '');
+  }
 
   out.push(`# ${title}`, '');
 
@@ -291,16 +334,22 @@ export function buildMarkdownExport(
     ? { ...meta, chatTitle: opts.title }
     : meta;
 
-
   const htmlBodies = opts?.htmlBodies ?? [];
   const includeToc = opts?.includeToc ?? true;
 
   // Fallback: if not provided, degrade to text-only, but still add ToC + anchors
   if (!htmlBodies.length || htmlBodies.length !== turns.length) {
-    const head = (opts?.includeFrontMatter ?? true) ? renderFrontMatter(metaWithTitle) : '';
+    const includeFrontMatter = opts?.includeFrontMatter ?? true;
+
+    const prefixLines: string[] = [];
+    if (includeFrontMatter) {
+      prefixLines.push(renderFrontMatter(metaWithTitle));
+      prefixLines.push(renderChatalogMetaComment(metaWithTitle), '');
+    }
+
     const title = metaWithTitle.chatTitle || 'Chat Export';
     const metaLines = [
-      head,
+      ...prefixLines,
       `# ${title}`,
       '',
       metaWithTitle.pageUrl ? `Source: ${metaWithTitle.pageUrl}` : '',
@@ -355,5 +404,4 @@ export function buildMarkdownExport(
       includeToc,
     }
   );
-
 }

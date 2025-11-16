@@ -138,6 +138,9 @@ type ParsedMd = {
   provenanceUrl?: string;
   subjectName?: string;
   topicName?: string;
+
+  // NEW: Chatworthy noteId (ext-...)
+  chatworthyNoteId?: string;
 };
 
 type TurnSection = {
@@ -186,6 +189,8 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
   const raw = buf.toString('utf8');
   const gm = matter(raw);
   const fm = gm.data as Record<string, any>;
+  const chatworthyNoteId =
+    typeof fm.noteId === 'string' ? fm.noteId.trim() : undefined;
 
   const titleFromH1 = gm.content.match(/^#\s+(.+)\s*$/m)?.[1]?.trim();
   const fmTitle = typeof fm.title === 'string' ? fm.title.trim() : undefined;
@@ -225,6 +230,7 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
         provenanceUrl,
         subjectName: subject,
         topicName: topic,
+        chatworthyNoteId,
       },
     ];
   }
@@ -240,7 +246,6 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
     const sectionHeadingMatch = cleaned.match(/^\s*#{2,6}\s+(.+)\s*$/m);
     const sectionHeading = sectionHeadingMatch?.[1]?.trim();
 
-    // 👇 New behavior:
     // For multi-turn imports, default the title to the *unique* part only.
     // No need to repeat the baseTitle (which often already includes subject/topic).
     const noteTitle =
@@ -256,6 +261,7 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
       provenanceUrl,
       subjectName: subject,
       topicName: topic,
+      chatworthyNoteId,
     });
   }
 
@@ -271,6 +277,7 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
         provenanceUrl,
         subjectName: subject,
         topicName: topic,
+        chatworthyNoteId,
       },
     ];
   }
@@ -318,6 +325,8 @@ type CreatedNoteInfo = {
   topicId?: string;
   topicName?: string;
   markdown: string;
+
+  chatworthyNoteId?: string;
 };
 
 async function persistParsedMd(p: ParsedMd): Promise<CreatedNoteInfo> {
@@ -339,6 +348,9 @@ async function persistParsedMd(p: ParsedMd): Promise<CreatedNoteInfo> {
     sources: p.provenanceUrl
       ? [{ type: 'chatworthy', url: p.provenanceUrl }]
       : [{ type: 'chatworthy' }],
+
+    // NEW: persist Chatworthy noteId
+    chatworthyNoteId: p.chatworthyNoteId,
   });
 
   return {
@@ -349,6 +361,7 @@ async function persistParsedMd(p: ParsedMd): Promise<CreatedNoteInfo> {
     topicId,
     topicName: p.topicName,
     markdown: p.markdown,
+    chatworthyNoteId: p.chatworthyNoteId,
   };
 }
 

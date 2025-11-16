@@ -19,12 +19,11 @@ export interface NoteRelation {
 }
 
 export interface NoteDoc extends Document {
-  _id: Types.ObjectId;            // DB primary key (Mongo)
-  // Outside of Mongo (API/FE), you'll expose `id` via toJSON transform.
+  _id: Types.ObjectId;
   subjectId?: string;
   topicId?: string;
   title: string;
-  slug: string;                   // pretty URL segment; required for now
+  slug: string;
   markdown: string;
   summary?: string;
   tags: string[];
@@ -32,7 +31,10 @@ export interface NoteDoc extends Document {
   backlinks: string[];
   relations?: NoteRelation[];
   sources?: { url?: string; type?: 'chatworthy'|'clip'|'manual' }[];
-  /** Persistent display ordering within a topic (lower = earlier) */
+
+  /** Chatworthy provenance */
+  chatworthyNoteId?: string;
+
   order: number;
   createdAt: Date;
   updatedAt: Date;
@@ -81,10 +83,11 @@ const NoteSchema = new Schema<NoteDoc>(
     backlinks: { type: [String], default: [] },
     sources:   { type: [SourceSchema], default: [] },
 
-    // NEW: networked relationships
     relations: { type: [RelationSchema], default: [] },
 
-    // NEW: persistent ordering within a topic; lower values appear first
+    // NEW: Chatworthy provenance
+    chatworthyNoteId: { type: String, index: true },
+
     order:     { type: Number, required: true, default: 0, index: true },
   },
   { timestamps: true }
@@ -100,8 +103,8 @@ NoteSchema.index(
 // Fast stable sort when listing notes by topic
 NoteSchema.index({ topicId: 1, order: 1, _id: 1 });
 
-// Optional: if you want fast search by title/markdown later
-// NoteSchema.index({ title: 'text', markdown: 'text' });
+// Optional: fast lookup by Chatworthy noteId (useful for de-dupe / AI-state)
+NoteSchema.index({ chatworthyNoteId: 1 });
 
 // Apply global JSON/Object transform: exposes `id`, removes `_id`/`__v`
 applyToJSON(NoteSchema);
