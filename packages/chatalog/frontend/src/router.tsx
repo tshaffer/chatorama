@@ -17,6 +17,9 @@ export const router = createBrowserRouter([
       { index: true, element: <Home /> },
       { path: 'home', element: <Home /> },
 
+      // NEW: entry point for Tree + Notes layout
+      { path: 'notes', element: <TopicNotesPage /> },
+
       // Selecting a subject → auto-jump to its first topic
       { path: 's/:subjectSlug', element: <SubjectIndex /> },
 

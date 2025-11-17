@@ -69,6 +69,7 @@ export default function AppShell() {
           {/* Destinations */}
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mr: 1 }}>
             <TopNavButton to="/">Home</TopNavButton>
+            <TopNavButton to="/notes">Notes</TopNavButton>
             <TopNavButton to="/subjects">Subjects</TopNavButton>
             <TopNavButton to="/quick-notes">Quick Notes</TopNavButton>
           </Stack>
@@ -110,7 +111,7 @@ export default function AppShell() {
           minWidth: 0,              // prevents child overflow clipping
         }}
       >
-        <Outlet key={`${subjectSlug}/${topicSlug}`} />
+        <Outlet />
       </Box>
     </Box>
   );

@@ -1,4 +1,3 @@
-// src/pages/TopicNotesPage.tsx
 import { useMemo, useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -14,16 +13,19 @@ import {
   ListItemText,
 } from '@mui/material';
 import { skipToken } from '@reduxjs/toolkit/query';
+
 import { useGetTopicNotesWithRelationsQuery } from '../features/notes/notesApi';
 import ReorderableNotesList from '../features/notes/ReorderableNotesList';
 import MoveNotesDialog from '../features/notes/MoveNotesDialog';
+import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
 
+// Extract leading ObjectId from "<id>" or "<id>-<slug>"
 const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
 
 export default function TopicNotesPage() {
   const { subjectSlug, topicSlug } = useParams();
   const subjectId = useMemo(() => takeObjectId(subjectSlug), [subjectSlug]);
-  const topicId   = useMemo(() => takeObjectId(topicSlug), [topicSlug]);
+  const topicId   = useMemo(() => takeObjectId(topicSlug),   [topicSlug]);
   const navigate  = useNavigate();
 
   // Selected notes (multi-select)
@@ -42,10 +44,15 @@ export default function TopicNotesPage() {
 
   const [moveOpen, setMoveOpen] = useState(false);
 
-  const { data, isLoading } =
-    subjectId && topicId
-      ? useGetTopicNotesWithRelationsQuery({ subjectId, topicId })
-      : { data: undefined, isLoading: true as const };
+  // ✅ ALWAYS call the hook. Use skipToken when IDs are not ready.
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+  } = useGetTopicNotesWithRelationsQuery(
+    subjectId && topicId ? { subjectId, topicId } : skipToken,
+  );
 
   const notes = data?.notes ?? [];
   const relatedTopicNotes   = data?.relatedTopicNotes ?? [];
@@ -55,23 +62,15 @@ export default function TopicNotesPage() {
   const onReordered = useCallback(
     (noteIdsInOrder: string[]) => {
       // You already have reorder mutation wired; left as-is
-      // e.g., reorder({ subjectId, topicId, noteIdsInOrder });
+      // e.g., reorder({ subjectId: subjectId!, topicId: topicId!, noteIdsInOrder });
     },
     [],
   );
 
   const onOpenNote = (noteId: string) => navigate(`/n/${noteId}`);
 
-  if (!subjectId || !topicId) {
-    return (
-      <Box p={2}>
-        <LinearProgress />
-      </Box>
-    );
-  }
-
   const allIds = useMemo(
-    () => notes.map(n => String(n.id ?? (n as any)._id)),
+    () => notes.map(n => String((n as any).id ?? (n as any)._id)),
     [notes],
   );
 
@@ -103,85 +102,129 @@ export default function TopicNotesPage() {
   };
 
   return (
-    <Box sx={{ p: 2 }}>
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        sx={{ mb: 1 }}
-      >
-        <Typography variant="h6">Notes</Typography>
-        <Toolbar disableGutters sx={{ gap: 1, minHeight: 'auto' }}>
-          <Tooltip title="Select all notes in this topic">
-            <span>
-              <Button
-                size="small"
-                disabled={!notes.length}
-                onClick={() => selectAll(allIds)}
-              >
-                Select All
-              </Button>
-            </span>
-          </Tooltip>
-          <Tooltip title="Clear selection">
-            <span>
-              <Button
-                size="small"
-                disabled={!hasSelection}
-                onClick={clearSelection}
-              >
-                Clear
-              </Button>
-            </span>
-          </Tooltip>
-          <Tooltip title="Move selected notes to another topic">
-            <span>
-              <Button
-                size="small"
-                variant="contained"
-                disabled={!hasSelection}
-                onClick={() => setMoveOpen(true)}
-              >
-                Move ({selectedIds.size})
-              </Button>
-            </span>
-          </Tooltip>
-        </Toolbar>
-      </Stack>
+    <Box
+      sx={{
+        display: 'flex',
+        height: '100%',
+        minHeight: 0,
+      }}
+    >
+      {/* LEFT: hierarchy tree */}
+      <SubjectTopicTree width={260} />
 
-      {isLoading ? (
-        <LinearProgress />
-      ) : notes.length ? (
-        <>
-          <ReorderableNotesList
-            topicId={topicId}
-            notes={notes}
-            selectedIds={selectedIds}
-            onToggleSelect={toggleSelect}
-            onReordered={onReordered}
-            onOpenNote={onOpenNote}
-          />
-
-          {/* Related sections */}
-          {renderRelatedList('Related notes from other topics', relatedTopicNotes)}
-          {renderRelatedList('Related notes by subject', relatedSubjectNotes)}
-          {renderRelatedList('Directly related notes', relatedDirectNotes)}
-        </>
-      ) : (
-        <Box sx={{ color: 'text.secondary', fontSize: 14 }}>
-          No notes yet
-        </Box>
-      )}
-
-      <MoveNotesDialog
-        open={moveOpen}
-        onClose={() => {
-          setMoveOpen(false);
-          clearSelection();
+      {/* RIGHT: notes UI */}
+      <Box
+        sx={{
+          flex: 1,
+          minWidth: 0,
+          p: 2,
+          display: 'flex',
+          flexDirection: 'column',
         }}
-        noteIds={[...selectedIds]}
-        source={{ subjectId, topicId }}
-      />
+      >
+        {/* If URL is malformed / missing ids, show a friendly message */}
+        {!subjectId || !topicId ? (
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="h6" sx={{ mb: 1 }}>
+              No topic selected
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Use the Subjects & Topics tree on the left to pick a topic.
+            </Typography>
+          </Box>
+        ) : (
+          <>
+            <Stack
+              direction="row"
+              alignItems="center"
+              justifyContent="space-between"
+              sx={{ mb: 1 }}
+            >
+              <Typography variant="h6">Notes</Typography>
+              <Toolbar disableGutters sx={{ gap: 1, minHeight: 'auto' }}>
+                <Tooltip title="Select all notes in this topic">
+                  <span>
+                    <Button
+                      size="small"
+                      disabled={!notes.length}
+                      onClick={() => selectAll(allIds)}
+                    >
+                      Select All
+                    </Button>
+                  </span>
+                </Tooltip>
+                <Tooltip title="Clear selection">
+                  <span>
+                    <Button
+                      size="small"
+                      disabled={!hasSelection}
+                      onClick={clearSelection}
+                    >
+                      Clear
+                    </Button>
+                  </span>
+                </Tooltip>
+                <Tooltip title="Move selected notes to another topic">
+                  <span>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      disabled={!hasSelection}
+                      onClick={() => setMoveOpen(true)}
+                    >
+                      Move ({selectedIds.size})
+                    </Button>
+                  </span>
+                </Tooltip>
+              </Toolbar>
+            </Stack>
+
+            {/* Error state */}
+            {isError ? (
+              <Box>
+                <Typography color="error" sx={{ mb: 1 }}>
+                  Failed to load notes.
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {String((error as any)?.data ?? (error as any)?.message ?? error)}
+                </Typography>
+              </Box>
+            ) : isLoading ? (
+              <LinearProgress />
+            ) : notes.length ? (
+              <>
+                <ReorderableNotesList
+                  topicId={topicId}
+                  notes={notes}
+                  selectedIds={selectedIds}
+                  onToggleSelect={toggleSelect}
+                  onReordered={onReordered}
+                  onOpenNote={onOpenNote}
+                />
+
+                {/* Related sections */}
+                {renderRelatedList('Related notes from other topics', relatedTopicNotes)}
+                {renderRelatedList('Related notes by subject', relatedSubjectNotes)}
+                {renderRelatedList('Directly related notes', relatedDirectNotes)}
+              </>
+            ) : (
+              <Box sx={{ color: 'text.secondary', fontSize: 14 }}>
+                No notes yet
+              </Box>
+            )}
+
+            <MoveNotesDialog
+              open={moveOpen}
+              onClose={() => {
+                setMoveOpen(false);
+                clearSelection();
+              }}
+              noteIds={[...selectedIds]}
+              source={{ subjectId, topicId }}
+            />
+          </>
+        )}
+      </Box>
     </Box>
   );
 }
