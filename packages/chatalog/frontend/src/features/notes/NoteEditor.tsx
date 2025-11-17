@@ -48,7 +48,21 @@ import { useGetAllTopicsQuery } from '../topics/topicsApi';
 
 function stripFrontMatter(md: string | undefined): string {
   if (!md) return '';
-  return md.replace(/^\uFEFF?---\s*\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$)/, '');
+
+  // 1) Strip YAML front matter at the very top
+  let s = md.replace(
+    /^\uFEFF?---\s*\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$)/,
+    '',
+  );
+
+  // 2) Strip any chatalog-meta HTML comment blocks anywhere in the doc
+  //    (these are purely metadata, never meant to be user-visible)
+  s = s.replace(
+    /<!--\s*chatalog-meta[\s\S]*?-->\s*\r?\n?/g,
+    '',
+  );
+
+  return s;
 }
 
 function normalizeTurns(md: string): string {
