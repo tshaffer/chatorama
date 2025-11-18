@@ -19,6 +19,7 @@ import { useGetTopicRelationsSummaryQuery } from '../features/subjects/subjectsA
 import ReorderableNotesList from '../features/notes/ReorderableNotesList';
 import MoveNotesDialog from '../features/notes/MoveNotesDialog';
 import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
+import LinkNoteToTargetDialog from '../features/relations/LinkNoteToTargetDialog';
 
 // Extract leading ObjectId from "<id>" or "<id>-<slug>"
 const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
@@ -34,6 +35,8 @@ export default function TopicNotesPage() {
 
   // Selected notes (multi-select)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [linkTopicDialogOpen, setLinkTopicDialogOpen] = useState(false);
+
   const clearSelection = () => setSelectedIds(new Set());
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -63,6 +66,7 @@ export default function TopicNotesPage() {
     isLoading: topicRelLoading,
     isError: topicRelError,
     error: topicRelErrorObj,
+    refetch: refetchTopicRelations,
   } = useGetTopicRelationsSummaryQuery(
     subjectId && topicId ? { subjectId, topicId } : (skipToken as any),
   );
@@ -222,10 +226,27 @@ export default function TopicNotesPage() {
                 {renderRelatedList('Related notes by subject', relatedSubjectNotes)}
                 {renderRelatedList('Directly related notes', relatedDirectNotes)}
 
+                {/* NEW: Incoming references to this topic */}
                 <Box sx={{ mt: 3 }}>
-                  <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                    Incoming references to this topic
-                  </Typography>
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    justifyContent="space-between"
+                    sx={{ mb: 1 }}
+                  >
+                    <Typography variant="subtitle1">
+                      Incoming references to this topic
+                    </Typography>
+                    {topicId && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => setLinkTopicDialogOpen(true)}
+                      >
+                        Link note to topic
+                      </Button>
+                    )}
+                  </Stack>
 
                   {topicRelLoading && !topicRelSummary && (
                     <Typography variant="body2" color="text.secondary">
@@ -358,6 +379,16 @@ export default function TopicNotesPage() {
           </>
         )}
       </Box>
+      {topicId && (
+        <LinkNoteToTargetDialog
+          open={linkTopicDialogOpen}
+          onClose={() => setLinkTopicDialogOpen(false)}
+          targetType="topic"
+          targetId={topicId}
+          defaultKind="also-about"
+          onLinked={refetchTopicRelations}
+        />
+      )}
     </Box>
   );
 }
