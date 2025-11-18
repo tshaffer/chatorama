@@ -5,26 +5,45 @@ import { AppBar, Toolbar, Typography, Button, Stack, Box, alpha, IconButton, Too
 import ImportChatworthyButton from './components/ImportChatworthyButton';
 import { fetchJSON } from './lib/api';
 import NoteAddIcon from '@mui/icons-material/NoteAdd';
+
+// NEW: nav icons
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import FlashOnOutlinedIcon from '@mui/icons-material/FlashOnOutlined';
+import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
+import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
+
 import QuickCaptureDialog from './features/quickNotes/QuickCaptureDialog';
 
-function TopNavButton({ to, children }: { to: string; children: React.ReactNode }) {
+type TopNavButtonProps = {
+  to: string;
+  children: React.ReactNode;
+  icon?: React.ReactNode;
+};
+
+function TopNavButton({ to, children, icon }: TopNavButtonProps) {
   const match = useMatch({ path: to === '/' ? '/' : `${to}/*`, end: to === '/' });
+
   return (
     <Button
       component={Link}
       to={to}
       color="inherit"
       variant="text"
+      aria-current={match ? 'page' : undefined}
       sx={(theme) => ({
         textTransform: 'uppercase',
         fontWeight: 600,
         letterSpacing: '0.06em',
         px: 2,
         borderRadius: 2,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 0.75,
         '&:hover': { backgroundColor: alpha(theme.palette.common.white, 0.12) },
         ...(match && { backgroundColor: alpha(theme.palette.common.white, 0.18) }), // active pill
       })}
     >
+      {icon}
       {children}
     </Button>
   );
@@ -68,10 +87,18 @@ export default function AppShell() {
 
           {/* Destinations */}
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mr: 1 }}>
-            <TopNavButton to="/">Home</TopNavButton>
-            <TopNavButton to="/notes">Notes</TopNavButton>
-            <TopNavButton to="/subjects">Subjects</TopNavButton>
-            <TopNavButton to="/quick-notes">Quick Notes</TopNavButton>
+            <TopNavButton to="/notes" icon={<DescriptionOutlinedIcon fontSize="small" />}>
+              Notes
+            </TopNavButton>
+            <TopNavButton to="/quick-notes" icon={<FlashOnOutlinedIcon fontSize="small" />}>
+              Quick Notes
+            </TopNavButton>
+            <TopNavButton to="/subjects/manage" icon={<CategoryOutlinedIcon fontSize="small" />}>
+              Manage Subjects
+            </TopNavButton>
+            <TopNavButton to="/relations" icon={<HubOutlinedIcon fontSize="small" />}>
+              Relations
+            </TopNavButton>
           </Stack>
 
           {/* Actions */}

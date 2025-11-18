@@ -15,6 +15,7 @@ import {
 import { skipToken } from '@reduxjs/toolkit/query';
 
 import { useGetTopicNotesWithRelationsQuery } from '../features/notes/notesApi';
+import { useGetTopicRelationsSummaryQuery } from '../features/subjects/subjectsApi'; // 👈 add this
 import ReorderableNotesList from '../features/notes/ReorderableNotesList';
 import MoveNotesDialog from '../features/notes/MoveNotesDialog';
 import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
@@ -22,11 +23,14 @@ import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
 // Extract leading ObjectId from "<id>" or "<id>-<slug>"
 const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
 
+const slugify = (s: string) =>
+  s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
 export default function TopicNotesPage() {
   const { subjectSlug, topicSlug } = useParams();
   const subjectId = useMemo(() => takeObjectId(subjectSlug), [subjectSlug]);
-  const topicId   = useMemo(() => takeObjectId(topicSlug),   [topicSlug]);
-  const navigate  = useNavigate();
+  const topicId = useMemo(() => takeObjectId(topicSlug), [topicSlug]);
+  const navigate = useNavigate();
 
   // Selected notes (multi-select)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -54,10 +58,19 @@ export default function TopicNotesPage() {
     subjectId && topicId ? { subjectId, topicId } : skipToken,
   );
 
+  const {
+    data: topicRelSummary,
+    isLoading: topicRelLoading,
+    isError: topicRelError,
+    error: topicRelErrorObj,
+  } = useGetTopicRelationsSummaryQuery(
+    subjectId && topicId ? { subjectId, topicId } : (skipToken as any),
+  );
+
   const notes = data?.notes ?? [];
-  const relatedTopicNotes   = data?.relatedTopicNotes ?? [];
+  const relatedTopicNotes = data?.relatedTopicNotes ?? [];
   const relatedSubjectNotes = data?.relatedSubjectNotes ?? [];
-  const relatedDirectNotes  = data?.relatedDirectNotes ?? [];
+  const relatedDirectNotes = data?.relatedDirectNotes ?? [];
 
   const onReordered = useCallback(
     (noteIdsInOrder: string[]) => {
@@ -103,6 +116,7 @@ export default function TopicNotesPage() {
 
   return (
     <Box
+      id="topic-notes-page"
       sx={{
         display: 'flex',
         height: '100%',
@@ -114,6 +128,7 @@ export default function TopicNotesPage() {
 
       {/* RIGHT: notes UI */}
       <Box
+        id='mainPanel'
         sx={{
           flex: 1,
           minWidth: 0,
@@ -206,6 +221,124 @@ export default function TopicNotesPage() {
                 {renderRelatedList('Related notes from other topics', relatedTopicNotes)}
                 {renderRelatedList('Related notes by subject', relatedSubjectNotes)}
                 {renderRelatedList('Directly related notes', relatedDirectNotes)}
+
+                <Box sx={{ mt: 3 }}>
+                  <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                    Incoming references to this topic
+                  </Typography>
+
+                  {topicRelLoading && !topicRelSummary && (
+                    <Typography variant="body2" color="text.secondary">
+                      Loading incoming relations…
+                    </Typography>
+                  )}
+
+                  {topicRelError && (
+                    <Typography variant="body2" color="error">
+                      Failed to load topic relations:{' '}
+                      {String(
+                        (topicRelErrorObj as any)?.data ??
+                        (topicRelErrorObj as any)?.message ??
+                        topicRelErrorObj,
+                      )}
+                    </Typography>
+                  )}
+                  {!topicRelLoading && !topicRelError && topicRelSummary && (
+                    <>
+                      {topicRelSummary.relatedTopics.length === 0 &&
+                        topicRelSummary.relatedNotes.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">
+                          No notes in other topics explicitly reference this topic yet.
+                        </Typography>
+                      ) : (
+                        <>
+                          {topicRelSummary.relatedTopics.length > 0 && (
+                            <Box sx={{ mb: 2 }}>
+                              <Typography
+                                variant="subtitle2"
+                                color="text.secondary"
+                                sx={{ mb: 0.5 }}
+                              >
+                                Other topics that reference this one
+                              </Typography>
+                              <List dense>
+                                {topicRelSummary.relatedTopics.map((rt) => {
+                                  const t = rt.topic;
+
+                                  // Build subjectSlug for navigation:
+                                  // If this related topic is under the same subject as the current page,
+                                  // reuse the current subjectSlug (nice, stable URL).
+                                  // Otherwise, just use the subjectId with a dummy slug tail —
+                                  // only the 24-hex id prefix actually matters for lookups.
+                                  const sameSubject = t.subjectId && t.subjectId === subjectId;
+                                  const subjectSlugForNav = sameSubject && subjectSlug
+                                    ? subjectSlug
+                                    : t.subjectId
+                                      ? `${t.subjectId}-subject`
+                                      : '';
+
+                                  const topicSlugForNav = `${t.id}-${slugify(t.name)}`;
+
+                                  const href =
+                                    subjectSlugForNav && topicSlugForNav
+                                      ? `/s/${subjectSlugForNav}/t/${topicSlugForNav}`
+                                      : undefined;
+
+                                  return (
+                                    <ListItemButton
+                                      key={t.id}
+                                      disabled={!href}
+                                      onClick={() => {
+                                        if (!href) return;
+                                        navigate(href);
+                                      }}
+                                    >
+                                      <ListItemText
+                                        primary={t.name}
+                                        secondary={
+                                          rt.noteCount === 1
+                                            ? '1 note in this topic references this topic.'
+                                            : `${rt.noteCount} notes in this topic reference this topic.`
+                                        }
+                                      />
+                                    </ListItemButton>
+                                  );
+                                })}
+                              </List>
+                            </Box>
+                          )}
+                          {topicRelSummary.relatedNotes.length > 0 && (
+                            <>
+                              <Typography
+                                variant="subtitle2"
+                                color="text.secondary"
+                                sx={{ mb: 0.5 }}
+                              >
+                                Notes that reference this topic
+                              </Typography>
+                              <List dense>
+                                {topicRelSummary.relatedNotes.map((n) => (
+                                  <ListItemButton
+                                    key={n.id}
+                                    onClick={() => onOpenNote(n.id)}
+                                  >
+                                    <ListItemText
+                                      primary={n.title || 'Untitled'}
+                                      secondary={n.summary}
+                                    />
+                                  </ListItemButton>
+                                ))}
+                              </List>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </>
+                  )}
+                </Box>
+
+
+
               </>
             ) : (
               <Box sx={{ color: 'text.secondary', fontSize: 14 }}>

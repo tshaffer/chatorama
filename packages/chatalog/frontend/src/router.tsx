@@ -1,5 +1,5 @@
 // src/router.tsx
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import AppShell from './AppShell';
 import Home from './pages/Home';
 import SubjectsPage from './pages/Subjects';
@@ -8,6 +8,7 @@ import NotePage from './pages/NotePage';
 import SubjectIndex from './pages/SubjectIndex';
 import QuickNotesPage from './pages/QuickNotes';
 import QuickNotePage from './pages/QuickNotePage';
+import RelationsPage from './pages/RelationsPage';
 
 export const router = createBrowserRouter([
   {
@@ -33,7 +34,14 @@ export const router = createBrowserRouter([
       // Direct deep link to a note id
       { path: 'n/:noteId', element: <NotePage /> },
 
-      { path: 'subjects', element: <SubjectsPage /> },
+      // Redirect old /subjects to the new manage route
+      { path: 'subjects', element: <Navigate to="/subjects/manage" replace /> },
+
+      // Manage Subjects (reuses existing SubjectsPage for now)
+      { path: 'subjects/manage', element: <SubjectsPage /> },
+
+      // Relations stub
+      { path: 'relations', element: <RelationsPage /> },
 
       { path: 'quick-notes', element: <QuickNotesPage /> },
       { path: 'quick-notes/:quickNoteId', element: <QuickNotePage /> },

@@ -1,7 +1,7 @@
 // frontend/src/features/notes/NoteEditor.tsx
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   useGetNoteQuery,
   useUpdateNoteMutation,
@@ -33,6 +33,7 @@ import {
 import EditIcon from '@mui/icons-material/Edit';
 import DoneIcon from '@mui/icons-material/Done';
 import DeleteIcon from '@mui/icons-material/Delete';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -51,12 +52,11 @@ function stripFrontMatter(md: string | undefined): string {
 
   // 1) Strip YAML front matter at the very top
   let s = md.replace(
-    /^\uFEFF?---\s*\r?\n[\s\S]*?\r?\n---\s*(?:\r?\n|$)/,
+    /^\uFEFF?---\s*\r?\n[\s\S]*?[\r\n]---\s*(?:\r?\n|$)/,
     '',
   );
 
   // 2) Strip any chatalog-meta HTML comment blocks anywhere in the doc
-  //    (these are purely metadata, never meant to be user-visible)
   s = s.replace(
     /<!--\s*chatalog-meta[\s\S]*?-->\s*\r?\n?/g,
     '',
@@ -222,6 +222,11 @@ function takeObjectId(s?: string) {
   return m ? m[0] : undefined;
 }
 
+// Slug helper for subject/topic links
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
 // ---------------- relations helpers ----------------
 
 const ALL_TARGET_TYPES: NoteRelationTargetType[] = ['note', 'topic', 'subject'];
@@ -241,25 +246,20 @@ const ALL_RELATION_KINDS: NoteRelationKind[] = [
   'background',
 ];
 
-type TopicOption = { id: string; label: string };
+type TopicOption = { id: string; label: string; subjectId?: string; topicName?: string };
 type SubjectOption = { id: string; label: string };
-type NoteOption = { id: string; label: string };
+type NoteOption = { id: string; label: string; subjectId?: string; topicId?: string };
 
 // ---------------- component ----------------
 
 type Props = { enableBeforeUnloadGuard?: boolean; debounceMs?: number };
-
-function idFromNoteParam(param?: string): string | undefined {
-  if (!param) return undefined;
-  const dash = param.indexOf('-');
-  return dash === -1 ? param : param.slice(0, dash);
-}
 
 export default function NoteEditor({
   enableBeforeUnloadGuard = true,
   debounceMs = 1000,
 }: Props) {
   const { noteId } = useParams<{ noteId?: string }>();
+  const navigate = useNavigate();
   const resolvedNoteId = useMemo(() => takeObjectId(noteId), [noteId]);
 
   const {
@@ -294,8 +294,9 @@ export default function NoteEditor({
 
     const opts: TopicOption[] = (topics as Topic[]).map((t) => ({
       id: t.id,
-      label: `${subjectNameById.get(t.subjectId) ?? 'Unknown subject'} / ${t.name
-        }`,
+      label: `${subjectNameById.get(t.subjectId) ?? 'Unknown subject'} / ${t.name}`,
+      subjectId: t.subjectId,
+      topicName: t.name,
     }));
 
     opts.sort((a, b) => a.label.localeCompare(b.label));
@@ -306,6 +307,8 @@ export default function NoteEditor({
     const opts: NoteOption[] = (notesForPicker as NotePreview[]).map((n) => ({
       id: n.id,
       label: n.title || 'Untitled',
+      subjectId: (n as any).subjectId,
+      topicId: (n as any).topicId,
     }));
     opts.sort((a, b) => a.label.localeCompare(b.label));
     return opts;
@@ -313,16 +316,6 @@ export default function NoteEditor({
 
   // Preview-first UX: start with editor hidden
   const [editing, setEditing] = useState(false);
-
-  if (!resolvedNoteId) {
-    return (
-      <Box p={2}>
-        <Typography variant="body2" color="text.secondary">
-          No note selected.
-        </Typography>
-      </Box>
-    );
-  }
 
   const [title, setTitle] = useState('');
   const [markdown, setMarkdown] = useState('');
@@ -337,7 +330,6 @@ export default function NoteEditor({
   }>({ open: false, msg: '', sev: 'success' });
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestNoteRef = useRef<Note | undefined>(undefined);
   const lastInitNoteIdRef = useRef<string | undefined>(undefined);
 
   // Load note -> form (initialize once per note id)
@@ -346,7 +338,6 @@ export default function NoteEditor({
     if (lastInitNoteIdRef.current === resolvedNoteId) return;
     lastInitNoteIdRef.current = resolvedNoteId;
 
-    latestNoteRef.current = note;
     setTitle(note.title ?? '');
     setMarkdown(note.markdown ?? '');
     setRelations(note.relations ?? []);
@@ -357,12 +348,13 @@ export default function NoteEditor({
   useEffect(() => {
     if (!note) return;
     if (!dirty) return;
+    if (!resolvedNoteId) return; // 👈 narrow here
 
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       try {
         await updateNote({
-          noteId: resolvedNoteId,
+          noteId: resolvedNoteId, // now typed as string
           patch: { title, markdown, relations },
         }).unwrap();
         setSnack({ open: true, msg: 'Saved', sev: 'success' });
@@ -383,7 +375,7 @@ export default function NoteEditor({
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
       if (isCmdOrCtrl && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
-        if (!note) return;
+        if (!note || !resolvedNoteId) return; // 👈 narrow here too
         if (saveTimer.current) clearTimeout(saveTimer.current);
         try {
           await updateNote({
@@ -420,6 +412,23 @@ export default function NoteEditor({
     if (dirty) return 'Unsaved changes';
     return 'Saved';
   }, [isLoading, isSaving, dirty]);
+
+  // Ancestors: subject & topic for this note
+  const noteSubject = useMemo(
+    () =>
+      (subjects as Subject[]).find(
+        (s) => s.id === (note as Note | undefined)?.subjectId,
+      ),
+    [subjects, note],
+  );
+
+  const noteTopic = useMemo(
+    () =>
+      (topics as Topic[]).find(
+        (t) => t.id === (note as Note | undefined)?.topicId,
+      ),
+    [topics, note],
+  );
 
   if (isError) {
     return (
@@ -493,6 +502,74 @@ export default function NoteEditor({
     setDirty(true);
   };
 
+  const handleOpenRelationTarget = (rel: NoteRelation) => {
+
+    if (!rel.targetId) return;
+
+    if (rel.targetType === 'note') {
+      // Try to navigate via subject/topic context if we know it
+      const target = noteOptions.find((n) => n.id === rel.targetId);
+
+      if (target && target.subjectId && target.topicId) {
+        const subj = (subjects as Subject[]).find((s) => s.id === target.subjectId);
+        const topic = (topics as Topic[]).find((t) => t.id === target.topicId);
+
+        if (subj && topic) {
+          const subjSlug = slugify(subj.name);
+          const topicSlug = slugify(topic.name);
+          const noteSlug = slugify(target.label || 'note');
+
+          navigate(
+            `/s/${subj.id}-${subjSlug}/t/${topic.id}-${topicSlug}/n/${target.id}-${noteSlug}`,
+          );
+          return;
+        }
+      }
+
+      // Fallback: just use the bare note route
+      navigate(`/n/${rel.targetId}`);
+      return;
+    }
+
+    if (rel.targetType === 'subject') {
+      const subj = (subjects as Subject[]).find((s) => s.id === rel.targetId);
+      if (!subj) return;
+      const slug = slugify(subj.name);
+      navigate(`/s/${subj.id}-${slug}`);
+      return;
+    }
+
+    if (rel.targetType === 'topic') {
+      const allTopics = topics as Topic[];
+      const topic = allTopics.find((t) => t.id === rel.targetId);
+      if (!topic) return;
+      const subj = (subjects as Subject[]).find((s) => s.id === topic.subjectId);
+      if (!subj) return;
+
+      const subjSlug = slugify(subj.name);
+      const topicSlug = slugify(topic.name);
+      navigate(`/s/${subj.id}-${subjSlug}/t/${topic.id}-${topicSlug}`);
+    }
+  };
+
+  const describeRelationTarget = (rel: NoteRelation): string => {
+    if (!rel.targetId) return '(no target selected)';
+
+    if (rel.targetType === 'note') {
+      const n = noteOptions.find((x) => x.id === rel.targetId);
+      return n ? `Note: ${n.label}` : `Note: ${rel.targetId}`;
+    }
+
+    if (rel.targetType === 'subject') {
+      const s = subjectOptions.find((x) => x.id === rel.targetId);
+      return s ? `Subject: ${s.label}` : `Subject: ${rel.targetId}`;
+    }
+
+    // topic
+    const t = topicOptions.find((x) => x.id === rel.targetId);
+    return t ? `Topic: ${t.label}` : `Topic: ${rel.targetId}`;
+  };
+
   return (
     <Box
       p={2}
@@ -553,7 +630,7 @@ export default function NoteEditor({
               sx={{ mb: 1 }}
             >
               <Typography variant="subtitle2">
-                Relations (experimental)
+                Relations
               </Typography>
               <Button
                 size="small"
@@ -810,6 +887,21 @@ export default function NoteEditor({
                         ))}
                       </TextField>
 
+                      {/* Open target */}
+                      <Tooltip title="Open target">
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleOpenRelationTarget(rel)}
+                            aria-label="Open related item"
+                            disabled={!rel.targetId}
+                          >
+                            <OpenInNewIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+
+                      {/* Remove relation */}
                       <IconButton
                         size="small"
                         onClick={() => handleRemoveRelation(idx)}
@@ -858,7 +950,6 @@ export default function NoteEditor({
             sx={{ flex: 1, overflow: 'auto' }}
           />
 
-
           <Divider />
         </>
       )}
@@ -872,6 +963,105 @@ export default function NoteEditor({
         <Typography variant="h5" sx={{ mb: 1 }}>
           {title || 'Untitled'}
         </Typography>
+
+        {/* Context & relations (read-only, always visible in preview) */}
+        {(noteSubject || noteTopic || (relations && relations.length > 0)) && (
+          <Box
+            sx={{
+              mb: 2,
+              p: 1,
+              borderRadius: 1,
+              border: '1px solid',
+              borderColor: 'divider',
+              backgroundColor: 'background.paper',
+            }}
+          >
+            {noteSubject || noteTopic ? (
+              <Box sx={{ mb: relations && relations.length > 0 ? 1.5 : 0 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
+                >
+                  Context
+                </Typography>
+                <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap' }}>
+                  {noteSubject && (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={`Subject: ${noteSubject.name}`}
+                      onClick={() => {
+                        const slug = slugify(noteSubject.name);
+                        navigate(`/s/${noteSubject.id}-${slug}`);
+                      }}
+                    />
+                  )}
+                  {noteTopic && (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={`Topic: ${noteTopic.name}`}
+                      onClick={() => {
+                        const subj = noteSubject;
+                        if (!subj) return;
+                        const subjSlug = slugify(subj.name);
+                        const topicSlug = slugify(noteTopic.name);
+                        navigate(`/s/${subj.id}-${subjSlug}/t/${noteTopic.id}-${topicSlug}`);
+                      }}
+                    />
+                  )}
+                </Stack>
+              </Box>
+            ) : null}
+
+            {relations && relations.length > 0 && (
+              <Box>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
+                >
+                  Relations
+                </Typography>
+                <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+                  {relations.map((rel, idx) => (
+                    <Stack
+                      key={idx}
+                      direction="row"
+                      spacing={1}
+                      alignItems="center"
+                    >
+                      <Typography variant="body2">
+                        {describeRelationTarget(rel)}{' '}
+                        <Typography
+                          component="span"
+                          variant="caption"
+                          color="text.secondary"
+                        >
+                          ({rel.kind})
+                        </Typography>
+                      </Typography>
+                      <Tooltip title="Open related item">
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleOpenRelationTarget(rel)}
+                            aria-label="Open related item"
+                            disabled={!rel.targetId}
+                          >
+                            <OpenInNewIcon fontSize="inherit" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </Stack>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+          </Box>
+        )}
+
         <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
           <div className="markdown-body">
             <ReactMarkdown

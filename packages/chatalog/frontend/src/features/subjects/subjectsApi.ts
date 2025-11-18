@@ -1,5 +1,5 @@
 // frontend/src/features/subjects/subjectsApi.ts
-import type { Subject, Topic, NotePreview, Note } from '@chatorama/chatalog-shared';
+import type { Subject, Topic, Note, SubjectRelationsSummary, TopicRelationsSummary } from '@chatorama/chatalog-shared';
 import { chatalogApi as baseApi } from '../api/chatalogApi';
 
 const safeId = (o: { id?: string } | undefined) => o?.id ?? '';
@@ -33,6 +33,27 @@ export const subjectsApi = baseApi.injectEndpoints({
       providesTags: (res, _err, { subjectId, topicId }) => [
         { type: 'TopicNotes', id: `${subjectId}:${topicId}` },
         ...(res ?? []).map(n => ({ type: 'Note' as const, id: n.id })),
+      ],
+    }),
+
+    getSubjectRelationsSummary: build.query<SubjectRelationsSummary, string>({
+      query: (subjectId) => ({
+        url: `subjects/${subjectId}/relations-summary`,
+      }),
+      providesTags: (_res, _err, subjectId) => [
+        { type: 'Subject' as const, id: `REL:${subjectId}` },
+      ],
+    }),
+
+    getTopicRelationsSummary: build.query<
+      TopicRelationsSummary,
+      { subjectId: string; topicId: string }
+    >({
+      query: ({ subjectId, topicId }) => ({
+        url: `subjects/${subjectId}/topics/${topicId}/relations-summary`,
+      }),
+      providesTags: (_res, _err, { subjectId, topicId }) => [
+        { type: 'Topic' as const, id: `REL:${subjectId}:${topicId}` },
       ],
     }),
 
@@ -134,4 +155,6 @@ export const {
   useDeleteTopicMutation,
   useRenameSubjectMutation,
   useRenameTopicMutation,
+  useGetSubjectRelationsSummaryQuery,
+  useGetTopicRelationsSummaryQuery,
 } = subjectsApi;

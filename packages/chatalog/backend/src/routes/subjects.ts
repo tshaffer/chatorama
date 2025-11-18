@@ -4,6 +4,10 @@ import { listTopicsForSubjectId, listNotesForSubjectTopicIds, renameTopic, reord
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
 import { deleteSubjectCascade, deleteTopicCascade } from '../models/hooks/cascade';
+import {
+  getSubjectRelationsSummary,
+  getTopicRelationsSummary,
+} from '../controllers/subjectRelationsController';
 
 const subjectsRouter = Router();
 
@@ -25,6 +29,9 @@ subjectsRouter.patch('/:subjectId/topics/:topicId/notes/reorder', reorderNotesFo
 
 // /api/v1/subjects/:subjectId/topics/:topicId
 subjectsRouter.patch('/:subjectId/topics/:topicId', renameTopic);
+
+subjectsRouter.get('/:subjectId/relations-summary', getSubjectRelationsSummary);
+subjectsRouter.get('/:subjectId/topics/:topicId/relations-summary', getTopicRelationsSummary);
 
 // POST /api/v1/subjects
 subjectsRouter.post('/', async (req, res, next) => {

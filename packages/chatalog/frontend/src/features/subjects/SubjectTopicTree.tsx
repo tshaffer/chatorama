@@ -60,6 +60,7 @@ export default function SubjectTopicTree({ width = 260 }: SubjectTopicTreeProps)
 
   return (
     <Box
+      id='subject-topic-tree'
       sx={{
         width,
         flexShrink: 0,

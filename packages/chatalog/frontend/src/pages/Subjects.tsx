@@ -33,7 +33,7 @@ const slugify = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 const safeId = (o: { id?: string } | undefined) => o?.id ?? '';
 
-export default function SubjectsPage() {
+export default function ManageSubjectsPage() {
   const { data: subjects = [], isLoading } = useGetSubjectsQuery();
   const [newSubjectName, setNewSubjectName] = useState('');
   const [createSubject, { isLoading: creatingSubject }] = useCreateSubjectMutation();
@@ -47,8 +47,16 @@ export default function SubjectsPage() {
 
   return (
     <Box sx={{ p: 2 }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
-        <Typography variant="h4">Subjects</Typography>
+      {/* Header */}
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1.5 }}>
+        <Box>
+          <Typography variant="h4" gutterBottom>
+            Manage Subjects
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Create, rename, and delete subjects and topics. Changes here update the Notes hierarchy.
+          </Typography>
+        </Box>
 
         <Stack direction="row" spacing={1} alignItems="center">
           <TextField
@@ -71,6 +79,7 @@ export default function SubjectsPage() {
 
       <Divider sx={{ mb: 2 }} />
 
+      {/* Subject list */}
       <Stack spacing={2}>
         {isLoading && (
           <>
@@ -119,13 +128,8 @@ const SubjectCard = memo(function SubjectCard(props: {
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const [editingTopicDraft, setEditingTopicDraft] = useState('');
 
-  // timer for distinguishing single vs double click on the SUBJECT TITLE only
-  const [titleClickTimer, setTitleClickTimer] = useState<number | null>(null);
-
   // timers for topic chips (single vs double click)
   const chipTimersRef = useRef<Record<string, number | null>>({});
-
-  const subjectHref = `/s/${props.subjectId}-${slugify(props.subjectName)}`;
 
   const beginEditTopic = (t: Topic) => {
     setEditingTopicId(safeId(t));
@@ -140,7 +144,6 @@ const SubjectCard = memo(function SubjectCard(props: {
         subjectId: props.subjectId,
         topicId: editingTopicId,
         name,
-        // preserveSlug: true,
       }).unwrap();
     }
     setEditingTopicId(null);
@@ -151,7 +154,6 @@ const SubjectCard = memo(function SubjectCard(props: {
   };
 
   const handleCreateTopic = async (e?: React.MouseEvent) => {
-    // no card-level navigation anymore, but keep this just in case
     e?.stopPropagation();
     const name = newTopicName.trim();
     if (!name) return;
@@ -162,8 +164,6 @@ const SubjectCard = memo(function SubjectCard(props: {
   return (
     <Card
       variant="outlined"
-      // No onClick / onDoubleClick here anymore:
-      // navigation is now handled ONLY via the subject title and topic chips.
       sx={{ cursor: 'default' }}
     >
       <CardContent sx={{ pb: 2 }}>
@@ -174,7 +174,7 @@ const SubjectCard = memo(function SubjectCard(props: {
           justifyContent="space-between"
           sx={{ mb: 1 }}
         >
-          {/* Subject title: single-click navigates, double-click renames */}
+          {/* Subject title: double-click to rename */}
           <Box sx={{ fontWeight: 600 }}>
             <InlineEditableName
               value={props.subjectName}
@@ -195,7 +195,6 @@ const SubjectCard = memo(function SubjectCard(props: {
             icon={<DeleteIcon />}
             onConfirm={async () => {
               await deleteSubject({ subjectId: props.subjectId }).unwrap();
-              // Stay on /subjects; no navigation here.
             }}
           />
         </Stack>
@@ -205,7 +204,7 @@ const SubjectCard = memo(function SubjectCard(props: {
         </Typography>
 
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-          {topics.length === 0 && (
+          {topics.length === 0 && !isLoading && (
             <Typography variant="caption" color="text.secondary">
               No topics yet
             </Typography>
@@ -266,7 +265,6 @@ const SubjectCard = memo(function SubjectCard(props: {
                 onDelete={async (e) => {
                   (e as any)?.stopPropagation?.();
                   (e as any)?.preventDefault?.();
-                  // also cancel any pending single-click nav for safety
                   const timer = chipTimersRef.current[tid];
                   if (timer) {
                     clearTimeout(timer);

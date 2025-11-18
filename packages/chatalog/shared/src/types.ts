@@ -116,3 +116,41 @@ export interface MoveNotesResult {
   source?: { subjectId: string; topicId: string };
   dest: { subjectId: string; topicId: string; assignedOrders?: Record<string, number> };
 }
+
+// --- Subject-level relations summary ---
+
+export interface RelatedTopicSummary {
+  topic: Topic;
+  noteCount: number;
+}
+
+export interface SubjectRelationsSummary {
+  subjectId: string;
+  /**
+   * Notes anywhere whose relations include
+   *   { targetType: 'subject', targetId: subjectId }
+   */
+  relatedNotes: NotePreview[];
+  /**
+   * Topics that appear in those notes (via note.topicId),
+   * with a count of how many notes in each topic reference this subject.
+   */
+  relatedTopics: RelatedTopicSummary[];
+}
+
+export interface TopicRelationsSummary {
+  subjectId: string;
+  topicId: string;
+
+  /**
+   * Notes anywhere whose relations include
+   *   { targetType: 'topic', targetId: topicId }
+   */
+  relatedNotes: NotePreview[];
+
+  /**
+   * Other topics that those notes live in (excluding this topic),
+   * with a count of how many notes from each topic reference this topic.
+   */
+  relatedTopics: RelatedTopicSummary[];
+}

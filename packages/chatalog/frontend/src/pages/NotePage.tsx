@@ -14,5 +14,11 @@ export default function NotePage() {
     );
   }
 
-  return <NoteEditor debounceMs={1000} enableBeforeUnloadGuard />;
+  return (
+    <NoteEditor
+      key={noteId}                 // 👈 force remount when the route param changes
+      debounceMs={1000}
+      enableBeforeUnloadGuard
+    />
+  );
 }
