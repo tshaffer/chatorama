@@ -29,6 +29,9 @@ export type EditableImportedNoteRow = ImportedNoteSummary & {
   subjectLabel: string;
   topicLabel: string;
   showBody: boolean;
+  // track whether user has manually changed subject/topic for this row
+  subjectTouched: boolean;
+  topicTouched: boolean;
 };
 
 type Props = {
@@ -56,6 +59,8 @@ export function ImportResultsDialog({
       subjectLabel: n.subjectName ?? '',
       topicLabel: n.topicName ?? '',
       showBody: false,
+      subjectTouched: false,
+      topicTouched: false,
     })),
   );
 
@@ -75,9 +80,12 @@ export function ImportResultsDialog({
       importedNotes.map((n) => ({
         ...n,
         editedTitle: n.title,
+        // keep the importer’s initial guess, but mark as not touched
         subjectLabel: n.subjectName ?? firstSubject ?? '',
         topicLabel: n.topicName ?? firstTopic ?? '',
         showBody: false,
+        subjectTouched: false,
+        topicTouched: false,
       })),
     );
   }, [importedNotes]);
@@ -132,32 +140,35 @@ export function ImportResultsDialog({
     );
   };
 
-  // --- Default Subject / Topic updates using Autocomplete ---
+  // --- Default Subject / Topic updates ---
+  // New behavior: update every row that hasn't been manually edited yet.
 
   const updateDefaultSubject = (next: string) => {
-    setDefaultSubjectLabel((prevDefault) => {
-      setRows((prevRows) =>
-        prevRows.map((r) =>
-          (r.subjectLabel ?? '') === (prevDefault ?? '')
-            ? { ...r, subjectLabel: next }
-            : r,
-        ),
-      );
-      return next;
-    });
+    setDefaultSubjectLabel(next);
+    setRows((prevRows) =>
+      prevRows.map((r) =>
+        r.subjectTouched
+          ? r
+          : {
+              ...r,
+              subjectLabel: next ?? '',
+            },
+      ),
+    );
   };
 
   const updateDefaultTopic = (next: string) => {
-    setDefaultTopicLabel((prevDefault) => {
-      setRows((prevRows) =>
-        prevRows.map((r) =>
-          (r.topicLabel ?? '') === (prevDefault ?? '')
-            ? { ...r, topicLabel: next }
-            : r,
-        ),
-      );
-      return next;
-    });
+    setDefaultTopicLabel(next);
+    setRows((prevRows) =>
+      prevRows.map((r) =>
+        r.topicTouched
+          ? r
+          : {
+              ...r,
+              topicLabel: next ?? '',
+            },
+      ),
+    );
   };
 
   const handleApply = () => {
@@ -171,9 +182,9 @@ export function ImportResultsDialog({
         <Typography variant="body2" sx={{ mb: 2 }}>
           Set default Subject/Topic labels below, then tweak each note as needed.
           You can either pick from the list or type new labels. Changing a
-          default updates any rows still using the previous default. Use the
-          arrow icon on the left to expand and see the note body rendered as
-          markdown.
+          default updates any rows whose Subject/Topic you haven&apos;t manually
+          edited yet. Use the arrow icon on the left to expand and see the note
+          body rendered as markdown.
         </Typography>
 
         <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
@@ -260,11 +271,13 @@ export function ImportResultsDialog({
                       onChange={(_e, newValue) =>
                         handleRowChange(row.importKey, {
                           subjectLabel: newValue ?? '',
+                          subjectTouched: true,
                         })
                       }
                       onInputChange={(_e, newInputValue) =>
                         handleRowChange(row.importKey, {
                           subjectLabel: newInputValue ?? '',
+                          subjectTouched: true,
                         })
                       }
                       renderInput={(params) => (
@@ -284,11 +297,13 @@ export function ImportResultsDialog({
                       onChange={(_e, newValue) =>
                         handleRowChange(row.importKey, {
                           topicLabel: newValue ?? '',
+                          topicTouched: true,
                         })
                       }
                       onInputChange={(_e, newInputValue) =>
                         handleRowChange(row.importKey, {
                           topicLabel: newInputValue ?? '',
+                          topicTouched: true,
                         })
                       }
                       renderInput={(params) => (

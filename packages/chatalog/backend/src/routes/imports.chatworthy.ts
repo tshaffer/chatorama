@@ -130,6 +130,8 @@ function toArrayTags(fmTags: unknown): string[] {
   return [];
 }
 
+// ----- Chatworthy parsing types -----
+
 type ParsedMd = {
   title: string;
   markdown: string;
@@ -139,12 +141,17 @@ type ParsedMd = {
   subjectName?: string;
   topicName?: string;
 
-  // Chatworthy noteId (ext-...)
+  // Chatworthy provenance
   chatworthyNoteId?: string;
+  chatworthyChatId?: string;
+  chatworthyChatTitle?: string;
+  chatworthyFileName?: string;
+  chatworthyTurnIndex?: number;
+  chatworthyTotalTurns?: number;
 };
 
 type TurnSection = {
-  index: number;
+  index: number;   // 0-based turn index
   markdown: string;
 };
 
@@ -164,14 +171,12 @@ function splitIntoTurnSections(body: string): TurnSection[] {
 
   for (let i = 0; i < matches.length; i++) {
     const m = matches[i];
-    const idxStr = m[2];
-    const index = idxStr ? parseInt(idxStr, 10) : i + 1;
 
-    const start = i === 0 ? 0 : (matches[i].index ?? 0);
+    const start = m.index ?? 0;
     const end = i + 1 < matches.length ? (matches[i + 1].index ?? body.length) : body.length;
 
     const slice = body.slice(start, end);
-    sections.push({ index, markdown: slice });
+    sections.push({ index: i, markdown: slice }); // 0-based
   }
 
   return sections;
@@ -187,8 +192,11 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
   const raw = buf.toString('utf8');
   const gm = matter(raw);
   const fm = gm.data as Record<string, any>;
+
   const chatworthyNoteId =
     typeof fm.noteId === 'string' ? fm.noteId.trim() : undefined;
+  const chatworthyChatId =
+    typeof fm.chatId === 'string' ? fm.chatId.trim() : undefined;
 
   const titleFromH1 = gm.content.match(/^#\s+(.+)\s*$/m)?.[1]?.trim();
   const fmTitle = typeof fm.title === 'string' ? fm.title.trim() : undefined;
@@ -216,7 +224,8 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
   const body = gm.content;
   const turnSections = splitIntoTurnSections(body);
 
-  // No anchors → treat entire document as a single note (existing behavior).
+  // No anchors → treat entire document as a single note (existing behavior),
+  // but still record Chatworthy chat info as a “single-turn chat”.
   if (!turnSections.length) {
     const markdown = stripForChatalog(body, opts).trim();
     return [
@@ -229,12 +238,18 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
         subjectName: subject,
         topicName: topic,
         chatworthyNoteId,
+        chatworthyChatId,
+        chatworthyChatTitle: fmChatTitle,
+        chatworthyFileName: fileName,
+        chatworthyTurnIndex: 0,
+        chatworthyTotalTurns: 1,
       },
     ];
   }
 
   // Multiple turns → produce one ParsedMd per section.
   const notes: ParsedMd[] = [];
+  const totalTurns = turnSections.length;
 
   for (const section of turnSections) {
     const cleaned = stripForChatalog(section.markdown, opts).trim();
@@ -246,7 +261,7 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
     const noteTitle =
       sectionHeading && sectionHeading.length > 0
         ? sectionHeading
-        : `Turn ${section.index}`;
+        : `Turn ${section.index + 1}`;
 
     notes.push({
       title: noteTitle,
@@ -257,6 +272,11 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
       subjectName: subject,
       topicName: topic,
       chatworthyNoteId,
+      chatworthyChatId,
+      chatworthyChatTitle: fmChatTitle,
+      chatworthyFileName: fileName,
+      chatworthyTurnIndex: section.index,
+      chatworthyTotalTurns: totalTurns,
     });
   }
 
@@ -272,6 +292,11 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
         subjectName: subject,
         topicName: topic,
         chatworthyNoteId,
+        chatworthyChatId,
+        chatworthyChatTitle: fmChatTitle,
+        chatworthyFileName: fileName,
+        chatworthyTurnIndex: 0,
+        chatworthyTotalTurns: 1,
       },
     ];
   }
@@ -323,7 +348,14 @@ type PreviewNoteInfo = {
   tags?: string[];
   summary?: string;
   provenanceUrl?: string;
+
+  // Chatworthy provenance
   chatworthyNoteId?: string;
+  chatworthyChatId?: string;
+  chatworthyChatTitle?: string;
+  chatworthyFileName?: string;
+  chatworthyTurnIndex?: number;
+  chatworthyTotalTurns?: number;
 };
 
 type ApplyImportedNotePayload = {
@@ -335,7 +367,14 @@ type ApplyImportedNotePayload = {
   tags?: string[];
   summary?: string;
   provenanceUrl?: string;
+
+  // Chatworthy provenance
   chatworthyNoteId?: string;
+  chatworthyChatId?: string;
+  chatworthyChatTitle?: string;
+  chatworthyFileName?: string;
+  chatworthyTurnIndex?: number;
+  chatworthyTotalTurns?: number;
 };
 
 // ---------------- main importers ----------------
@@ -361,6 +400,11 @@ async function parseOneMarkdownForPreview(
       summary: p.summary,
       provenanceUrl: p.provenanceUrl,
       chatworthyNoteId: p.chatworthyNoteId,
+      chatworthyChatId: p.chatworthyChatId,
+      chatworthyChatTitle: p.chatworthyChatTitle,
+      chatworthyFileName: p.chatworthyFileName ?? fileName,
+      chatworthyTurnIndex: p.chatworthyTurnIndex,
+      chatworthyTotalTurns: p.chatworthyTotalTurns,
     });
   });
 
@@ -394,7 +438,10 @@ router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
         }
       }
     } else if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
-      const notes = await parseOneMarkdownForPreview(req.file.buffer, req.file.originalname);
+      const notes = await parseOneMarkdownForPreview(
+        req.file.buffer,
+        req.file.originalname
+      );
       results.push(...notes);
     } else {
       return res.status(400).json({ message: 'Unsupported file type. Use .md or .zip.' });
@@ -439,7 +486,14 @@ router.post('/chatworthy/apply', async (req, res, next) => {
         sources: row.provenanceUrl
           ? [{ type: 'chatworthy', url: row.provenanceUrl }]
           : [{ type: 'chatworthy' }],
+
+        // Chatworthy provenance
         chatworthyNoteId: row.chatworthyNoteId,
+        chatworthyChatId: row.chatworthyChatId,
+        chatworthyChatTitle: row.chatworthyChatTitle,
+        chatworthyFileName: row.chatworthyFileName,
+        chatworthyTurnIndex: row.chatworthyTurnIndex,
+        chatworthyTotalTurns: row.chatworthyTotalTurns,
       });
 
       createdNotes.push(doc);
