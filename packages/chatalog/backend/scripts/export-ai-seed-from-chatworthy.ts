@@ -1,287 +1,172 @@
 // scripts/export-ai-seed-from-chatworthy.ts
 //
-// Build an "AI seed" JSON purely from Chatworthy Markdown exports.
-// No Mongo / no existing Chatalog DB required.
+// Usage (example):
+//   npx ts-node scripts/export-ai-seed-from-chatworthy.ts \
+//     "/Users/tedshaffer/Documents/ChatworthyExports/v1/**/*.md" \
+//     > ./data/ai-seed-v2.json
 //
-// Usage:
-//   cd packages/chatalog/backend
-//   npx ts-node scripts/export-ai-seed-from-chatworthy.ts ../chatworthy-dump ./ai-seed.json
+// Or, if you prefer to just pass a directory, this script will expand it:
+//   npx ts-node scripts/export-ai-seed-from-chatworthy.ts \
+//     "/Users/tedshaffer/Documents/ChatworthyExports/v1" \
+//     > ./data/ai-seed-v2.json
 //
-// Where ../chatworthy-dump is a directory full of .md files exported by Chatworthy.
+// Assumptions:
+// - Chatworthy export format as in your example (anchors + **Prompt**/**Response**).
+// - Each Prompt/Response block is one "turn" -> one ai-seed note entry.
+// - Front matter contains: noteId, subject, topic, chatTitle, exportedAt, etc.
 
 import fs from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
+import { globSync } from 'glob';
 
-// ---------- Types for the AI seed ----------
-
-type AiSeed = {
-  version: 1;
-  generatedAt: string;
-  notes: AiSeedNote[];
-};
-
-type AiSeedNote = {
-  /** Stable key we’ll use when talking to ChatGPT */
-  aiNoteKey: string;
-
-  /** Chatworthy noteId from front matter */
-  chatworthyNoteId: string;
-
-  /** File + turn info (for your own debugging) */
-  fileName: string;
-  turnIndex: number; // 1-based if split into multiple turns
-
-  /** Hints from front matter */
-  chatTitle?: string;
-  subjectHint?: string;
-  topicHint?: string;
-
-  /** The cleaned markdown body for this logical note */
-  markdown: string;
-};
-
-// ---------- Helpers copied from imports.chatworthy.ts (simplified) ----------
-
-function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-type StripOpts = {
+type FrontMatter = {
+  noteId: string;
   subject?: string;
   topic?: string;
   chatTitle?: string;
-  fmTitle?: string;
+  [key: string]: any;
 };
 
-function buildCompositeTitle(subject?: string, topic?: string): string | undefined {
-  if (!subject || !topic) return undefined;
-  return `${subject.trim()} - ${topic.trim()}`;
+type AiSeedNote = {
+  aiNoteKey: string;
+  chatworthyNoteId: string;
+  fileName: string;
+  subjectHint?: string;
+  topicHint?: string;
+  chatTitle?: string;
+  turnIndex: number;
+  promptText: string;
+  responseText: string;
+};
+
+type AiSeed = {
+  version: 1;
+  notes: AiSeedNote[];
+};
+
+function usageAndExit(code = 1): never {
+  console.error(
+    'Usage: npx ts-node scripts/export-ai-seed-from-chatworthy.ts "<dir-or-glob-pattern>"'
+  );
+  process.exit(code);
 }
 
-/** Remove ToC block, anchors, meta rows, and a duplicate first H1 title. */
-function stripForAiSeed(md: string, opts: StripOpts = {}): string {
-  let out = md;
+// Simple helper to strip leading markdown blockquote markers and whitespace
+function stripBlockquote(s: string): string {
+  return s
+    .split('\n')
+    .map(line => line.replace(/^>\s?/, ''))
+    .join('\n')
+    .trim();
+}
 
-  // 1) Drop the "## Table of Contents" section
-  out = out.replace(
-    /^\s*##\s*Table of Contents\s*\r?\n(?:\r?\n)?(?:^\d+\.\s+\[.*?\]\(#p-\d+\)\s*\r?\n)+/gmi,
-    ''
-  );
+// Parse all turns from a single Chatworthy-exported markdown file
+function extractTurnsFromMarkdown(body: string): {
+  promptText: string;
+  responseText: string;
+}[] {
+  // Regex explanation:
+  // - Match an anchor like <a id="p-1"></a>
+  // - Then **Prompt**
+  // - Then capture everything up to **Response** as the prompt block
+  // - Then capture everything after **Response** up to the next anchor or EOF as the response block
+  //
+  // The "s" flag (dotAll) lets '.' match newlines.
+  const turnRegex =
+    /<a id="p-(\d+)"><\/a>\s*\*\*Prompt\*\*\s*([\s\S]*?)\*\*Response\*\*\s*([\s\S]*?)(?=(?:\n<a id="p-\d+"><\/a>|$))/g;
 
-  // 2) Remove standalone anchor lines like <a id="p-2"></a>
-  out = out.replace(/^\s*<a id="p-\d+"><\/a>\s*$(?:\r?\n)?/gmi, '');
+  const turns: { promptText: string; responseText: string }[] = [];
+  let match: RegExpExecArray | null;
 
-  // 3) Remove exporter meta rows
-  out = out.replace(/^Source:\s.*$\r?\n?/gmi, '');
-  out = out.replace(/^Exported:\s.*$\r?\n?/gmi, '');
+  while ((match = turnRegex.exec(body)) !== null) {
+    const promptBlock = match[2] ?? '';
+    const responseBlock = match[3] ?? '';
 
-  // 3.5) Remove a duplicate top-level H1 that matches our computed title(s).
-  const candidates: string[] = [];
-  const composite = buildCompositeTitle(opts.subject, opts.topic);
-  if (composite) candidates.push(composite);
-  if (opts.chatTitle) candidates.push(opts.chatTitle);
-  if (opts.fmTitle) candidates.push(opts.fmTitle);
+    const promptText = stripBlockquote(promptBlock);
+    const responseText = responseBlock.trim();
 
-  if (opts.subject && opts.topic) {
-    const sub = escapeRe(opts.subject.trim());
-    const top = escapeRe(opts.topic.trim());
-    const reComposite = new RegExp(
-      String.raw`^(?:\uFEFF)?\s*#\s*${sub}\s*[–—\-:]\s*${top}\s*\r?\n+`,
-      'i'
-    );
-    out = out.replace(reComposite, '');
-  }
-
-  for (const t of candidates) {
-    const esc = escapeRe(t.trim());
-    const re = new RegExp(
-      String.raw`^(?:\uFEFF)?\s*#\s*${esc}\s*\r?\n+`,
-      'i'
-    );
-    const next = out.replace(re, '');
-    if (next !== out) {
-      out = next;
-      break;
+    // Only push if we actually have a prompt or response; this avoids phantom turns
+    if (promptText || responseText) {
+      turns.push({ promptText, responseText });
     }
   }
 
-  // 4) Collapse excessive blank lines
-  out = out.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trimEnd();
-
-  return out;
+  return turns;
 }
 
-type TurnSection = {
-  index: number;
-  markdown: string;
-};
+function buildAiSeedNotesFromFile(filePath: string): AiSeedNote[] {
+  const raw = fs.readFileSync(filePath, 'utf8');
+  const { data, content } = matter(raw);
+  const fm = data as FrontMatter;
 
-/**
- * Split the full body into per-turn sections based on <a id="p-N"></a>.
- * If none are present, returns [] and caller treats whole doc as one note.
- */
-function splitIntoTurnSections(body: string): TurnSection[] {
-  const anchorRe = /(^|\r?\n)\s*<a id="p-(\d+)"><\/a>\s*\r?\n/gi;
-  const matches = [...body.matchAll(anchorRe)];
-  if (!matches.length) return [];
-
-  const sections: TurnSection[] = [];
-
-  for (let i = 0; i < matches.length; i++) {
-    const m = matches[i];
-    const idxStr = m[2];
-    const index = idxStr ? parseInt(idxStr, 10) : i + 1;
-
-    const start = i === 0 ? 0 : (matches[i].index ?? 0);
-    const end = i + 1 < matches.length ? (matches[i + 1].index ?? body.length) : body.length;
-
-    const slice = body.slice(start, end);
-    sections.push({ index, markdown: slice });
+  if (!fm.noteId) {
+    throw new Error(`Missing noteId in front matter for file: ${filePath}`);
   }
 
-  return sections;
-}
+  const chatworthyNoteId = fm.noteId;
+  const fileName = path.basename(filePath);
 
-// ---------- Core: process one .md file ----------
+  const subjectHint = fm.subject;
+  const topicHint = fm.topic;
+  const chatTitle = fm.chatTitle;
 
-function buildAiSeedNotesFromFile(mdPath: string): AiSeedNote[] {
-  const raw = fs.readFileSync(mdPath, 'utf8');
-  const gm = matter(raw);
-  const fm = gm.data as Record<string, any>;
-  const content = gm.content;
+  const turns = extractTurnsFromMarkdown(content);
 
-  const chatworthyNoteId = typeof fm.noteId === 'string' ? fm.noteId.trim() : '';
-  if (!chatworthyNoteId) {
-    throw new Error(`File ${mdPath} is missing noteId in front matter`);
-  }
+  return turns.map((turn, index) => {
+    const turnIndex = index + 1; // 1-based
+    const aiNoteKey = `${chatworthyNoteId}#${turnIndex}`;
 
-  const fmTitle = typeof fm.title === 'string' ? fm.title.trim() : undefined;
-  const fmChatTitle = typeof fm.chatTitle === 'string' ? fm.chatTitle.trim() : undefined;
-  const subject = typeof fm.subject === 'string' ? fm.subject.trim() : undefined;
-  const topic = typeof fm.topic === 'string' ? fm.topic.trim() : undefined;
-
-  const opts: StripOpts = {
-    subject,
-    topic,
-    chatTitle: fmChatTitle,
-    fmTitle,
-  };
-
-  const body = content;
-  const turnSections = splitIntoTurnSections(body);
-  const fileName = path.basename(mdPath);
-
-  // No anchors → whole document is a single logical note
-  if (!turnSections.length) {
-    const cleaned = stripForAiSeed(body, opts).trim();
-    if (!cleaned) return [];
-
-    return [
-      {
-        aiNoteKey: chatworthyNoteId,      // single note maps 1:1 to Chatworthy noteId
-        chatworthyNoteId,
-        fileName,
-        turnIndex: 1,
-        chatTitle: fmChatTitle,
-        subjectHint: subject,
-        topicHint: topic,
-        markdown: cleaned,
-      },
-    ];
-  }
-
-  // Multi-turn → one logical note per section; aiNoteKey gets a #turn suffix
-  const notes: AiSeedNote[] = [];
-  for (const section of turnSections) {
-    const cleaned = stripForAiSeed(section.markdown, opts).trim();
-    if (!cleaned) continue;
-
-    const aiNoteKey = `${chatworthyNoteId}#${section.index}`;
-
-    notes.push({
+    return {
       aiNoteKey,
       chatworthyNoteId,
       fileName,
-      turnIndex: section.index,
-      chatTitle: fmChatTitle,
-      subjectHint: subject,
-      topicHint: topic,
-      markdown: cleaned,
-    });
-  }
-
-  return notes;
+      subjectHint,
+      topicHint,
+      chatTitle,
+      turnIndex,
+      promptText: turn.promptText,
+      responseText: turn.responseText,
+    };
+  });
 }
 
-// ---------- Main CLI ----------
-
-function collectMarkdownFiles(rootDir: string): string[] {
-  const files: string[] = [];
-
-  function walk(dir: string) {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-      } else if (entry.isFile()) {
-        const lower = entry.name.toLowerCase();
-        if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
-          files.push(full);
-        }
-      }
-    }
+function resolvePattern(arg: string): string {
+  // If it's a directory, expand to dir/**/*.md
+  if (fs.existsSync(arg) && fs.statSync(arg).isDirectory()) {
+    return path.join(arg, '**/*.md');
   }
-
-  walk(rootDir);
-  return files;
+  // Otherwise, assume it's already a glob pattern
+  return arg;
 }
 
-async function main() {
-  const srcDir = process.argv[2];
-  const outPath = process.argv[3];
-
-  if (!srcDir || !outPath) {
-    console.error(
-      'Usage: ts-node scripts/export-ai-seed-from-chatworthy.ts <src-dir> <out-file.json>'
-    );
-    process.exit(1);
+function main() {
+  const arg = process.argv[2];
+  if (!arg) {
+    usageAndExit();
   }
 
-  const absSrc = path.resolve(process.cwd(), srcDir);
-  const absOut = path.resolve(process.cwd(), outPath);
+  const pattern = resolvePattern(arg);
 
-  if (!fs.existsSync(absSrc) || !fs.statSync(absSrc).isDirectory()) {
-    console.error(`Source directory does not exist or is not a directory: ${absSrc}`);
+  const files = globSync(pattern, { nodir: true });
+  if (!files.length) {
+    console.error(`No files matched pattern: ${pattern}`);
     process.exit(1);
   }
-
-  const mdFiles = collectMarkdownFiles(absSrc);
-  console.log(`Found ${mdFiles.length} markdown file(s) under ${absSrc}`);
 
   const allNotes: AiSeedNote[] = [];
-  for (const mdPath of mdFiles) {
-    try {
-      const notes = buildAiSeedNotesFromFile(mdPath);
-      allNotes.push(...notes);
-    } catch (err) {
-      console.error(`Error processing ${mdPath}:`, err);
-    }
+
+  for (const filePath of files) {
+    const notes = buildAiSeedNotesFromFile(filePath);
+    allNotes.push(...notes);
   }
 
-  const seed: AiSeed = {
+  const output: AiSeed = {
     version: 1,
-    generatedAt: new Date().toISOString(),
     notes: allNotes,
   };
 
-  fs.writeFileSync(absOut, JSON.stringify(seed, null, 2), 'utf8');
-  console.log(`AI seed written to: ${absOut}`);
-  console.log(`Total logical notes: ${allNotes.length}`);
+  process.stdout.write(JSON.stringify(output, null, 2));
 }
 
-main().catch((err) => {
-  console.error('Unhandled error:', err);
-  process.exit(1);
-});
+main();
