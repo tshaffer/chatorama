@@ -100,16 +100,21 @@ export default function ImportChatworthyButton({
 
     try {
       const payload = {
-        rows: rows.map((row) => ({
-          importKey: row.importKey,
-          title: row.editedTitle || row.title,
-          body: row.body,
-          subjectLabel: row.subjectLabel,
-          topicLabel: row.topicLabel,
-          tags: row.tags,
-          summary: row.summary,
-          provenanceUrl: row.provenanceUrl,
-          chatworthyNoteId: row.chatworthyNoteId,
+        rows: rows.map(r => ({
+          importKey: r.importKey,
+          title: r.title,
+          body: r.body,
+          subjectLabel: r.subjectName,
+          topicLabel: r.topicName,
+          tags: r.tags,
+          summary: r.summary,
+          provenanceUrl: r.provenanceUrl,
+          chatworthyNoteId: r.chatworthyNoteId,
+          chatworthyChatId: r.chatworthyChatId,
+          chatworthyChatTitle: r.chatworthyChatTitle,
+          chatworthyFileName: r.chatworthyFileName,
+          chatworthyTurnIndex: r.chatworthyTurnIndex,
+          chatworthyTotalTurns: r.chatworthyTotalTurns,
         })),
       };
 

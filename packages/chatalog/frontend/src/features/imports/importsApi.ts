@@ -12,6 +12,11 @@ export type ImportedNoteSummary = {
   summary?: string;
   provenanceUrl?: string;
   chatworthyNoteId?: string;
+  chatworthyChatId?: string;
+  chatworthyChatTitle?: string;
+  chatworthyFileName?: string;
+  chatworthyTurnIndex?: number;
+  chatworthyTotalTurns?: number;
 };
 
 export type ImportResponse = {

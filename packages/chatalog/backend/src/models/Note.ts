@@ -34,6 +34,11 @@ export interface NoteDoc extends Document {
 
   /** Chatworthy provenance */
   chatworthyNoteId?: string;
+  chatworthyChatId?: string;
+  chatworthyChatTitle?: string;
+  chatworthyFileName?: string;
+  chatworthyTurnIndex?: number;
+  chatworthyTotalTurns?: number;
 
   order: number;
   createdAt: Date;
@@ -85,8 +90,13 @@ const NoteSchema = new Schema<NoteDoc>(
 
     relations: { type: [RelationSchema], default: [] },
 
-    // NEW: Chatworthy provenance
-    chatworthyNoteId: { type: String, index: true },
+    // Chatworthy provenance
+    chatworthyNoteId:     { type: String, index: true },
+    chatworthyChatId:     { type: String, index: true },
+    chatworthyChatTitle:  { type: String },
+    chatworthyFileName:   { type: String },
+    chatworthyTurnIndex:  { type: Number },
+    chatworthyTotalTurns: { type: Number },
 
     order:     { type: Number, required: true, default: 0, index: true },
   },
@@ -105,6 +115,9 @@ NoteSchema.index({ topicId: 1, order: 1, _id: 1 });
 
 // Optional: fast lookup by Chatworthy noteId (useful for de-dupe / AI-state)
 NoteSchema.index({ chatworthyNoteId: 1 });
+
+// Optional: fast lookup by Chatworthy chat + turn
+NoteSchema.index({ chatworthyChatId: 1, chatworthyTurnIndex: 1 });
 
 // Apply global JSON/Object transform: exposes `id`, removes `_id`/`__v`
 applyToJSON(NoteSchema);
