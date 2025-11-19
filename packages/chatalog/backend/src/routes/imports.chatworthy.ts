@@ -139,7 +139,7 @@ type ParsedMd = {
   subjectName?: string;
   topicName?: string;
 
-  // NEW: Chatworthy noteId (ext-...)
+  // Chatworthy noteId (ext-...)
   chatworthyNoteId?: string;
 };
 
@@ -167,8 +167,6 @@ function splitIntoTurnSections(body: string): TurnSection[] {
     const idxStr = m[2];
     const index = idxStr ? parseInt(idxStr, 10) : i + 1;
 
-    // For the first section, include everything from the very top
-    // (H1, ToC, etc.). For subsequent sections, start at this match.
     const start = i === 0 ? 0 : (matches[i].index ?? 0);
     const end = i + 1 < matches.length ? (matches[i + 1].index ?? body.length) : body.length;
 
@@ -242,12 +240,9 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
     const cleaned = stripForChatalog(section.markdown, opts).trim();
     if (!cleaned) continue;
 
-    // Try to pick a per-section heading (## ... or deeper) as the title.
     const sectionHeadingMatch = cleaned.match(/^\s*#{2,6}\s+(.+)\s*$/m);
     const sectionHeading = sectionHeadingMatch?.[1]?.trim();
 
-    // For multi-turn imports, default the title to the *unique* part only.
-    // No need to repeat the baseTitle (which often already includes subject/topic).
     const noteTitle =
       sectionHeading && sectionHeading.length > 0
         ? sectionHeading
@@ -265,7 +260,6 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
     });
   }
 
-  // Fallback: if somehow everything got stripped, at least return one note.
   if (!notes.length) {
     const markdown = stripForChatalog(body, opts).trim();
     return [
@@ -317,86 +311,69 @@ async function ensureSubjectTopic(
   return { subjectId, topicId };
 }
 
-type CreatedNoteInfo = {
-  id: string;
-  title: string;
-  subjectId?: string;
-  subjectName?: string;
-  topicId?: string;
-  topicName?: string;
-  markdown: string;
+// ----- Types for frontend preview + apply -----
 
+type PreviewNoteInfo = {
+  file: string;
+  importKey: string;
+  title: string;
+  subjectName?: string;
+  topicName?: string;
+  body: string;
+  tags?: string[];
+  summary?: string;
+  provenanceUrl?: string;
   chatworthyNoteId?: string;
 };
 
-async function persistParsedMd(p: ParsedMd): Promise<CreatedNoteInfo> {
-  const { subjectId, topicId } = await ensureSubjectTopic(p.subjectName, p.topicName);
-
-  const baseSlug = slugify(p.title || 'untitled');
-  const slug = await dedupeNoteSlug(topicId, baseSlug);
-
-  const doc: NoteDoc = await NoteModel.create({
-    subjectId: subjectId ?? '',
-    topicId: topicId ?? '',
-    title: p.title || 'Untitled',
-    slug,
-    markdown: p.markdown,
-    summary: p.summary,
-    tags: p.tags,
-    links: [],
-    backlinks: [],
-    sources: p.provenanceUrl
-      ? [{ type: 'chatworthy', url: p.provenanceUrl }]
-      : [{ type: 'chatworthy' }],
-
-    // NEW: persist Chatworthy noteId
-    chatworthyNoteId: p.chatworthyNoteId,
-  });
-
-  return {
-    id: doc.id,
-    title: doc.title,
-    subjectId,
-    subjectName: p.subjectName,
-    topicId,
-    topicName: p.topicName,
-    markdown: p.markdown,
-    chatworthyNoteId: p.chatworthyNoteId,
-  };
-}
+type ApplyImportedNotePayload = {
+  importKey: string;
+  title: string;
+  body: string;
+  subjectLabel?: string;
+  topicLabel?: string;
+  tags?: string[];
+  summary?: string;
+  provenanceUrl?: string;
+  chatworthyNoteId?: string;
+};
 
 // ---------------- main importers ----------------
 
-async function importOneMarkdown(
+// NOTE: This is now *preview-only*. No DB writes here.
+async function parseOneMarkdownForPreview(
   buf: Buffer,
   fileName: string
-): Promise<CreatedNoteInfo[]> {
+): Promise<PreviewNoteInfo[]> {
   const parsedNotes = parseChatworthyFile(buf, fileName);
-  const created: CreatedNoteInfo[] = [];
+  const previews: PreviewNoteInfo[] = [];
 
-  for (const p of parsedNotes) {
-    const note = await persistParsedMd(p);
-    created.push(note);
-  }
+  parsedNotes.forEach((p, idx) => {
+    const importKey = `${fileName}::${idx}`;
+    previews.push({
+      file: fileName,
+      importKey,
+      title: p.title,
+      subjectName: p.subjectName,
+      topicName: p.topicName,
+      body: p.markdown,
+      tags: p.tags,
+      summary: p.summary,
+      provenanceUrl: p.provenanceUrl,
+      chatworthyNoteId: p.chatworthyNoteId,
+    });
+  });
 
-  return created;
+  return previews;
 }
 
 // POST /api/v1/imports/chatworthy
+// Now: PREVIEW ONLY. No subjects/topics/notes are created here.
 router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
-    const results: Array<{
-      file: string;
-      noteId: string;
-      title: string;
-      subjectId?: string;
-      subjectName?: string;
-      topicId?: string;
-      topicName?: string;
-      body: string;
-    }> = [];
+    const results: PreviewNoteInfo[] = [];
 
     const lower = req.file.originalname.toLowerCase();
     if (lower.endsWith('.zip')) {
@@ -410,42 +387,68 @@ router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
           for await (const chunk of entry) chunks.push(chunk);
           const buf = Buffer.concat(chunks);
 
-          const notes = await importOneMarkdown(buf, path);
-          for (const note of notes) {
-            results.push({
-              file: path,
-              noteId: note.id,
-              title: note.title,
-              subjectId: note.subjectId,
-              subjectName: note.subjectName,
-              topicId: note.topicId,
-              topicName: note.topicName,
-              body: note.markdown,
-            });
-          }
+          const notes = await parseOneMarkdownForPreview(buf, path);
+          results.push(...notes);
         } else {
           entry.autodrain();
         }
       }
     } else if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
-      const notes = await importOneMarkdown(req.file.buffer, req.file.originalname);
-      for (const note of notes) {
-        results.push({
-          file: req.file.originalname,
-          noteId: note.id,
-          title: note.title,
-          subjectId: note.subjectId,
-          subjectName: note.subjectName,
-          topicId: note.topicId,
-          topicName: note.topicName,
-          body: note.markdown,
-        });
-      }
+      const notes = await parseOneMarkdownForPreview(req.file.buffer, req.file.originalname);
+      results.push(...notes);
     } else {
       return res.status(400).json({ message: 'Unsupported file type. Use .md or .zip.' });
     }
 
     res.json({ imported: results.length, results });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/v1/imports/chatworthy/apply
+// Create Subjects, Topics, and Notes based on the *final* edited rows.
+router.post('/chatworthy/apply', async (req, res, next) => {
+  try {
+    const { rows } = req.body as { rows: ApplyImportedNotePayload[] };
+    if (!Array.isArray(rows) || !rows.length) {
+      return res.status(400).json({ message: 'No rows provided' });
+    }
+
+    const createdNotes: NoteDoc[] = [];
+
+    for (const row of rows) {
+      const subjectName = row.subjectLabel?.trim() || undefined;
+      const topicName = row.topicLabel?.trim() || undefined;
+
+      const { subjectId, topicId } = await ensureSubjectTopic(subjectName, topicName);
+
+      const baseSlug = slugify(row.title || 'Untitled');
+      const slug = await dedupeNoteSlug(topicId, baseSlug);
+
+      const doc: NoteDoc = await NoteModel.create({
+        subjectId: subjectId ?? '',
+        topicId: topicId ?? '',
+        title: row.title || 'Untitled',
+        slug,
+        markdown: row.body,
+        summary: row.summary,
+        tags: row.tags ?? [],
+        links: [],
+        backlinks: [],
+        sources: row.provenanceUrl
+          ? [{ type: 'chatworthy', url: row.provenanceUrl }]
+          : [{ type: 'chatworthy' }],
+        chatworthyNoteId: row.chatworthyNoteId,
+      });
+
+      createdNotes.push(doc);
+    }
+
+    res.json({
+      created: createdNotes.length,
+      noteIds: createdNotes.map((n) => n.id),
+    });
   } catch (err) {
     next(err);
   }

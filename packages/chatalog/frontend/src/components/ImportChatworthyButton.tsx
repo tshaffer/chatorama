@@ -13,13 +13,12 @@ import {
 import { alpha } from '@mui/material/styles';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 
-import { useImportChatworthyMutation, type ImportResponse } from '../features/imports/importsApi';
-import { useMoveNotesMutation, useUpdateNoteMutation } from '../features/notes/notesApi';
 import {
-  useGetSubjectsQuery,
-  useCreateSubjectMutation,
-  useCreateTopicMutation,
-} from '../features/subjects/subjectsApi';
+  useImportChatworthyMutation,
+  type ImportResponse,
+  useApplyChatworthyImportMutation,
+} from '../features/imports/importsApi';
+import { useGetSubjectsQuery } from '../features/subjects/subjectsApi';
 import {
   ImportResultsDialog,
   type EditableImportedNoteRow,
@@ -43,10 +42,7 @@ export default function ImportChatworthyButton({
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [importChatworthy, { isLoading }] = useImportChatworthyMutation();
-  const [moveNotes] = useMoveNotesMutation();
-  const [updateNote] = useUpdateNoteMutation();
-  const [createSubject] = useCreateSubjectMutation();
-  const [createTopic] = useCreateTopicMutation();
+  const [applyChatworthyImport, { isLoading: isApplying }] = useApplyChatworthyImportMutation();
 
   const { data: subjects = [] } = useGetSubjectsQuery();
 
@@ -78,10 +74,10 @@ export default function ImportChatworthyButton({
 
       setSnack({
         open: true,
-        msg: res.imported === 1 ? 'Imported 1 note' : `Imported ${res.imported} notes`,
+        msg: res.imported === 1 ? 'Imported 1 note for review' : `Imported ${res.imported} notes for review`,
         severity: 'success',
       });
-      // We'll call onDone() after the user finishes the review dialog.
+      // We'll call onDone() after the user finishes the review dialog + apply.
     } catch (err: any) {
       const msg =
         err?.data?.message ||
@@ -102,136 +98,43 @@ export default function ImportChatworthyButton({
       return;
     }
 
-    const byId = new Map(lastImport.results.map((r) => [r.noteId, r]));
+    try {
+      const payload = {
+        rows: rows.map((row) => ({
+          importKey: row.importKey,
+          title: row.editedTitle || row.title,
+          body: row.body,
+          subjectLabel: row.subjectLabel,
+          topicLabel: row.topicLabel,
+          tags: row.tags,
+          summary: row.summary,
+          provenanceUrl: row.provenanceUrl,
+          chatworthyNoteId: row.chatworthyNoteId,
+        })),
+      };
 
-    // subjectName -> subjectId
-    const subjectNameToId = new Map<string, string>();
-    for (const s of subjects) {
-      if (s.name?.trim()) {
-        subjectNameToId.set(s.name.trim(), s.id);
-      }
+      const res = await applyChatworthyImport(payload).unwrap();
+
+      setSnack({
+        open: true,
+        msg:
+          res.created === 1
+            ? 'Created 1 note'
+            : `Created ${res.created} notes`,
+        severity: 'success',
+      });
+
+      setReviewOpen(false);
+      setLastImport(null);
+      onDone?.();
+    } catch (err: any) {
+      const msg =
+        err?.data?.message ||
+        err?.error ||
+        (typeof err === 'string' ? err : '') ||
+        'Apply failed';
+      setSnack({ open: true, msg, severity: 'error' });
     }
-    for (const r of lastImport.results) {
-      if (r.subjectName && r.subjectId) {
-        subjectNameToId.set(r.subjectName.trim(), r.subjectId);
-      }
-    }
-
-    // subjectId -> (topicName -> topicId)
-    const topicNameToIdBySubject = new Map<string, Map<string, string>>();
-    for (const r of lastImport.results) {
-      const sid = r.subjectId;
-      if (!sid || !r.topicName || !r.topicId) continue;
-      const key = r.topicName.trim();
-      if (!key) continue;
-      let m = topicNameToIdBySubject.get(sid);
-      if (!m) {
-        m = new Map();
-        topicNameToIdBySubject.set(sid, m);
-      }
-      m.set(key, r.topicId);
-    }
-
-    for (const row of rows) {
-      const orig = byId.get(row.noteId);
-      if (!orig) continue;
-
-      // 1) Title changes
-      if (row.editedTitle && row.editedTitle !== orig.title) {
-        try {
-          await updateNote({
-            noteId: row.noteId,
-            patch: { title: row.editedTitle },
-          }).unwrap();
-        } catch (e) {
-          // eslint-disable-next-line no-console
-          console.error('Failed to update note title', e);
-        }
-      }
-
-      // 2) Resolve desired subject name
-      const desiredSubjectName =
-        row.subjectLabel?.trim() ||
-        orig.subjectName?.trim() ||
-        '';
-
-      let finalSubjectId = orig.subjectId ?? '';
-      if (desiredSubjectName) {
-        let sid = subjectNameToId.get(desiredSubjectName);
-        if (!sid) {
-          try {
-            const created = await createSubject({ name: desiredSubjectName }).unwrap();
-            sid = created.id;
-            subjectNameToId.set(desiredSubjectName, sid);
-          } catch (e) {
-            // eslint-disable-next-line no-console
-            console.error('Failed to create subject', e);
-            sid = finalSubjectId; // fallback to original
-          }
-        }
-        if (sid) {
-          finalSubjectId = sid;
-        }
-      }
-
-      // 3) Resolve desired topic name
-      const desiredTopicName =
-        row.topicLabel?.trim() ||
-        orig.topicName?.trim() ||
-        '';
-
-      let finalTopicId = orig.topicId ?? '';
-      if (desiredTopicName && finalSubjectId) {
-        let topicsMap = topicNameToIdBySubject.get(finalSubjectId);
-        if (!topicsMap) {
-          topicsMap = new Map();
-          topicNameToIdBySubject.set(finalSubjectId, topicsMap);
-        }
-
-        let tid = topicsMap.get(desiredTopicName);
-        if (!tid) {
-          try {
-            const createdTopic = await createTopic({
-              subjectId: finalSubjectId,
-              name: desiredTopicName,
-            }).unwrap();
-            tid = createdTopic.id;
-            topicsMap.set(desiredTopicName, tid);
-          } catch (e) {
-            // eslint-disable-next-line no-console
-            console.error('Failed to create topic', e);
-            tid = finalTopicId; // fallback
-          }
-        }
-
-        if (tid) {
-          finalTopicId = tid;
-        }
-      }
-
-      const origSubjectId = orig.subjectId ?? '';
-      const origTopicId = orig.topicId ?? '';
-
-      const canMove = finalSubjectId && finalTopicId;
-      if (
-        canMove &&
-        (finalSubjectId !== origSubjectId || finalTopicId !== origTopicId)
-      ) {
-        try {
-          await moveNotes({
-            noteIds: [row.noteId],
-            dest: { subjectId: finalSubjectId, topicId: finalTopicId },
-          }).unwrap();
-        } catch (e) {
-          // eslint-disable-next-line no-console
-          console.error('Failed to move note', e);
-        }
-      }
-    }
-
-    setReviewOpen(false);
-    setLastImport(null);
-    onDone?.();
   };
 
   const fileInput = (
@@ -255,10 +158,10 @@ export default function ImportChatworthyButton({
       />
     ) : null;
 
-  // Show pulsing dots while the import request is in flight
+  // Show pulsing dots while the import *or* apply request is in flight
   const overlay = (
     <Backdrop
-      open={isLoading}
+      open={isLoading || isApplying}
       sx={{
         color: '#fff',
         zIndex: (theme) => theme.zIndex.modal + 1,
@@ -307,14 +210,14 @@ export default function ImportChatworthyButton({
               size="small"
               aria-label="Import"
               onClick={pickFile}
-              disabled={isLoading}
+              disabled={isLoading || isApplying}
               sx={(theme) => ({
                 borderRadius: 2,
                 backgroundColor: alpha(theme.palette.common.white, 0.18),
                 '&:hover': { backgroundColor: alpha(theme.palette.common.white, 0.28) },
               })}
             >
-              {isLoading ? <CircularProgress size={16} /> : <UploadFileIcon />}
+              {isLoading || isApplying ? <CircularProgress size={16} /> : <UploadFileIcon />}
             </IconButton>
           </span>
         </Tooltip>
@@ -348,9 +251,11 @@ export default function ImportChatworthyButton({
           <Button
             size="small"
             variant="outlined"
-            startIcon={isLoading ? <CircularProgress size={16} /> : <UploadFileIcon />}
+            startIcon={
+              isLoading || isApplying ? <CircularProgress size={16} /> : <UploadFileIcon />
+            }
             onClick={pickFile}
-            disabled={isLoading}
+            disabled={isLoading || isApplying}
             color="inherit"
           >
             Import
