@@ -124,11 +124,11 @@ export function ImportResultsDialog({
   }, [defaultTopicLabel, importedNotes, rows]);
 
   const handleRowChange = (
-    noteId: string,
+    importKey: string,
     patch: Partial<EditableImportedNoteRow>,
   ) => {
     setRows((prev) =>
-      prev.map((r) => (r.noteId === noteId ? { ...r, ...patch } : r)),
+      prev.map((r) => (r.importKey === importKey ? { ...r, ...patch } : r)),
     );
   };
 
@@ -223,13 +223,13 @@ export function ImportResultsDialog({
           </TableHead>
           <TableBody>
             {rows.map((row) => (
-              <React.Fragment key={row.noteId}>
+              <React.Fragment key={row.importKey}>
                 <TableRow hover>
                   <TableCell padding="checkbox">
                     <IconButton
                       size="small"
                       onClick={() =>
-                        handleRowChange(row.noteId, {
+                        handleRowChange(row.importKey, {
                           showBody: !row.showBody,
                         })
                       }
@@ -246,7 +246,7 @@ export function ImportResultsDialog({
                       size="small"
                       value={row.editedTitle}
                       onChange={(e) =>
-                        handleRowChange(row.noteId, {
+                        handleRowChange(row.importKey, {
                           editedTitle: e.target.value,
                         })
                       }
@@ -258,12 +258,12 @@ export function ImportResultsDialog({
                       options={subjectOptions}
                       value={row.subjectLabel}
                       onChange={(_e, newValue) =>
-                        handleRowChange(row.noteId, {
+                        handleRowChange(row.importKey, {
                           subjectLabel: newValue ?? '',
                         })
                       }
                       onInputChange={(_e, newInputValue) =>
-                        handleRowChange(row.noteId, {
+                        handleRowChange(row.importKey, {
                           subjectLabel: newInputValue ?? '',
                         })
                       }
@@ -282,12 +282,12 @@ export function ImportResultsDialog({
                       options={topicOptions}
                       value={row.topicLabel}
                       onChange={(_e, newValue) =>
-                        handleRowChange(row.noteId, {
+                        handleRowChange(row.importKey, {
                           topicLabel: newValue ?? '',
                         })
                       }
                       onInputChange={(_e, newInputValue) =>
-                        handleRowChange(row.noteId, {
+                        handleRowChange(row.importKey, {
                           topicLabel: newInputValue ?? '',
                         })
                       }

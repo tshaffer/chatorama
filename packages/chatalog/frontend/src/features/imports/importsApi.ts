@@ -1,15 +1,17 @@
 // frontend/src/features/imports/importsApi.ts
 import { chatalogApi as baseApi } from '../api/chatalogApi';
-``
+
 export type ImportedNoteSummary = {
   file: string;
-  noteId: string;
+  importKey: string;
   title: string;
-  subjectId?: string;
   subjectName?: string;
-  topicId?: string;
   topicName?: string;
   body: string;
+  tags?: string[];
+  summary?: string;
+  provenanceUrl?: string;
+  chatworthyNoteId?: string;
 };
 
 export type ImportResponse = {
@@ -17,8 +19,21 @@ export type ImportResponse = {
   results: ImportedNoteSummary[];
 };
 
+export type ApplyImportedRow = {
+  importKey: string;
+  title: string;
+  body: string;
+  subjectLabel?: string;
+  topicLabel?: string;
+  tags?: string[];
+  summary?: string;
+  provenanceUrl?: string;
+  chatworthyNoteId?: string;
+};
+
 export const importsApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
+    // PREVIEW import (no DB writes)
     importChatworthy: build.mutation<ImportResponse, File>({
       query: (file) => {
         const body = new FormData();
@@ -29,7 +44,16 @@ export const importsApi = baseApi.injectEndpoints({
           body,
         };
       },
-      // A successful import can add new subjects/topics/notes; refresh the lists.
+      // No invalidatesTags here; preview only.
+    }),
+
+    // APPLY import: actually create Subjects/Topics/Notes
+    applyChatworthyImport: build.mutation<{ created: number; noteIds: string[] }, { rows: ApplyImportedRow[] }>({
+      query: (payload) => ({
+        url: 'imports/chatworthy/apply',
+        method: 'POST',
+        body: payload,
+      }),
       invalidatesTags: [
         { type: 'Subject' as const, id: 'LIST' },
         { type: 'Topic' as const, id: 'LIST' },
@@ -40,4 +64,7 @@ export const importsApi = baseApi.injectEndpoints({
   overrideExisting: true,
 });
 
-export const { useImportChatworthyMutation } = importsApi;
+export const {
+  useImportChatworthyMutation,
+  useApplyChatworthyImportMutation,
+} = importsApi;
