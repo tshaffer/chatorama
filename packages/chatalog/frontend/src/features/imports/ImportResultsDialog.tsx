@@ -132,38 +132,32 @@ export function ImportResultsDialog({
     );
   };
 
-  const handleDefaultSubjectChange: React.ChangeEventHandler<HTMLInputElement> = (
-    e,
-  ) => {
-    const oldDefault = defaultSubjectLabel;
-    const next = e.target.value;
-    setDefaultSubjectLabel(next);
+  // --- Default Subject / Topic updates using Autocomplete ---
 
-    // Update rows that are still using the old default
-    setRows((prev) =>
-      prev.map((r) =>
-        (r.subjectLabel ?? '') === (oldDefault ?? '')
-          ? { ...r, subjectLabel: next }
-          : r,
-      ),
-    );
+  const updateDefaultSubject = (next: string) => {
+    setDefaultSubjectLabel((prevDefault) => {
+      setRows((prevRows) =>
+        prevRows.map((r) =>
+          (r.subjectLabel ?? '') === (prevDefault ?? '')
+            ? { ...r, subjectLabel: next }
+            : r,
+        ),
+      );
+      return next;
+    });
   };
 
-  const handleDefaultTopicChange: React.ChangeEventHandler<HTMLInputElement> = (
-    e,
-  ) => {
-    const oldDefault = defaultTopicLabel;
-    const next = e.target.value;
-    setDefaultTopicLabel(next);
-
-    // Update rows that are still using the old default
-    setRows((prev) =>
-      prev.map((r) =>
-        (r.topicLabel ?? '') === (oldDefault ?? '')
-          ? { ...r, topicLabel: next }
-          : r,
-      ),
-    );
+  const updateDefaultTopic = (next: string) => {
+    setDefaultTopicLabel((prevDefault) => {
+      setRows((prevRows) =>
+        prevRows.map((r) =>
+          (r.topicLabel ?? '') === (prevDefault ?? '')
+            ? { ...r, topicLabel: next }
+            : r,
+        ),
+      );
+      return next;
+    });
   };
 
   const handleApply = () => {
@@ -183,19 +177,38 @@ export function ImportResultsDialog({
         </Typography>
 
         <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
-          <TextField
-            label="Default Subject label"
+          <Autocomplete
+            freeSolo
+            options={subjectOptions}
             value={defaultSubjectLabel}
-            onChange={handleDefaultSubjectChange}
-            size="small"
-            sx={{ minWidth: 220 }}
+            onInputChange={(_e, newInputValue) =>
+              updateDefaultSubject(newInputValue ?? '')
+            }
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Default Subject label"
+                size="small"
+                sx={{ minWidth: 220 }}
+              />
+            )}
           />
-          <TextField
-            label="Default Topic label"
+
+          <Autocomplete
+            freeSolo
+            options={topicOptions}
             value={defaultTopicLabel}
-            onChange={handleDefaultTopicChange}
-            size="small"
-            sx={{ minWidth: 220 }}
+            onInputChange={(_e, newInputValue) =>
+              updateDefaultTopic(newInputValue ?? '')
+            }
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Default Topic label"
+                size="small"
+                sx={{ minWidth: 220 }}
+              />
+            )}
           />
         </Box>
 
