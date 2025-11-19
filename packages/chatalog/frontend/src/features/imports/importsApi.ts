@@ -1,6 +1,6 @@
 // frontend/src/features/imports/importsApi.ts
 import { chatalogApi as baseApi } from '../api/chatalogApi';
-
+``
 export type ImportedNoteSummary = {
   file: string;
   noteId: string;
