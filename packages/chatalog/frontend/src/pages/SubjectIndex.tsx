@@ -1,6 +1,7 @@
 // src/pages/SubjectIndex.tsx
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import LinkNoteToTargetDialog from '../features/relations/LinkNoteToTargetDialog';
 import {
   Box,
   CircularProgress,
@@ -12,6 +13,7 @@ import {
   ListItemButton,
   ListItemText,
   Divider,
+  Button,
 } from '@mui/material';
 
 import { useGetTopicsForSubjectQuery } from '../features/subjects/subjectsApi';
@@ -36,6 +38,7 @@ export default function SubjectIndex() {
     isLoading: relLoading,
     isError: relError,
     error: relErrorObj,
+    refetch: refetchRelations,
   } = useGetSubjectRelationsSummaryQuery(subjectId ?? (skipToken as any));
 
   const subject = useMemo(
@@ -50,6 +53,8 @@ export default function SubjectIndex() {
     isError: topicsError,
     error: topicsErrorObj,
   } = useGetTopicsForSubjectQuery(subjectId ?? '');
+
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
 
   const loading = subjectsLoading || topicsLoading;
 
@@ -186,7 +191,6 @@ export default function SubjectIndex() {
           </CardContent>
         </Card>
 
-        {/* RIGHT: Subject-level relations / related notes (placeholder for now) */}
         {/* RIGHT: Subject-level relations */}
         <Card
           variant="outlined"
@@ -198,10 +202,25 @@ export default function SubjectIndex() {
           }}
         >
           <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <Typography variant="h6" sx={{ mb: 0.5 }}>
-              Subject relations
-            </Typography>
-
+            <Stack
+              direction="row"
+              alignItems="center"
+              justifyContent="space-between"
+              sx={{ mb: 0.5 }}
+            >
+              <Typography variant="h6">
+                Subject relations
+              </Typography>
+              {subjectId && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setLinkDialogOpen(true)}
+                >
+                  Link note to subject
+                </Button>
+              )}
+            </Stack>
             {relLoading && !relationsSummary && (
               <Box
                 sx={{
@@ -302,7 +321,17 @@ export default function SubjectIndex() {
             )}
           </CardContent>
         </Card>
+        {subjectId && (
+          <LinkNoteToTargetDialog
+            open={linkDialogOpen}
+            onClose={() => setLinkDialogOpen(false)}
+            targetType="subject"
+            targetId={subjectId}
+            defaultKind="also-about"
+            onLinked={refetchRelations}
+          />
+        )}
       </Stack>
-    </Box>
+    </Box >
   );
 }
