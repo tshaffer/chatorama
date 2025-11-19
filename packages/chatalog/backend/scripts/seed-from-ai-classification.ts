@@ -2,13 +2,13 @@
 //
 // Seed Chatalog from:
 //   1) ai-classification JSON (LLM output)
-//   2) ai-seed JSON (Chatworthy-derived markdown + aiNoteKey)
+//   2) ai-seed JSON (Chatworthy-derived data + aiNoteKey)
 //
 // Usage (from packages/chatalog/backend):
 //   MONGO_URI="mongodb://localhost:27017/chatalog" \
 //   npx ts-node scripts/seed-from-ai-classification.ts \
 //     ./data/ai-classification-v1.json \
-//     ./data/ai-seed.json
+//     ./data/ai-seed-v1.json
 //
 
 import fs from 'fs';
@@ -62,7 +62,8 @@ type AiSeedNote = {
   chatTitle?: string;
   subjectHint?: string;
   topicHint?: string;
-  markdown: string;
+  promptText?: string;
+  responseText?: string;
 };
 
 type AiSeedRoot = {
@@ -101,6 +102,41 @@ class SlugRegistry {
     set.add(slug);
     return slug;
   }
+}
+
+/**
+ * Build markdown content for a note from its seed record.
+ * Ensures a non-empty string (Note.markdown is required).
+ */
+function buildMarkdownFromSeed(seed: AiSeedNote, title: string): string {
+  const lines: string[] = [];
+
+  // Title
+  const safeTitle = title || seed.chatTitle || 'Untitled';
+  lines.push(`# ${safeTitle}`, '');
+
+  // Optional metadata
+  if (seed.chatTitle) {
+    lines.push(`_Chat title_: ${seed.chatTitle}`, '');
+  }
+  if (seed.fileName) {
+    lines.push(`_Source file_: ${seed.fileName}`, '');
+  }
+
+  // Prompt
+  if (seed.promptText && seed.promptText.trim().length > 0) {
+    lines.push('## Prompt', '');
+    lines.push(seed.promptText.trim(), '');
+  }
+
+  // Response
+  if (seed.responseText && seed.responseText.trim().length > 0) {
+    lines.push('## Response', '');
+    lines.push(seed.responseText.trim(), '');
+  }
+
+  const markdown = lines.join('\n').trim();
+  return markdown.length > 0 ? markdown : `# ${safeTitle}\n`;
 }
 
 // ---------- Main ----------
@@ -220,12 +256,14 @@ async function main() {
     const slug = slugRegistry.getUniqueSlug(topicMongoId, baseSlug);
     const order = nextOrder(topicMongoId);
 
+    const markdown = buildMarkdownFromSeed(seedNote, title);
+
     await NoteModel.create({
       subjectId: subjectMongoId ?? '',
       topicId: topicMongoId,
       title,
       slug,
-      markdown: seedNote.markdown,
+      markdown,
       summary: undefined,
       tags: [],
       links: [],
@@ -238,7 +276,7 @@ async function main() {
         },
       ],
       order,
-      // If you added these fields to NoteDoc earlier, you can include them:
+      // Optional extra fields if your Note schema supports them:
       // chatworthyNoteId: seedNote.chatworthyNoteId,
       // chatworthyTurnIndex: seedNote.turnIndex,
       // aiNoteKey: seedNote.aiNoteKey,
