@@ -40,8 +40,9 @@ type AiSeedNote = {
   responseText: string;
 };
 
-type AiSeed = {
+type AiSeedRoot = {
   version: 1;
+  generatedAt: string;
   notes: AiSeedNote[];
 };
 
@@ -56,7 +57,7 @@ function usageAndExit(code = 1): never {
 function stripBlockquote(s: string): string {
   return s
     .split('\n')
-    .map(line => line.replace(/^>\s?/, ''))
+    .map((line) => line.replace(/^>\s?/, ''))
     .join('\n')
     .trim();
 }
@@ -161,8 +162,9 @@ function main() {
     allNotes.push(...notes);
   }
 
-  const output: AiSeed = {
+  const output: AiSeedRoot = {
     version: 1,
+    generatedAt: new Date().toISOString(),
     notes: allNotes,
   };
 
