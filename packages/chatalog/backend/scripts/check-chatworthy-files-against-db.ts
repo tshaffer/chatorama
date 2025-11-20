@@ -16,11 +16,12 @@
 //       * chatId (or falls back to noteId)
 //       * chatTitle
 //       * number of turns in the file
-//   - Looks in MongoDB for notes with chatworthyChatId == chatId
-//       * Collects imported turn indexes (chatworthyTurnIndex)
+//   - Looks in MongoDB for notes that match either:
+//       * chatworthyChatId == chatId, or
+//       * chatworthyFileName == <basename of the .md file>
 //   - For each file, reports:
-//       * none    → no turns from this chat are in DB
-//       * partial → some but not all turns from this chat are in DB
+//       * none    → no turns from this chat/file are in DB
+//       * partial → some but not all turns from this chat/file are in DB
 //       * complete→ all turns in the file are already in DB
 //   - Always writes JSON to ./data/chatworthy-file-status.json
 //   - In --brief mode, prints ONLY:
@@ -38,14 +39,14 @@ import { NoteModel } from '../src/models/Note';
 
 type FileScanInfo = {
   filePath: string;
+  fileName: string; // basename of filePath
   chatId: string | null;
   chatTitle?: string | null;
   turnsInFile: number;
   body: string;
 };
 
-type ChatDbInfo = {
-  chatId: string;
+type DbInfo = {
   importedTurnIndexes: number[];
 };
 
@@ -67,7 +68,7 @@ type FileStatus = {
 };
 
 type TurnSection = {
-  index: number;   // 0-based turn index
+  index: number; // 0-based turn index
   markdown: string;
 };
 
@@ -119,7 +120,8 @@ function splitIntoTurnSections(body: string): TurnSection[] {
   for (let i = 0; i < matches.length; i++) {
     const m = matches[i];
     const start = m.index ?? 0;
-    const end = i + 1 < matches.length ? (matches[i + 1].index ?? body.length) : body.length;
+    const end =
+      i + 1 < matches.length ? (matches[i + 1].index ?? body.length) : body.length;
     const slice = body.slice(start, end);
     sections.push({ index: i, markdown: slice }); // 0-based index
   }
@@ -192,8 +194,11 @@ function scanChatworthyFile(filePath: string): FileScanInfo {
   const body = gm.content;
   const turnsInFile = countTurnsInBody(body);
 
+  const fileName = path.basename(filePath);
+
   return {
     filePath,
+    fileName,
     chatId,
     chatTitle: chatTitle ?? null,
     turnsInFile,
@@ -241,35 +246,65 @@ async function main() {
     )
   );
 
-  console.log(`Distinct chats in these files: ${chatIds.length}`);
+  const fileNames = Array.from(
+    new Set(fileInfos.map((f) => f.fileName))
+  );
+
+  console.log(`Distinct chats in these files (from front matter): ${chatIds.length}`);
+  console.log(`Distinct file basenames in these files: ${fileNames.length}`);
 
   await mongoose.connect(mongoUri);
 
-  // Pull all notes in DB for these chatIds in one query
+  // Pull all notes in DB for these chatIds and/or fileNames in one query
   const dbNotes = await NoteModel.find({
-    chatworthyChatId: { $in: chatIds },
+    $or: [
+      { chatworthyChatId: { $in: chatIds } },
+      { chatworthyFileName: { $in: fileNames } },
+    ],
   })
-    .select('chatworthyChatId chatworthyTurnIndex')
+    .select('chatworthyChatId chatworthyFileName chatworthyTurnIndex')
     .lean();
 
-  const dbByChat = new Map<string, ChatDbInfo>();
+  console.log(
+    `Found ${dbNotes.length} notes in DB with matching chatworthyChatId or chatworthyFileName.`
+  );
 
-  for (const n of dbNotes) {
-    const chatId = (n as any).chatworthyChatId as string | undefined;
-    if (!chatId) continue;
-    const turnIndex = (n as any).chatworthyTurnIndex as number | undefined;
+  const dbByChatId = new Map<string, DbInfo>();
+  const dbByFileName = new Map<string, DbInfo>();
+
+  for (const n of dbNotes as any[]) {
+    const chatId: string | undefined = n.chatworthyChatId ?? undefined;
+    const fileName: string | undefined = n.chatworthyFileName ?? undefined;
+    const turnIndex: number | undefined = n.chatworthyTurnIndex;
+
     if (typeof turnIndex !== 'number') continue;
 
-    let info = dbByChat.get(chatId);
-    if (!info) {
-      info = { chatId, importedTurnIndexes: [] };
-      dbByChat.set(chatId, info);
+    if (chatId) {
+      let info = dbByChatId.get(chatId);
+      if (!info) {
+        info = { importedTurnIndexes: [] };
+        dbByChatId.set(chatId, info);
+      }
+      info.importedTurnIndexes.push(turnIndex);
     }
-    info.importedTurnIndexes.push(turnIndex);
+
+    if (fileName) {
+      let info = dbByFileName.get(fileName);
+      if (!info) {
+        info = { importedTurnIndexes: [] };
+        dbByFileName.set(fileName, info);
+      }
+      info.importedTurnIndexes.push(turnIndex);
+    }
   }
 
-  // Deduplicate + sort imported turn indexes
-  for (const info of dbByChat.values()) {
+  // Deduplicate + sort imported turn indexes in both maps
+  for (const info of dbByChatId.values()) {
+    info.importedTurnIndexes = Array.from(
+      new Set(info.importedTurnIndexes)
+    ).sort((a, b) => a - b);
+  }
+  for (const info of dbByFileName.values()) {
     info.importedTurnIndexes = Array.from(
       new Set(info.importedTurnIndexes)
     ).sort((a, b) => a - b);
@@ -277,7 +312,22 @@ async function main() {
 
   // Combine file scan results with DB info
   const fileStatuses: FileStatus[] = fileInfos.map((f) => {
-    if (!f.chatId) {
+    // Combine notes matched by chatId AND by fileName
+    const fromChat =
+      f.chatId && dbByChatId.get(f.chatId)
+        ? dbByChatId.get(f.chatId)!.importedTurnIndexes
+        : [];
+    const fromFile =
+      dbByFileName.get(f.fileName)?.importedTurnIndexes ?? [];
+
+    const importedTurnIndexes = Array.from(
+      new Set([...fromChat, ...fromFile])
+    ).sort((a, b) => a - b);
+
+    const importedTurnCount = importedTurnIndexes.length;
+
+    if (!f.chatId && !fromFile.length && !fromChat.length) {
+      // No chatId and nothing matched by fileName → unknown
       return {
         filePath: f.filePath,
         chatId: null,
@@ -291,25 +341,35 @@ async function main() {
       };
     }
 
-    const dbInfo = dbByChat.get(f.chatId);
-    const importedTurnIndexes = dbInfo?.importedTurnIndexes ?? [];
-    const importedTurnCount = importedTurnIndexes.length;
+    // ---- Normalized mismatch detection (handles 0-based or 1-based DB indexes) ----
 
-    const allIndexes = Array.from({ length: f.turnsInFile }, (_, i) => i);
-    const importedSet = new Set(importedTurnIndexes);
-    const missingTurnIndexes = allIndexes.filter((i) => !importedSet.has(i));
-
-    let status: FileStatus['status'];
+    let status: FileStatus['status'] = 'unknown';
+    let missingTurnIndexes: number[] = [];
 
     if (importedTurnCount === 0) {
+      // No matches at all
       status = 'none';
-    } else if (missingTurnIndexes.length === 0 && importedTurnCount >= f.turnsInFile) {
-      status = 'complete';
-    } else if (missingTurnIndexes.length === f.turnsInFile) {
-      // This should not happen if importedTurnCount > 0, but be defensive.
-      status = 'unknown';
     } else {
-      status = 'partial';
+      // Heuristic: if the smallest imported index is 1, assume 1-based.
+      const minImported = importedTurnIndexes[0];
+      const indexBase = minImported === 1 ? 1 : 0;
+
+      // Normalize imported indexes so that "0" corresponds to the first turn in the file.
+      const normalizedImported = new Set(
+        importedTurnIndexes.map((idx) => idx - indexBase)
+      );
+
+      const allNormalized = Array.from({ length: f.turnsInFile }, (_, i) => i);
+      missingTurnIndexes = allNormalized.filter((i) => !normalizedImported.has(i));
+
+      if (missingTurnIndexes.length === 0 && importedTurnCount >= f.turnsInFile) {
+        status = 'complete';
+      } else if (missingTurnIndexes.length === f.turnsInFile) {
+        // All turns appear "missing" after normalization → something is off.
+        status = 'unknown';
+      } else {
+        status = 'partial';
+      }
     }
 
     const missingTurnSnippets =
@@ -382,7 +442,7 @@ async function main() {
 
         if (s.status === 'partial') {
           // PARTIAL: show file name + status, then only the missing turns.
-          lines.push(``);
+          lines.push('');
           lines.push(`${fileName} [PARTIAL]`);
 
           if (!s.missingTurnSnippets.length) {

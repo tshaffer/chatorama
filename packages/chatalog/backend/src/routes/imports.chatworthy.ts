@@ -200,8 +200,10 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
 
   const titleFromH1 = gm.content.match(/^#\s+(.+)\s*$/m)?.[1]?.trim();
   const fmTitle = typeof fm.title === 'string' ? fm.title.trim() : undefined;
-  const fmChatTitle = typeof fm.chatTitle === 'string' ? fm.chatTitle.trim() : undefined;
-  const subject = typeof fm.subject === 'string' ? fm.subject : undefined;
+  const fmChatTitle =
+    typeof fm.chatTitle === 'string' ? fm.chatTitle.trim() : undefined;
+  const subject =
+    typeof fm.subject === 'string' ? fm.subject : undefined;
   const topic = typeof fm.topic === 'string' ? fm.topic : undefined;
 
   const baseTitle =
@@ -211,8 +213,10 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
     fileName.replace(/\.(md|markdown)$/i, '');
 
   const tags = toArrayTags(fm.tags);
-  const summary = typeof fm.summary === 'string' ? fm.summary : undefined;
-  const provenanceUrl = typeof fm.pageUrl === 'string' ? fm.pageUrl : undefined;
+  const summary =
+    typeof fm.summary === 'string' ? fm.summary : undefined;
+  const provenanceUrl =
+    typeof fm.pageUrl === 'string' ? fm.pageUrl : undefined;
 
   const opts: StripOpts = {
     subject,
@@ -224,8 +228,7 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
   const body = gm.content;
   const turnSections = splitIntoTurnSections(body);
 
-  // No anchors → treat entire document as a single note (existing behavior),
-  // but still record Chatworthy chat info as a “single-turn chat”.
+  // No anchors → treat entire document as a single note
   if (!turnSections.length) {
     const markdown = stripForChatalog(body, opts).trim();
     return [
@@ -241,27 +244,32 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
         chatworthyChatId,
         chatworthyChatTitle: fmChatTitle,
         chatworthyFileName: fileName,
-        chatworthyTurnIndex: 0,
+        // single "turn"
+        chatworthyTurnIndex: 1,        // 1-based
         chatworthyTotalTurns: 1,
       },
     ];
   }
 
-  // Multiple turns → produce one ParsedMd per section.
+  // Multiple turns → produce one ParsedMd per *non-empty* section.
   const notes: ParsedMd[] = [];
-  const totalTurns = turnSections.length;
 
   for (const section of turnSections) {
     const cleaned = stripForChatalog(section.markdown, opts).trim();
-    if (!cleaned) continue;
+    if (!cleaned) {
+      // Section has no meaningful content after stripping anchors/meta → skip it.
+      continue;
+    }
 
     const sectionHeadingMatch = cleaned.match(/^\s*#{2,6}\s+(.+)\s*$/m);
     const sectionHeading = sectionHeadingMatch?.[1]?.trim();
 
+    const turnNumber = section.index + 1; // 1-based for human + storage
+
     const noteTitle =
       sectionHeading && sectionHeading.length > 0
         ? sectionHeading
-        : `Turn ${section.index + 1}`;
+        : `Turn ${turnNumber}`;
 
     notes.push({
       title: noteTitle,
@@ -275,11 +283,13 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
       chatworthyChatId,
       chatworthyChatTitle: fmChatTitle,
       chatworthyFileName: fileName,
-      chatworthyTurnIndex: section.index,
-      chatworthyTotalTurns: totalTurns,
+      chatworthyTurnIndex: turnNumber, // 1-based
+      // chatworthyTotalTurns will be patched after we know how many notes survived.
+      chatworthyTotalTurns: 0,
     });
   }
 
+  // Everything stripped out (very unlikely, but be defensive)
   if (!notes.length) {
     const markdown = stripForChatalog(body, opts).trim();
     return [
@@ -295,10 +305,16 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
         chatworthyChatId,
         chatworthyChatTitle: fmChatTitle,
         chatworthyFileName: fileName,
-        chatworthyTurnIndex: 0,
+        chatworthyTurnIndex: 1,
         chatworthyTotalTurns: 1,
       },
     ];
+  }
+
+  // Now that we know how many notes we kept, set chatworthyTotalTurns consistently.
+  const totalTurns = notes.length;
+  for (const n of notes) {
+    n.chatworthyTotalTurns = totalTurns;
   }
 
   return notes;
