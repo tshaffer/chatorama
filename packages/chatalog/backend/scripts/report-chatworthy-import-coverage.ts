@@ -1,12 +1,12 @@
 // scripts/report-chatworthy-import-coverage.ts
 //
 // Usage (from packages/chatalog/backend):
-//   MONGO_URI="mongodb://localhost:27017/chatalog" \
+//   MONGO_URI="mongodb://localhost:27017/chatalog_dev" \
 //   npx ts-node scripts/report-chatworthy-import-coverage.ts
 //
 // This script:
-//   - Scans all notes that have a chatworthyChatId
-//   - Groups them by chatworthyChatId
+//   - Scans all notes that have Chatworthy provenance
+//   - Groups them by chat (preferring chatworthyChatId, falling back to chatworthyFileName)
 //   - Computes per-chat coverage:
 //       * importedTurnIndexes
 //       * missingTurnIndexes
@@ -25,7 +25,7 @@ import { NoteModel } from '../src/models/Note';
 type ChatImportStatus = 'complete' | 'partial' | 'unknown';
 
 type ChatImportSummary = {
-  chatworthyChatId: string;
+  chatworthyChatId: string; // may be the real chatId or, if missing, the file name
   chatworthyChatTitle?: string | null;
   chatworthyFileNames: string[];
   importedTurnIndexes: number[];
@@ -44,20 +44,39 @@ async function main() {
 
   await mongoose.connect(mongoUri);
 
-  // Fetch all notes that have Chatworthy chat provenance
+  // Fetch all notes that have *any* Chatworthy provenance.
+  // We accept either chatworthyChatId or chatworthyFileName to be present,
+  // since your current data may not populate chatworthyChatId.
   const notes = await NoteModel.find({
-    chatworthyChatId: { $ne: null },
+    $or: [
+      { chatworthyChatId: { $ne: null } },
+      { chatworthyFileName: { $ne: null } },
+    ],
   })
     .select(
       'chatworthyChatId chatworthyChatTitle chatworthyFileName chatworthyTurnIndex chatworthyTotalTurns'
     )
     .lean();
 
+  console.log(
+    `Found ${notes.length} notes with Chatworthy provenance (chatworthyChatId or chatworthyFileName present).`
+  );
+
   const byChat = new Map<string, typeof notes>();
 
   for (const note of notes) {
-    const chatId = (note as any).chatworthyChatId as string | undefined;
-    if (!chatId) continue;
+    const n = note as any;
+
+    // Prefer grouping by chatworthyChatId when available.
+    // If it's missing, fall back to grouping by chatworthyFileName.
+    const chatId: string | undefined =
+      (n.chatworthyChatId as string | undefined) ||
+      (n.chatworthyFileName as string | undefined);
+
+    if (!chatId) {
+      // Extremely defensive: if we somehow got here, skip this note.
+      continue;
+    }
 
     const existing = byChat.get(chatId);
     if (existing) {
@@ -70,21 +89,23 @@ async function main() {
   const summaries: ChatImportSummary[] = [];
 
   for (const [chatId, chatNotes] of byChat.entries()) {
+    const chatNotesAny = chatNotes as any[];
+
     // Collect imported turn indexes
     const importedTurnIndexes = Array.from(
       new Set(
-        chatNotes
-          .map((n) => (n as any).chatworthyTurnIndex)
-          .filter((idx) => typeof idx === 'number') as number[]
+        chatNotesAny
+          .map((n) => n.chatworthyTurnIndex)
+          .filter((idx: any) => typeof idx === 'number') as number[]
       )
     ).sort((a, b) => a - b);
 
     // Collect totalTurns candidates
     const totalTurnsCandidates = Array.from(
       new Set(
-        chatNotes
-          .map((n) => (n as any).chatworthyTotalTurns)
-          .filter((t) => typeof t === 'number') as number[]
+        chatNotesAny
+          .map((n) => n.chatworthyTotalTurns)
+          .filter((t: any) => typeof t === 'number') as number[]
       )
     ).sort((a, b) => a - b);
 
@@ -99,7 +120,6 @@ async function main() {
       // Fallback: infer from highest turn index (+1) if we have any
       if (importedTurnIndexes.length > 0) {
         const maxIdx = importedTurnIndexes[importedTurnIndexes.length - 1];
-        // We can't know absolute truth, but this is a reasonable best-guess
         totalTurns = maxIdx + 1;
       } else {
         totalTurns = null;
@@ -112,15 +132,20 @@ async function main() {
     let status: ChatImportStatus = 'unknown';
 
     if (typeof totalTurns === 'number' && totalTurns >= 0) {
-      const allIndexes = Array.from({ length: totalTurns }, (_, i) => i);
-      const importedSet = new Set(importedTurnIndexes);
-      missingTurnIndexes = allIndexes.filter((i) => !importedSet.has(i));
+      // Heuristic: if smallest imported index is 1, assume 1-based.
+      const minImported = importedTurnIndexes[0] ?? 0;
+      const indexBase = minImported === 1 ? 1 : 0;
+
+      const normalizedImported = new Set(
+        importedTurnIndexes.map((idx) => idx - indexBase)
+      );
+
+      const allNormalized = Array.from({ length: totalTurns }, (_, i) => i);
+      missingTurnIndexes = allNormalized.filter((i) => !normalizedImported.has(i));
 
       if (missingTurnIndexes.length === 0) {
         status = 'complete';
       } else if (missingTurnIndexes.length === totalTurns) {
-        // If every index is "missing" despite having notes,
-        // something is inconsistent; mark as unknown.
         status = 'unknown';
       } else {
         status = 'partial';
@@ -129,21 +154,23 @@ async function main() {
 
     const titleCandidates = Array.from(
       new Set(
-        chatNotes
-          .map((n) => (n as any).chatworthyChatTitle)
-          .filter((t) => typeof t === 'string') as string[]
+        chatNotesAny
+          .map((n) => n.chatworthyChatTitle)
+          .filter((t: any) => typeof t === 'string') as string[]
       )
     );
 
     const fileNameCandidates = Array.from(
       new Set(
-        chatNotes
-          .map((n) => (n as any).chatworthyFileName)
-          .filter((f) => typeof f === 'string') as string[]
+        chatNotesAny
+          .map((n) => n.chatworthyFileName)
+          .filter((f: any) => typeof f === 'string') as string[]
       )
     );
 
     summaries.push({
+      // This may be the “real” chatworthyChatId, or
+      // a filename key if that was all we had.
       chatworthyChatId: chatId,
       chatworthyChatTitle: titleCandidates[0] ?? null,
       chatworthyFileNames: fileNameCandidates,
@@ -178,7 +205,7 @@ async function main() {
 
   console.log('Wrote coverage report to:', outputPath);
   console.log();
-  console.log('Summary (one row per chat):');
+  console.log('Summary (one row per chat/file):');
   console.table(
     summaries.map((s) => ({
       chatId: s.chatworthyChatId,

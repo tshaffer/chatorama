@@ -13,6 +13,7 @@ import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 
 import QuickCaptureDialog from './features/quickNotes/QuickCaptureDialog';
+import ImportAiClassificationButton from './features/imports/ImportAiClassificationButton';
 
 type TopNavButtonProps = {
   to: string;
@@ -103,8 +104,11 @@ export default function AppShell() {
 
           {/* Actions */}
           <Stack direction="row" spacing={1} alignItems="center">
-            {/* Import as an action icon */}
+            {/* Existing Chatworthy import (file/zip) */}
             <ImportChatworthyButton mode="icon" />
+
+            {/* NEW: AI classification import (seed + classification JSON) */}
+            <ImportAiClassificationButton mode="icon" />
 
             {/* Quick Capture as an action icon */}
             <Tooltip title="Quick Capture (⌘/Ctrl+Shift+N)">

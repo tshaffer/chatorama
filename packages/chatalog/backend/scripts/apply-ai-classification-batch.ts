@@ -22,7 +22,7 @@
 //      ]
 //    }
 //
-// 2) "Minimal batch" style (what you used for batch-2):
+// 2) "Minimal batch" style (e.g. batch-2):
 //    {
 //      "version": 1,
 //      "generatedAt": "...",
@@ -39,9 +39,9 @@
 //
 // In all cases, this script:
 //  - Reads the classification JSON
-//  - Reads the ai-seed JSON (notes with aiNoteKey + markdown)
+//  - Reads the ai-seed JSON (notes with aiNoteKey + prompt/response)
 //  - Ensures Subjects and Topics exist (by name), creating them if needed
-//  - Inserts new Notes with AI-suggested titles and markdown from the seed
+//  - Inserts new Notes with AI-suggested titles and markdown built from prompt/response
 //
 // IMPORTANT: This script does NOT delete anything. It only adds.
 //
@@ -114,12 +114,13 @@ type AiSeedNote = {
   chatTitle?: string;
   subjectHint?: string;
   topicHint?: string;
-  markdown: string;
+  promptText?: string;
+  responseText?: string;
 };
 
 type AiSeedRoot = {
   version: number;
-  generatedAt: string;
+  generatedAt?: string;
   notes: AiSeedNote[];
 };
 
@@ -234,6 +235,37 @@ async function getNextOrder(topicId: string): Promise<number> {
   const next = topicNextOrder.get(topicId)!;
   topicNextOrder.set(topicId, next + 1);
   return next;
+}
+
+/**
+ * Build markdown content for a note from its seed record.
+ * Ensures a non-empty string (Note.markdown is required).
+ */
+function buildMarkdownFromSeed(seed: AiSeedNote, title: string): string {
+  const lines: string[] = [];
+
+  const safeTitle = title || seed.chatTitle || 'Untitled';
+  lines.push(`# ${safeTitle}`, '');
+
+  if (seed.chatTitle) {
+    lines.push(`_Chat title_: ${seed.chatTitle}`, '');
+  }
+  if (seed.fileName) {
+    lines.push(`_Source file_: ${seed.fileName}`, '');
+  }
+
+  if (seed.promptText && seed.promptText.trim().length > 0) {
+    lines.push('## Prompt', '');
+    lines.push(seed.promptText.trim(), '');
+  }
+
+  if (seed.responseText && seed.responseText.trim().length > 0) {
+    lines.push('## Response', '');
+    lines.push(seed.responseText.trim(), '');
+  }
+
+  const markdown = lines.join('\n').trim();
+  return markdown.length > 0 ? markdown : `# ${safeTitle}\n`;
 }
 
 // ---------- Normalization: get subjectName/topicName for every note ----------
@@ -389,12 +421,14 @@ async function main() {
     const slug = await getUniqueNoteSlug(topicMongoId, baseSlug);
     const order = await getNextOrder(topicMongoId);
 
+    const markdown = buildMarkdownFromSeed(seedNote, title);
+
     await NoteModel.create({
       subjectId: subjectMongoId,
       topicId: topicMongoId,
       title,
       slug,
-      markdown: seedNote.markdown,
+      markdown,
       summary: undefined,
       tags: [],
       links: [],
@@ -407,6 +441,13 @@ async function main() {
         },
       ],
       order,
+
+      // Provenance
+      chatworthyNoteId: seedNote.chatworthyNoteId,
+      chatworthyFileName: seedNote.fileName,
+      chatworthyChatTitle: seedNote.chatTitle,
+      chatworthyTurnIndex: seedNote.turnIndex,
+      // chatworthyChatId / chatworthyTotalTurns could be added later if/when you have them
     } as any);
 
     createdCount++;

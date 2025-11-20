@@ -4,6 +4,7 @@ import multer from 'multer';
 import matter from 'gray-matter';
 import unzipper from 'unzipper';
 import { Readable } from 'stream';
+import fs from 'fs';
 
 import { NoteModel } from '../models/Note';
 import { SubjectModel } from '../models/Subject';
@@ -200,8 +201,10 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
 
   const titleFromH1 = gm.content.match(/^#\s+(.+)\s*$/m)?.[1]?.trim();
   const fmTitle = typeof fm.title === 'string' ? fm.title.trim() : undefined;
-  const fmChatTitle = typeof fm.chatTitle === 'string' ? fm.chatTitle.trim() : undefined;
-  const subject = typeof fm.subject === 'string' ? fm.subject : undefined;
+  const fmChatTitle =
+    typeof fm.chatTitle === 'string' ? fm.chatTitle.trim() : undefined;
+  const subject =
+    typeof fm.subject === 'string' ? fm.subject : undefined;
   const topic = typeof fm.topic === 'string' ? fm.topic : undefined;
 
   const baseTitle =
@@ -211,8 +214,10 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
     fileName.replace(/\.(md|markdown)$/i, '');
 
   const tags = toArrayTags(fm.tags);
-  const summary = typeof fm.summary === 'string' ? fm.summary : undefined;
-  const provenanceUrl = typeof fm.pageUrl === 'string' ? fm.pageUrl : undefined;
+  const summary =
+    typeof fm.summary === 'string' ? fm.summary : undefined;
+  const provenanceUrl =
+    typeof fm.pageUrl === 'string' ? fm.pageUrl : undefined;
 
   const opts: StripOpts = {
     subject,
@@ -224,8 +229,7 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
   const body = gm.content;
   const turnSections = splitIntoTurnSections(body);
 
-  // No anchors → treat entire document as a single note (existing behavior),
-  // but still record Chatworthy chat info as a “single-turn chat”.
+  // No anchors → treat entire document as a single note
   if (!turnSections.length) {
     const markdown = stripForChatalog(body, opts).trim();
     return [
@@ -241,27 +245,32 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
         chatworthyChatId,
         chatworthyChatTitle: fmChatTitle,
         chatworthyFileName: fileName,
-        chatworthyTurnIndex: 0,
+        // single "turn"
+        chatworthyTurnIndex: 1,        // 1-based
         chatworthyTotalTurns: 1,
       },
     ];
   }
 
-  // Multiple turns → produce one ParsedMd per section.
+  // Multiple turns → produce one ParsedMd per *non-empty* section.
   const notes: ParsedMd[] = [];
-  const totalTurns = turnSections.length;
 
   for (const section of turnSections) {
     const cleaned = stripForChatalog(section.markdown, opts).trim();
-    if (!cleaned) continue;
+    if (!cleaned) {
+      // Section has no meaningful content after stripping anchors/meta → skip it.
+      continue;
+    }
 
     const sectionHeadingMatch = cleaned.match(/^\s*#{2,6}\s+(.+)\s*$/m);
     const sectionHeading = sectionHeadingMatch?.[1]?.trim();
 
+    const turnNumber = section.index + 1; // 1-based for human + storage
+
     const noteTitle =
       sectionHeading && sectionHeading.length > 0
         ? sectionHeading
-        : `Turn ${section.index + 1}`;
+        : `Turn ${turnNumber}`;
 
     notes.push({
       title: noteTitle,
@@ -275,11 +284,13 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
       chatworthyChatId,
       chatworthyChatTitle: fmChatTitle,
       chatworthyFileName: fileName,
-      chatworthyTurnIndex: section.index,
-      chatworthyTotalTurns: totalTurns,
+      chatworthyTurnIndex: turnNumber, // 1-based
+      // chatworthyTotalTurns will be patched after we know how many notes survived.
+      chatworthyTotalTurns: 0,
     });
   }
 
+  // Everything stripped out (very unlikely, but be defensive)
   if (!notes.length) {
     const markdown = stripForChatalog(body, opts).trim();
     return [
@@ -295,10 +306,16 @@ function parseChatworthyFile(buf: Buffer, fileName: string): ParsedMd[] {
         chatworthyChatId,
         chatworthyChatTitle: fmChatTitle,
         chatworthyFileName: fileName,
-        chatworthyTurnIndex: 0,
+        chatworthyTurnIndex: 1,
         chatworthyTotalTurns: 1,
       },
     ];
+  }
+
+  // Now that we know how many notes we kept, set chatworthyTotalTurns consistently.
+  const totalTurns = notes.length;
+  for (const n of notes) {
+    n.chatworthyTotalTurns = totalTurns;
   }
 
   return notes;
@@ -502,6 +519,248 @@ router.post('/chatworthy/apply', async (req, res, next) => {
     res.json({
       created: createdNotes.length,
       noteIds: createdNotes.map((n) => n.id),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+//
+// ---------- NEW: AI classification preview (ai-seed.json + ai-classification.json) ----------
+//
+
+// Types copied/trimmed from scripts/apply-ai-classification-batch.ts
+
+type FullClassificationSubject = {
+  id: string;
+  name: string;
+};
+
+type FullClassificationTopic = {
+  id: string;
+  subjectId: string;
+  name: string;
+};
+
+type FullClassificationNote = {
+  aiNoteKey: string;
+  chatworthyNoteId?: string;
+  fileName?: string;
+  subjectId?: string;     // AI-level subject id
+  topicId?: string;       // AI-level topic id
+  subjectName?: string;   // optional, for robustness
+  topicName?: string;     // optional, for robustness
+  suggestedTitle: string;
+};
+
+type MinimalClassificationNote = {
+  aiNoteKey: string;
+  subjectName?: string;
+  topicName?: string;
+  suggestedTitle: string;
+};
+
+type ClassificationRoot = {
+  version: number;
+  generatedAt?: string;
+  subjects?: FullClassificationSubject[];
+  topics?: FullClassificationTopic[];
+  notes: (FullClassificationNote | MinimalClassificationNote)[];
+};
+
+type AiSeedNote = {
+  aiNoteKey: string;
+  chatworthyNoteId: string;
+  fileName: string;
+  turnIndex: number;
+  chatTitle?: string;
+  subjectHint?: string;
+  topicHint?: string;
+  promptText?: string;
+  responseText?: string;
+};
+
+type AiSeedRoot = {
+  version: number;
+  generatedAt?: string;
+  notes: AiSeedNote[];
+};
+
+type NormalizedClassificationNote = {
+  aiNoteKey: string;
+  subjectName: string;
+  topicName: string;
+  suggestedTitle: string;
+  chatworthyNoteId?: string;
+  fileName?: string;
+};
+
+/**
+ * Normalize various classification shapes so that each note has subjectName + topicName.
+ */
+function normalizeClassification(
+  classification: ClassificationRoot
+): NormalizedClassificationNote[] {
+  if (!classification.notes || !Array.isArray(classification.notes)) {
+    throw new Error('Classification JSON must have a "notes" array');
+  }
+
+  const subjById = new Map<string, FullClassificationSubject>();
+  const topicById = new Map<string, FullClassificationTopic>();
+
+  if (Array.isArray(classification.subjects)) {
+    for (const s of classification.subjects) {
+      subjById.set(s.id, s);
+    }
+  }
+
+  if (Array.isArray(classification.topics)) {
+    for (const t of classification.topics) {
+      topicById.set(t.id, t);
+    }
+  }
+
+  const normalized: NormalizedClassificationNote[] = [];
+
+  for (const raw of classification.notes) {
+    const n = raw as FullClassificationNote & MinimalClassificationNote;
+
+    let subjectName = n.subjectName;
+    let topicName = n.topicName;
+
+    if (!subjectName && n.subjectId && subjById.size > 0) {
+      const s = subjById.get(n.subjectId);
+      if (s) subjectName = s.name;
+    }
+
+    if (!topicName && n.topicId && topicById.size > 0) {
+      const t = topicById.get(n.topicId);
+      if (t) topicName = t.name;
+    }
+
+    if (!subjectName) {
+      console.warn(
+        `  WARNING: note aiNoteKey="${n.aiNoteKey}" has no subjectName/subjectId. Using "Uncategorized".`
+      );
+      subjectName = 'Uncategorized';
+    }
+    if (!topicName) {
+      console.warn(
+        `  WARNING: note aiNoteKey="${n.aiNoteKey}" has no topicName/topicId. Using "Miscellaneous".`
+      );
+      topicName = 'Miscellaneous';
+    }
+
+    normalized.push({
+      aiNoteKey: n.aiNoteKey,
+      subjectName,
+      topicName,
+      suggestedTitle: n.suggestedTitle,
+      chatworthyNoteId: (n as any).chatworthyNoteId,
+      fileName: (n as any).fileName,
+    });
+  }
+
+  return normalized;
+}
+
+/**
+ * Build markdown content for a note from its seed record.
+ * Mirrors buildMarkdownFromSeed in the script.
+ */
+function buildMarkdownFromSeed(seed: AiSeedNote, title: string): string {
+  const lines: string[] = [];
+
+  const safeTitle = title || seed.chatTitle || 'Untitled';
+  lines.push(`# ${safeTitle}`, '');
+
+  if (seed.chatTitle) {
+    lines.push(`_Chat title_: ${seed.chatTitle}`, '');
+  }
+  if (seed.fileName) {
+    lines.push(`_Source file_: ${seed.fileName}`, '');
+  }
+
+  if (seed.promptText && seed.promptText.trim().length > 0) {
+    lines.push('## Prompt', '');
+    lines.push(seed.promptText.trim(), '');
+  }
+
+  if (seed.responseText && seed.responseText.trim().length > 0) {
+    lines.push('## Response', '');
+    lines.push(seed.responseText.trim(), '');
+  }
+
+  const markdown = lines.join('\n').trim();
+  return markdown.length > 0 ? markdown : `# ${safeTitle}\n`;
+}
+
+// POST /api/v1/imports/ai-classification/preview
+router.post('/ai-classification/preview', async (req, res, next) => {
+  try {
+    const { aiSeedPath, aiClassificationPath } = req.body as {
+      aiSeedPath?: string;
+      aiClassificationPath?: string;
+    };
+
+    if (!aiSeedPath || !aiClassificationPath) {
+      return res.status(400).json({
+        message: 'aiSeedPath and aiClassificationPath are required',
+      });
+    }
+
+    // Read JSON files
+    const classificationRaw = fs.readFileSync(aiClassificationPath, 'utf8');
+    const classification: ClassificationRoot = JSON.parse(classificationRaw);
+
+    const seedRaw = fs.readFileSync(aiSeedPath, 'utf8');
+    const seed: AiSeedRoot = JSON.parse(seedRaw);
+
+    const seedByKey = new Map<string, AiSeedNote>();
+    for (const n of seed.notes) {
+      seedByKey.set(n.aiNoteKey, n);
+    }
+
+    const normalizedNotes = normalizeClassification(classification);
+
+    const results: PreviewNoteInfo[] = [];
+
+    for (const n of normalizedNotes) {
+      const seedNote = seedByKey.get(n.aiNoteKey);
+      if (!seedNote) {
+        console.warn(
+          `AI preview: No seed note found for aiNoteKey="${n.aiNoteKey}". Skipping.`
+        );
+        continue;
+      }
+
+      const markdown = buildMarkdownFromSeed(seedNote, n.suggestedTitle);
+
+      results.push({
+        file: seedNote.fileName,
+        importKey: n.aiNoteKey,
+        title:
+          (n.suggestedTitle && n.suggestedTitle.trim()) ||
+          seedNote.chatTitle ||
+          'Untitled',
+        subjectName: n.subjectName,
+        topicName: n.topicName,
+        body: markdown,
+        tags: [],
+        summary: undefined,
+        provenanceUrl: undefined,
+        chatworthyNoteId: seedNote.chatworthyNoteId,
+        chatworthyChatId: undefined,
+        chatworthyChatTitle: seedNote.chatTitle,
+        chatworthyFileName: seedNote.fileName,
+        chatworthyTurnIndex: seedNote.turnIndex,
+        chatworthyTotalTurns: undefined,
+      });
+    }
+
+    res.json({
+      imported: results.length,
+      results,
     });
   } catch (err) {
     next(err);

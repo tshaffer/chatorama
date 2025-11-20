@@ -68,7 +68,7 @@ type AiSeedNote = {
 
 type AiSeedRoot = {
   version: number;
-  generatedAt: string;
+  generatedAt?: string;
   notes: AiSeedNote[];
 };
 
@@ -111,11 +111,9 @@ class SlugRegistry {
 function buildMarkdownFromSeed(seed: AiSeedNote, title: string): string {
   const lines: string[] = [];
 
-  // Title
   const safeTitle = title || seed.chatTitle || 'Untitled';
   lines.push(`# ${safeTitle}`, '');
 
-  // Optional metadata
   if (seed.chatTitle) {
     lines.push(`_Chat title_: ${seed.chatTitle}`, '');
   }
@@ -123,13 +121,11 @@ function buildMarkdownFromSeed(seed: AiSeedNote, title: string): string {
     lines.push(`_Source file_: ${seed.fileName}`, '');
   }
 
-  // Prompt
   if (seed.promptText && seed.promptText.trim().length > 0) {
     lines.push('## Prompt', '');
     lines.push(seed.promptText.trim(), '');
   }
 
-  // Response
   if (seed.responseText && seed.responseText.trim().length > 0) {
     lines.push('## Response', '');
     lines.push(seed.responseText.trim(), '');
@@ -276,10 +272,13 @@ async function main() {
         },
       ],
       order,
-      // Optional extra fields if your Note schema supports them:
-      // chatworthyNoteId: seedNote.chatworthyNoteId,
-      // chatworthyTurnIndex: seedNote.turnIndex,
-      // aiNoteKey: seedNote.aiNoteKey,
+
+      // Provenance
+      chatworthyNoteId: seedNote.chatworthyNoteId,
+      chatworthyFileName: seedNote.fileName,
+      chatworthyChatTitle: seedNote.chatTitle,
+      chatworthyTurnIndex: seedNote.turnIndex,
+      // chatworthyChatId / chatworthyTotalTurns can be added later
     } as any);
 
     createdCount++;
