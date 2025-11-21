@@ -17,7 +17,7 @@ import {
   useImportAiClassificationPreviewMutation,
   type ImportResponse,
   useApplyChatworthyImportMutation,
-} from './importsApi'; // adjust path if this file lives elsewhere
+} from './importsApi';
 import { useGetSubjectsQuery } from '../subjects/subjectsApi';
 import {
   ImportResultsDialog,
@@ -37,11 +37,8 @@ export default function ImportAiClassificationButton({
   mode = 'button',
   tooltip = 'Import notes from AI classification (using backend-configured paths)',
 }: Props) {
-  const [importAiPreview, { isLoading: isPreviewLoading }] =
-    useImportAiClassificationPreviewMutation();
-  const [applyChatworthyImport, { isLoading: isApplying }] =
-    useApplyChatworthyImportMutation();
-
+  const [importAiPreview] = useImportAiClassificationPreviewMutation();
+  const [applyChatworthyImport] = useApplyChatworthyImportMutation();
   const { data: subjects = [] } = useGetSubjectsQuery();
 
   const [snack, setSnack] = useState<{
@@ -53,8 +50,12 @@ export default function ImportAiClassificationButton({
   const [lastImport, setLastImport] = useState<ImportResponse | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
 
+  // NEW: single source of truth for “busy”
+  const [busy, setBusy] = useState(false);
+
   const handleStartPreview = async () => {
     try {
+      setBusy(true);
       const res = await importAiPreview().unwrap();
 
       if (!res.results.length) {
@@ -84,6 +85,8 @@ export default function ImportAiClassificationButton({
         (typeof err === 'string' ? err : '') ||
         'AI import preview failed';
       setSnack({ open: true, msg, severity: 'error' });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -98,6 +101,8 @@ export default function ImportAiClassificationButton({
     }
 
     try {
+      setBusy(true);
+
       const payload = {
         rows: rows.map(r => ({
           importKey: r.importKey,
@@ -138,6 +143,8 @@ export default function ImportAiClassificationButton({
         (typeof err === 'string' ? err : '') ||
         'Apply failed';
       setSnack({ open: true, msg, severity: 'error' });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -154,7 +161,7 @@ export default function ImportAiClassificationButton({
 
   const overlay = (
     <Backdrop
-      open={isPreviewLoading || isApplying}
+      open={busy}
       sx={{
         color: '#fff',
         zIndex: (theme) => theme.zIndex.modal + 1,
@@ -190,7 +197,7 @@ export default function ImportAiClassificationButton({
     </Backdrop>
   );
 
-  const buttonDisabled = isPreviewLoading || isApplying;
+  const buttonDisabled = busy;
 
   if (mode === 'icon') {
     return (
@@ -207,7 +214,9 @@ export default function ImportAiClassificationButton({
               sx={(theme) => ({
                 borderRadius: 2,
                 backgroundColor: alpha(theme.palette.common.white, 0.18),
-                '&:hover': { backgroundColor: alpha(theme.palette.common.white, 0.28) },
+                '&:hover': {
+                  backgroundColor: alpha(theme.palette.common.white, 0.28),
+                },
               })}
             >
               {buttonDisabled ? <CircularProgress size={16} /> : <AutoAwesomeIcon />}
@@ -233,7 +242,7 @@ export default function ImportAiClassificationButton({
     );
   }
 
-  // Inline button variant (if you ever want it elsewhere)
+  // Inline button variant
   return (
     <>
       {dialog}
