@@ -69,7 +69,8 @@ export default function SubjectTopicTree({ width = 260 }: SubjectTopicTreeProps)
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
-        overflowY: 'auto',          // ⬅️ left pane scrolls within its own column
+        maxHeight: '100%',   // 👈 constrained by TopicNotesPage height
+        overflowY: 'auto',   // 👈 left pane scrolls inside this column
       }}
     >
       <Typography
@@ -95,7 +96,7 @@ export default function SubjectTopicTree({ width = 260 }: SubjectTopicTreeProps)
           sx={{
             flex: 1,
             minHeight: 0,
-            // ⬅️ NOTE: no overflow here; outer Box already scrolls
+            // 👈 no overflow here; outer Box already scrolls
           }}
         >
           <SimpleTreeView

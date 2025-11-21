@@ -122,12 +122,14 @@ export default function TopicNotesPage() {
       id="topic-notes-page"
       sx={{
         display: 'flex',
-        flex: 1,          // ⬅️ fill available space instead of height:"100%"
+        // Constrain this route to the viewport area under the AppBar.
+        // Adjust 64px if your AppBar height is different.
+        height: 'calc(100vh - 64px)',
         minHeight: 0,
-        overflow: 'hidden', // ⬅️ prevents window scroll; inner panels handle it
+        overflow: 'hidden', // page itself doesn't scroll; inner panes do
       }}
     >
-      {/* LEFT: hierarchy tree (already has its own scroll via overflow:auto inside) */}
+      {/* LEFT: hierarchy tree (gets its own scroll via SubjectTopicTree) */}
       <SubjectTopicTree width={260} />
 
       {/* RIGHT: notes UI */}
@@ -139,7 +141,7 @@ export default function TopicNotesPage() {
           p: 2,
           display: 'flex',
           flexDirection: 'column',
-          minHeight: 0,              // ⬅️ allow inner scroll container to work
+          minHeight: 0, // allow inner scroll container to work
         }}
       >
         {/* If URL is malformed / missing ids, show a friendly message */}
@@ -149,7 +151,7 @@ export default function TopicNotesPage() {
               No topic selected
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Use the Subjects & Topics tree on the left to pick a topic.
+              Use the Subjects &amp; Topics tree on the left to pick a topic.
             </Typography>
           </Box>
         ) : (
@@ -205,7 +207,7 @@ export default function TopicNotesPage() {
               sx={{
                 flex: 1,
                 minHeight: 0,
-                overflowY: 'auto',     // ⬅️ right-hand panel scrolls independently
+                overflowY: 'auto', // right-hand panel scrolls independently
               }}
             >
               {isError ? (
@@ -268,8 +270,8 @@ export default function TopicNotesPage() {
                         Failed to load topic relations:{' '}
                         {String(
                           (topicRelErrorObj as any)?.data ??
-                          (topicRelErrorObj as any)?.message ??
-                          topicRelErrorObj,
+                            (topicRelErrorObj as any)?.message ??
+                            topicRelErrorObj,
                         )}
                       </Typography>
                     )}
@@ -277,7 +279,7 @@ export default function TopicNotesPage() {
                     {!topicRelLoading && !topicRelError && topicRelSummary && (
                       <>
                         {topicRelSummary.relatedTopics.length === 0 &&
-                          topicRelSummary.relatedNotes.length === 0 ? (
+                        topicRelSummary.relatedNotes.length === 0 ? (
                           <Typography variant="body2" color="text.secondary">
                             No notes in other topics explicitly reference this topic yet.
                           </Typography>
@@ -301,8 +303,8 @@ export default function TopicNotesPage() {
                                       sameSubject && subjectSlug
                                         ? subjectSlug
                                         : t.subjectId
-                                          ? `${t.subjectId}-subject`
-                                          : '';
+                                        ? `${t.subjectId}-subject`
+                                        : '';
 
                                     const topicSlugForNav = `${t.id}-${slugify(t.name)}`;
 
