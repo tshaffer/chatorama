@@ -34,11 +34,16 @@ export type ApplyImportedRow = {
   summary?: string;
   provenanceUrl?: string;
   chatworthyNoteId?: string;
+  chatworthyChatId?: string;
+  chatworthyChatTitle?: string;
+  chatworthyFileName?: string;
+  chatworthyTurnIndex?: number;
+  chatworthyTotalTurns?: number;
 };
 
 export const importsApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
-    // PREVIEW import (no DB writes)
+    // PREVIEW import (no DB writes) - Chatworthy markdown/zip
     importChatworthy: build.mutation<ImportResponse, File>({
       query: (file) => {
         const body = new FormData();
@@ -50,6 +55,19 @@ export const importsApi = baseApi.injectEndpoints({
         };
       },
       // No invalidatesTags here; preview only.
+    }),
+
+    // NEW: PREVIEW import from AI classification (ai-seed.json + ai-classification.json)
+    importAiClassificationPreview: build.mutation<
+      ImportResponse,
+      { aiSeedPath: string; aiClassificationPath: string }
+    >({
+      query: (payload) => ({
+        url: 'imports/ai-classification/preview',
+        method: 'POST',
+        body: payload,
+      }),
+      // Preview only, no invalidations.
     }),
 
     // APPLY import: actually create Subjects/Topics/Notes
@@ -71,5 +89,6 @@ export const importsApi = baseApi.injectEndpoints({
 
 export const {
   useImportChatworthyMutation,
+  useImportAiClassificationPreviewMutation,
   useApplyChatworthyImportMutation,
 } = importsApi;
