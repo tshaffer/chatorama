@@ -6,7 +6,7 @@ const collections = [
   "subjects",
 ];
 
-const outputDir = "/Users/tedshaffer/Documents/MongoDBBackups/chatorama/backup-11-21-1";
+const outputDir = "/Users/tedshaffer/Documents/MongoDBBackups/chatorama/backup-11-21-3";
 
 const fs = require("fs");
 
