@@ -22,11 +22,14 @@ promptText (the user’s question / prompt)
 
 responseText (the assistant’s answer)
 
-You also have a separate file (e.g. ai-hierarchy-for-ai-v2.json) that contains an existing list of Subjects and Topics. You should reuse those Subjects and Topics whenever possible, and only propose new ones when truly necessary.
+You also have a second attached file (e.g. ai-hierarchy-for-ai-v2.json) that contains an existing set of Subjects and Topics.
+You must reuse these Subjects and Topics whenever possible and only propose new ones when absolutely necessary.
 
-Your task is to classify EACH note into a Subject and Topic, and to propose a short, human-friendly title.
+Your task is to classify each note into a Subject and Topic and propose a short, human-friendly title.
 
-You MUST respond with a SINGLE JSON OBJECT ONLY — no explanation, no Markdown code fences, no headings, and no extra properties. The JSON MUST have exactly these top-level properties:
+You MUST return a single JSON object only — no explanation, no Markdown code fences, no headings, no commentary, and no extra fields.
+
+The JSON MUST have exactly these top-level properties:
 
 {
   "version": 2,
@@ -37,17 +40,58 @@ You MUST respond with a SINGLE JSON OBJECT ONLY — no explanation, no Markdown 
 }
 
 
-Because the JSON may be large, you should prefer returning it as a downloadable JSON file attachment (if the interface supports that). If you cannot return a file, then print the JSON inline in the chat.
+Because the JSON may be large, you MUST NOT print it inline.
+You MUST create a file named (for example) ai-classification-batch-2.json containing this single JSON object and return it as a downloadable attachment.
+If you cannot return a file, then and only then print the JSON inline.
 
-SUBJECTS FORMAT
+HIERARCHY STRATEGY (CRUCIAL)
 
-The "subjects" array MUST contain only the new or changed Subjects you are proposing.
-If you don’t need any new subjects, use an empty array:
+Your primary goal is to build a compact subject hierarchy with richer topics, not one subject per note.
+
+Global rules:
+
+Prefer FEW subjects, MANY topics.
+
+It is NORMAL and DESIRABLE to have many topics under one subject.
+
+It is UNDESIRABLE to create many narrow subjects that duplicate their topics.
+
+Subjects = broad domains (e.g., “Personal Health & Nutrition”, “Travel Planning”, “Software Development”, “Photography Workflow”).
+A subject should comfortably contain many distinct conversations over time.
+
+Topics = specific themes within a subject.
+
+Examples inside “Personal Health & Nutrition”:
+
+On-ride fueling
+
+Protein needs for older adults
+
+Cheese and heart health
+
+Post-ride recovery meals
+
+Yogurt choices and heart health
+
+If many notes share the same general domain, they SHOULD share one subject.
+
+DO NOT create subject-per-note.
+DO NOT create separate subjects for yogurt vs cheese vs fruit vs eggs if they all belong under “Personal Health & Nutrition”.
+These MUST be topics, not subjects.
+
+Only create a new subject when the domain is clearly different (health vs travel vs coding vs photography).
+
+If you are unsure whether something should be a new subject or topic, choose “new topic under an existing subject.”
+
+SUBJECTS FORMAT (Incremental Mode)
+
+The "subjects" array MUST contain only the new subjects you are proposing.
+If you are not creating any new subjects:
 
 "subjects": []
 
 
-Each subject MUST have this shape:
+Each subject MUST follow:
 
 {
   "name": "<Human-readable subject name>"
@@ -56,167 +100,127 @@ Each subject MUST have this shape:
 
 Constraints:
 
-Use human-friendly labels, e.g. "Personal Health & Nutrition".
+Use human-friendly names.
 
-Do NOT include IDs here; just the "name".
+Do NOT include IDs here (v2 assigns IDs elsewhere).
 
-Reuse existing subjects from ai-hierarchy-for-ai-v2.json by name; only add a subject here if you truly need a new one.
+Reuse existing subjects by name whenever possible.
 
-Do NOT include any other fields.
+Only propose a new subject when truly necessary.
 
-TOPICS FORMAT
+Do NOT include any additional fields.
 
-The "topics" array MUST contain only the new or changed Topics you are proposing.
-If you don’t need any new topics, use an empty array:
+TOPICS FORMAT (Incremental Mode)
+
+The "topics" array MUST contain only the new topics you are proposing.
+If no new topics are needed:
 
 "topics": []
 
 
-Each topic MUST have this shape:
+Each topic MUST follow:
 
 {
-  "subjectName": "<an existing or newly proposed subject name>",
+  "subjectName": "<existing or newly-proposed subject name>",
   "name": "<Human-readable topic name>"
 }
 
 
 Constraints:
 
-subjectName MUST be either:
+subjectName MUST refer to an existing subject or one listed in "subjects".
 
-The "name" of an existing subject from ai-hierarchy-for-ai-v2.json, or
+Topic names MUST be human-friendly.
 
-The "name" of a subject you listed in the "subjects" array above.
+Reuse existing topics whenever possible.
 
-name is a human-friendly label for the topic, e.g. "Cycling Fueling, Carbs, and Energy Systems".
+Avoid near-duplicate topics.
 
-Do NOT include any other fields.
-
-Reuse topics across multiple notes by name when appropriate; avoid near-duplicates.
+Do NOT include other fields.
 
 NOTES FORMAT (CRITICAL)
 
-The "notes" array in your OUTPUT is where you map each input note to a subject/topic and a suggested title.
-
-The OUTPUT "notes" array MUST:
+The "notes" array MUST:
 
 Have the SAME LENGTH as the input notes array.
 
-Include EVERY aiNoteKey from the input.
+Include EVERY aiNoteKey.
 
-Contain EXACTLY ONE output entry per input note.
+Produce EXACTLY ONE output entry per input note.
 
 Never merge, drop, or sample notes.
 
-Each output note MUST have this exact shape:
+Each output note MUST follow:
 
 {
-  "aiNoteKey": "<copied from input note>",
-  "subjectName": "<chosen subject name>",
-  "topicName": "<chosen topic name>",
-  "suggestedTitle": "<short human-friendly title for this note>"
+  "aiNoteKey": "<copied from input>",
+  "subjectName": "<subject name>",
+  "topicName": "<topic name>",
+  "suggestedTitle": "<short human-friendly title>"
 }
 
 
 Constraints:
 
-aiNoteKey MUST exactly match the input note’s aiNoteKey.
+aiNoteKey MUST match the input exactly.
 
-subjectName MUST be either:
+subjectName MUST be from the existing hierarchy or your "subjects" array.
 
-An existing subject name from ai-hierarchy-for-ai-v2.json, or
-
-A subject name you’ve added in the "subjects" array.
-
-topicName MUST be either:
-
-An existing topic name under that subject from ai-hierarchy-for-ai-v2.json, or
-
-A topic name you’ve added in the "topics" array under that subject.
+topicName MUST be from the existing hierarchy or your "topics" array.
 
 TITLE GUIDELINES (VERY IMPORTANT)
 
 For each "suggestedTitle":
 
-Make it a short, human-friendly summary of the main idea of the note.
+Short, human-friendly, clear.
 
-Base it on the content (promptText + responseText), not just the hints.
+5–12 words preferred.
 
-Do NOT copy or truncate the user’s prompt verbatim.
+Base it on the full content (prompt + response).
 
-Prefer declarative titles, e.g.:
+Titles MUST NOT be conversational or copied from the prompt.
 
-Good: "Pasta Timing Around Moderate Exercise for Blood Sugar Control"
+MUST NOT contain “Turn” or parentheses like “(Turn 3)”.
 
-Bad: "Let's assume that I want to eat pasta"
+MUST NOT copy fileName, chatTitle, subjectHint, or topicHint verbatim.
 
-Avoid meta phrases like "turn 3", "this revised version", "as discussed above", "you wrote", etc.
+MUST be distinct for notes sharing the same fileName.
 
-Aim for about 5–12 words.
-
-Forbidden patterns (do NOT use them under any circumstances):
-
-Do NOT include the word "Turn" anywhere in the title.
-
-Do NOT include parentheses like "(Turn 3)" or any similar meta suffix.
-
-Do NOT copy fileName, chatTitle, subjectHint, or topicHint verbatim into the title.
-
-You may reuse individual words (e.g., "cheese", "heart health"), but the title MUST NOT just be those strings with minor tweaks.
-
-If multiple notes share the same fileName (i.e., multiple turns in one chat), the titles MUST be distinct, focusing on what is unique about that turn.
-
-Examples:
-
-Bad: "I just finished a 90 minute cycling session"
-Good: "Refueling After a 90-Minute Moderate Cycling Session"
-
-Bad: "Let's assume that I want to eat pasta"
-Good: "Small Pasta Portions Around Low-Intensity Exercise"
-
-Bad: "Heart Health Ranking Best Worst (Turn 1)"
 Good:
 
-"Criteria for Heart-Healthier Cheese Choices"
+“Criteria for Heart-Healthier Cheese Choices”
 
-"Nutrition Comparison Table for Nine Common Cheeses"
+“Daily Protein Needs for an Active Older Cyclist”
 
-"Is Cheddar Worse Than Brie for Heart Health?"
+“Refueling After a 90-Minute Moderate Ride”
 
-"Heart-Health Assessment of Burrata Cheese"
+Bad:
 
-"Updated Cheese Ranking Including Burrata and Gouda"
+“I just finished a 90 minute cycling session”
+
+“Let’s assume I want pasta”
+
+“Heart Health Ranking Best Worst (Turn 1)”
 
 VALIDATION BEFORE YOU RESPOND
 
-Before you send your final JSON:
+Before returning your final JSON file, confirm:
 
-Confirm the top-level structure is exactly:
-version, generatedAt, subjects, topics, notes.
+Top-level structure exactly matches:
+version, generatedAt, subjects, topics, notes
 
-Confirm that:
+version is 2.
 
-version is the number 2.
+"subjects" only contains { "name": "..." }.
 
-"subjects" objects use only:
+"topics" only contains { "subjectName": "...", "name": "..." }.
 
-{ "name": "..." }
-
-
-"topics" objects use only:
-
-{ "subjectName": "...", "name": "..." }
-
-
-"notes" objects use only:
-
+"notes" only contains exactly:
 { "aiNoteKey", "subjectName", "topicName", "suggestedTitle" }
 
+Output "notes" length matches input "notes" length.
 
-Confirm that:
+Each input aiNoteKey appears exactly once.
 
-The output "notes" array length is exactly the same as the input "notes" array length.
-
-Every aiNoteKey from the input appears exactly once in the output "notes".
-
-Finally, write this single JSON object into a file (for example ai-classification-batch-2.json) and return it to me as a downloadable file. Do NOT print the JSON inline unless you absolutely cannot return a file.
+Finally, write the single JSON object into a file (e.g. ai-classification-batch-2.json) and return it as a downloadable attachment.
+Do NOT print the JSON inline unless you absolutely cannot return a file.
