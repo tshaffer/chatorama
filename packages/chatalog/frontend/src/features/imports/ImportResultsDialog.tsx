@@ -51,6 +51,8 @@ export function ImportResultsDialog({
 }: Props) {
   const [defaultSubjectLabel, setDefaultSubjectLabel] = useState('');
   const [defaultTopicLabel, setDefaultTopicLabel] = useState('');
+  const subjectBulkUpdateRef = React.useRef(false);
+  const topicBulkUpdateRef = React.useRef(false);
 
   const [rows, setRows] = useState<EditableImportedNoteRow[]>(() =>
     importedNotes.map((n) => ({
@@ -89,6 +91,12 @@ export function ImportResultsDialog({
       })),
     );
   }, [importedNotes]);
+
+  // NEW: clear bulk flags after rows change
+  React.useEffect(() => {
+    subjectBulkUpdateRef.current = false;
+    topicBulkUpdateRef.current = false;
+  }, [rows]);
 
   const subjectOptions = useMemo(() => {
     const set = new Set<string>();
@@ -140,37 +148,35 @@ export function ImportResultsDialog({
     );
   };
 
-  // --- Default Subject / Topic updates ---
-  // New behavior: update every row that hasn't been manually edited yet.
-
   const updateDefaultSubject = (next: string) => {
     setDefaultSubjectLabel(next);
+    subjectBulkUpdateRef.current = true;
     setRows((prevRows) =>
       prevRows.map((r) =>
         r.subjectTouched
           ? r
           : {
-              ...r,
-              subjectLabel: next ?? '',
-            },
+            ...r,
+            subjectLabel: next ?? '',
+          },
       ),
     );
   };
 
   const updateDefaultTopic = (next: string) => {
     setDefaultTopicLabel(next);
+    topicBulkUpdateRef.current = true;
     setRows((prevRows) =>
       prevRows.map((r) =>
         r.topicTouched
           ? r
           : {
-              ...r,
-              topicLabel: next ?? '',
-            },
+            ...r,
+            topicLabel: next ?? '',
+          },
       ),
     );
   };
-
   const handleApply = () => {
     onApply(rows);
   };
@@ -268,18 +274,20 @@ export function ImportResultsDialog({
                       freeSolo
                       options={subjectOptions}
                       value={row.subjectLabel}
-                      onChange={(_e, newValue) =>
+                      onChange={(_e, newValue) => {
+                        if (subjectBulkUpdateRef.current) return;
                         handleRowChange(row.importKey, {
                           subjectLabel: newValue ?? '',
                           subjectTouched: true,
-                        })
-                      }
-                      onInputChange={(_e, newInputValue) =>
+                        });
+                      }}
+                      onInputChange={(_e, newInputValue) => {
+                        if (subjectBulkUpdateRef.current) return;
                         handleRowChange(row.importKey, {
                           subjectLabel: newInputValue ?? '',
                           subjectTouched: true,
-                        })
-                      }
+                        });
+                      }}
                       renderInput={(params) => (
                         <TextField
                           {...params}
@@ -294,18 +302,20 @@ export function ImportResultsDialog({
                       freeSolo
                       options={topicOptions}
                       value={row.topicLabel}
-                      onChange={(_e, newValue) =>
+                      onChange={(_e, newValue) => {
+                        if (topicBulkUpdateRef.current) return;
                         handleRowChange(row.importKey, {
                           topicLabel: newValue ?? '',
                           topicTouched: true,
-                        })
-                      }
-                      onInputChange={(_e, newInputValue) =>
+                        });
+                      }}
+                      onInputChange={(_e, newInputValue) => {
+                        if (topicBulkUpdateRef.current) return;
                         handleRowChange(row.importKey, {
                           topicLabel: newInputValue ?? '',
                           topicTouched: true,
-                        })
-                      }
+                        });
+                      }}
                       renderInput={(params) => (
                         <TextField
                           {...params}
