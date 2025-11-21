@@ -122,9 +122,9 @@ export default function TopicNotesPage() {
       id="topic-notes-page"
       sx={{
         display: 'flex',
-        height: '100%',
+        flex: 1,          // ⬅️ fill available space instead of height:"100%"
         minHeight: 0,
-        overflow: 'hidden',          // ⬅️ prevent whole-page scroll; inner panes scroll instead
+        overflow: 'hidden', // ⬅️ prevents window scroll; inner panels handle it
       }}
     >
       {/* LEFT: hierarchy tree (already has its own scroll via overflow:auto inside) */}
@@ -268,8 +268,8 @@ export default function TopicNotesPage() {
                         Failed to load topic relations:{' '}
                         {String(
                           (topicRelErrorObj as any)?.data ??
-                            (topicRelErrorObj as any)?.message ??
-                            topicRelErrorObj,
+                          (topicRelErrorObj as any)?.message ??
+                          topicRelErrorObj,
                         )}
                       </Typography>
                     )}
@@ -277,7 +277,7 @@ export default function TopicNotesPage() {
                     {!topicRelLoading && !topicRelError && topicRelSummary && (
                       <>
                         {topicRelSummary.relatedTopics.length === 0 &&
-                        topicRelSummary.relatedNotes.length === 0 ? (
+                          topicRelSummary.relatedNotes.length === 0 ? (
                           <Typography variant="body2" color="text.secondary">
                             No notes in other topics explicitly reference this topic yet.
                           </Typography>
@@ -301,8 +301,8 @@ export default function TopicNotesPage() {
                                       sameSubject && subjectSlug
                                         ? subjectSlug
                                         : t.subjectId
-                                        ? `${t.subjectId}-subject`
-                                        : '';
+                                          ? `${t.subjectId}-subject`
+                                          : '';
 
                                     const topicSlugForNav = `${t.id}-${slugify(t.name)}`;
 

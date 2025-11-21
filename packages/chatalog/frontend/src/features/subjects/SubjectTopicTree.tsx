@@ -53,14 +53,13 @@ export default function SubjectTopicTree({ width = 260 }: SubjectTopicTreeProps)
 
   const { data: subjects = [], isLoading } = useGetSubjectsQuery();
 
-  // Expanded state: keep currently-selected subject expanded (initially)
   const [expanded, setExpanded] = React.useState<string[]>(() =>
     selectedSubjectId ? [subjectItemId(selectedSubjectId)] : [],
   );
 
   return (
     <Box
-      id='subject-topic-tree'
+      id="subject-topic-tree"
       sx={{
         width,
         flexShrink: 0,
@@ -70,14 +69,15 @@ export default function SubjectTopicTree({ width = 260 }: SubjectTopicTreeProps)
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
+        overflowY: 'auto',          // ⬅️ left pane scrolls within its own column
       }}
     >
       <Typography
         variant="subtitle2"
         color="text.secondary"
-        sx={{ mb: 1 }}
+        sx={{ mb: 1, flexShrink: 0 }}
       >
-        Subjects & Topics
+        Subjects &amp; Topics
       </Typography>
 
       {isLoading ? (
@@ -94,16 +94,13 @@ export default function SubjectTopicTree({ width = 260 }: SubjectTopicTreeProps)
         <Box
           sx={{
             flex: 1,
-            overflow: 'auto',
-            '& .MuiTreeItem-root': {
-              py: 0.25,
-            },
+            minHeight: 0,
+            // ⬅️ NOTE: no overflow here; outer Box already scrolls
           }}
         >
           <SimpleTreeView
             expandedItems={expanded}
             onExpandedItemsChange={(_event, itemIds) => {
-              // user is fully in control of expansion
               setExpanded(itemIds);
             }}
             selectedItems={selectedItemId}
