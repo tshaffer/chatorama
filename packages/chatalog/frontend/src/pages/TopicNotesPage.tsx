@@ -15,7 +15,7 @@ import {
 import { skipToken } from '@reduxjs/toolkit/query';
 
 import { useGetTopicNotesWithRelationsQuery } from '../features/notes/notesApi';
-import { useGetTopicRelationsSummaryQuery } from '../features/subjects/subjectsApi'; // 👈 add this
+import { useGetTopicRelationsSummaryQuery } from '../features/subjects/subjectsApi';
 import ReorderableNotesList from '../features/notes/ReorderableNotesList';
 import MoveNotesDialog from '../features/notes/MoveNotesDialog';
 import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
@@ -51,7 +51,6 @@ export default function TopicNotesPage() {
 
   const [moveOpen, setMoveOpen] = useState(false);
 
-  // ✅ ALWAYS call the hook. Use skipToken when IDs are not ready.
   const {
     data,
     isLoading,
@@ -78,8 +77,8 @@ export default function TopicNotesPage() {
 
   const onReordered = useCallback(
     (noteIdsInOrder: string[]) => {
-      // You already have reorder mutation wired; left as-is
-      // e.g., reorder({ subjectId: subjectId!, topicId: topicId!, noteIdsInOrder });
+      // reorder mutation (left as-is)
+      // reorder({ subjectId: subjectId!, topicId: topicId!, noteIdsInOrder });
     },
     [],
   );
@@ -125,20 +124,22 @@ export default function TopicNotesPage() {
         display: 'flex',
         height: '100%',
         minHeight: 0,
+        overflow: 'hidden',          // ⬅️ prevent whole-page scroll; inner panes scroll instead
       }}
     >
-      {/* LEFT: hierarchy tree */}
+      {/* LEFT: hierarchy tree (already has its own scroll via overflow:auto inside) */}
       <SubjectTopicTree width={260} />
 
       {/* RIGHT: notes UI */}
       <Box
-        id='mainPanel'
+        id="mainPanel"
         sx={{
           flex: 1,
           minWidth: 0,
           p: 2,
           display: 'flex',
           flexDirection: 'column',
+          minHeight: 0,              // ⬅️ allow inner scroll container to work
         }}
       >
         {/* If URL is malformed / missing ids, show a friendly message */}
@@ -153,6 +154,7 @@ export default function TopicNotesPage() {
           </Box>
         ) : (
           <>
+            {/* Header + toolbar (fixed, does NOT scroll) */}
             <Stack
               direction="row"
               alignItems="center"
@@ -198,175 +200,179 @@ export default function TopicNotesPage() {
               </Toolbar>
             </Stack>
 
-            {/* Error state */}
-            {isError ? (
-              <Box>
-                <Typography color="error" sx={{ mb: 1 }}>
-                  Failed to load notes.
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {String((error as any)?.data ?? (error as any)?.message ?? error)}
-                </Typography>
-              </Box>
-            ) : isLoading ? (
-              <LinearProgress />
-            ) : notes.length ? (
-              <>
-                <ReorderableNotesList
-                  topicId={topicId}
-                  notes={notes}
-                  selectedIds={selectedIds}
-                  onToggleSelect={toggleSelect}
-                  onReordered={onReordered}
-                  onOpenNote={onOpenNote}
-                />
+            {/* SCROLLABLE body of the right panel */}
+            <Box
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                overflowY: 'auto',     // ⬅️ right-hand panel scrolls independently
+              }}
+            >
+              {isError ? (
+                <Box>
+                  <Typography color="error" sx={{ mb: 1 }}>
+                    Failed to load notes.
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {String((error as any)?.data ?? (error as any)?.message ?? error)}
+                  </Typography>
+                </Box>
+              ) : isLoading ? (
+                <LinearProgress />
+              ) : notes.length ? (
+                <>
+                  <ReorderableNotesList
+                    topicId={topicId}
+                    notes={notes}
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelect}
+                    onReordered={onReordered}
+                    onOpenNote={onOpenNote}
+                  />
 
-                {/* Related sections */}
-                {renderRelatedList('Related notes from other topics', relatedTopicNotes)}
-                {renderRelatedList('Related notes by subject', relatedSubjectNotes)}
-                {renderRelatedList('Directly related notes', relatedDirectNotes)}
+                  {/* Related sections */}
+                  {renderRelatedList('Related notes from other topics', relatedTopicNotes)}
+                  {renderRelatedList('Related notes by subject', relatedSubjectNotes)}
+                  {renderRelatedList('Directly related notes', relatedDirectNotes)}
 
-                {/* NEW: Incoming references to this topic */}
-                <Box sx={{ mt: 3 }}>
-                  <Stack
-                    direction="row"
-                    alignItems="center"
-                    justifyContent="space-between"
-                    sx={{ mb: 1 }}
-                  >
-                    <Typography variant="subtitle1">
-                      Incoming references to this topic
-                    </Typography>
-                    {topicId && (
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => setLinkTopicDialogOpen(true)}
-                      >
-                        Link note to topic
-                      </Button>
-                    )}
-                  </Stack>
-
-                  {topicRelLoading && !topicRelSummary && (
-                    <Typography variant="body2" color="text.secondary">
-                      Loading incoming relations…
-                    </Typography>
-                  )}
-
-                  {topicRelError && (
-                    <Typography variant="body2" color="error">
-                      Failed to load topic relations:{' '}
-                      {String(
-                        (topicRelErrorObj as any)?.data ??
-                        (topicRelErrorObj as any)?.message ??
-                        topicRelErrorObj,
+                  {/* Incoming references to this topic */}
+                  <Box sx={{ mt: 3 }}>
+                    <Stack
+                      direction="row"
+                      alignItems="center"
+                      justifyContent="space-between"
+                      sx={{ mb: 1 }}
+                    >
+                      <Typography variant="subtitle1">
+                        Incoming references to this topic
+                      </Typography>
+                      {topicId && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => setLinkTopicDialogOpen(true)}
+                        >
+                          Link note to topic
+                        </Button>
                       )}
-                    </Typography>
-                  )}
-                  {!topicRelLoading && !topicRelError && topicRelSummary && (
-                    <>
-                      {topicRelSummary.relatedTopics.length === 0 &&
+                    </Stack>
+
+                    {topicRelLoading && !topicRelSummary && (
+                      <Typography variant="body2" color="text.secondary">
+                        Loading incoming relations…
+                      </Typography>
+                    )}
+
+                    {topicRelError && (
+                      <Typography variant="body2" color="error">
+                        Failed to load topic relations:{' '}
+                        {String(
+                          (topicRelErrorObj as any)?.data ??
+                            (topicRelErrorObj as any)?.message ??
+                            topicRelErrorObj,
+                        )}
+                      </Typography>
+                    )}
+
+                    {!topicRelLoading && !topicRelError && topicRelSummary && (
+                      <>
+                        {topicRelSummary.relatedTopics.length === 0 &&
                         topicRelSummary.relatedNotes.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary">
-                          No notes in other topics explicitly reference this topic yet.
-                        </Typography>
-                      ) : (
-                        <>
-                          {topicRelSummary.relatedTopics.length > 0 && (
-                            <Box sx={{ mb: 2 }}>
-                              <Typography
-                                variant="subtitle2"
-                                color="text.secondary"
-                                sx={{ mb: 0.5 }}
-                              >
-                                Other topics that reference this one
-                              </Typography>
-                              <List dense>
-                                {topicRelSummary.relatedTopics.map((rt) => {
-                                  const t = rt.topic;
+                          <Typography variant="body2" color="text.secondary">
+                            No notes in other topics explicitly reference this topic yet.
+                          </Typography>
+                        ) : (
+                          <>
+                            {topicRelSummary.relatedTopics.length > 0 && (
+                              <Box sx={{ mb: 2 }}>
+                                <Typography
+                                  variant="subtitle2"
+                                  color="text.secondary"
+                                  sx={{ mb: 0.5 }}
+                                >
+                                  Other topics that reference this one
+                                </Typography>
+                                <List dense>
+                                  {topicRelSummary.relatedTopics.map((rt) => {
+                                    const t = rt.topic;
+                                    const sameSubject =
+                                      t.subjectId && t.subjectId === subjectId;
+                                    const subjectSlugForNav =
+                                      sameSubject && subjectSlug
+                                        ? subjectSlug
+                                        : t.subjectId
+                                        ? `${t.subjectId}-subject`
+                                        : '';
 
-                                  // Build subjectSlug for navigation:
-                                  // If this related topic is under the same subject as the current page,
-                                  // reuse the current subjectSlug (nice, stable URL).
-                                  // Otherwise, just use the subjectId with a dummy slug tail —
-                                  // only the 24-hex id prefix actually matters for lookups.
-                                  const sameSubject = t.subjectId && t.subjectId === subjectId;
-                                  const subjectSlugForNav = sameSubject && subjectSlug
-                                    ? subjectSlug
-                                    : t.subjectId
-                                      ? `${t.subjectId}-subject`
-                                      : '';
+                                    const topicSlugForNav = `${t.id}-${slugify(t.name)}`;
 
-                                  const topicSlugForNav = `${t.id}-${slugify(t.name)}`;
+                                    const href =
+                                      subjectSlugForNav && topicSlugForNav
+                                        ? `/s/${subjectSlugForNav}/t/${topicSlugForNav}`
+                                        : undefined;
 
-                                  const href =
-                                    subjectSlugForNav && topicSlugForNav
-                                      ? `/s/${subjectSlugForNav}/t/${topicSlugForNav}`
-                                      : undefined;
+                                    return (
+                                      <ListItemButton
+                                        key={t.id}
+                                        disabled={!href}
+                                        onClick={() => {
+                                          if (!href) return;
+                                          navigate(href);
+                                        }}
+                                      >
+                                        <ListItemText
+                                          primary={t.name}
+                                          secondary={
+                                            rt.noteCount === 1
+                                              ? '1 note in this topic references this topic.'
+                                              : `${rt.noteCount} notes in this topic reference this topic.`
+                                          }
+                                        />
+                                      </ListItemButton>
+                                    );
+                                  })}
+                                </List>
+                              </Box>
+                            )}
 
-                                  return (
+                            {topicRelSummary.relatedNotes.length > 0 && (
+                              <>
+                                <Typography
+                                  variant="subtitle2"
+                                  color="text.secondary"
+                                  sx={{ mb: 0.5 }}
+                                >
+                                  Notes that reference this topic
+                                </Typography>
+                                <List dense>
+                                  {topicRelSummary.relatedNotes.map((n) => (
                                     <ListItemButton
-                                      key={t.id}
-                                      disabled={!href}
-                                      onClick={() => {
-                                        if (!href) return;
-                                        navigate(href);
-                                      }}
+                                      key={n.id}
+                                      onClick={() => onOpenNote(n.id)}
                                     >
                                       <ListItemText
-                                        primary={t.name}
-                                        secondary={
-                                          rt.noteCount === 1
-                                            ? '1 note in this topic references this topic.'
-                                            : `${rt.noteCount} notes in this topic reference this topic.`
-                                        }
+                                        primary={n.title || 'Untitled'}
+                                        secondary={n.summary}
                                       />
                                     </ListItemButton>
-                                  );
-                                })}
-                              </List>
-                            </Box>
-                          )}
-                          {topicRelSummary.relatedNotes.length > 0 && (
-                            <>
-                              <Typography
-                                variant="subtitle2"
-                                color="text.secondary"
-                                sx={{ mb: 0.5 }}
-                              >
-                                Notes that reference this topic
-                              </Typography>
-                              <List dense>
-                                {topicRelSummary.relatedNotes.map((n) => (
-                                  <ListItemButton
-                                    key={n.id}
-                                    onClick={() => onOpenNote(n.id)}
-                                  >
-                                    <ListItemText
-                                      primary={n.title || 'Untitled'}
-                                      secondary={n.summary}
-                                    />
-                                  </ListItemButton>
-                                ))}
-                              </List>
-                            </>
-                          )}
-                        </>
-                      )}
-                    </>
-                  )}
+                                  ))}
+                                </List>
+                              </>
+                            )}
+                          </>
+                        )}
+                      </>
+                    )}
+                  </Box>
+                </>
+              ) : (
+                <Box sx={{ color: 'text.secondary', fontSize: 14 }}>
+                  No notes yet
                 </Box>
+              )}
+            </Box>
 
-
-
-              </>
-            ) : (
-              <Box sx={{ color: 'text.secondary', fontSize: 14 }}>
-                No notes yet
-              </Box>
-            )}
-
+            {/* Dialog lives outside scrollable body */}
             <MoveNotesDialog
               open={moveOpen}
               onClose={() => {
@@ -379,6 +385,7 @@ export default function TopicNotesPage() {
           </>
         )}
       </Box>
+
       {topicId && (
         <LinkNoteToTargetDialog
           open={linkTopicDialogOpen}
