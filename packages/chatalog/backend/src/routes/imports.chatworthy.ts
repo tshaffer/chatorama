@@ -698,16 +698,25 @@ function buildMarkdownFromSeed(seed: AiSeedNote, title: string): string {
 // POST /api/v1/imports/ai-classification/preview
 router.post('/ai-classification/preview', async (req, res, next) => {
   try {
-    const { aiSeedPath, aiClassificationPath } = req.body as {
-      aiSeedPath?: string;
-      aiClassificationPath?: string;
-    };
+    // NEW: paths come from environment variables instead of request body
+    const aiSeedPath = process.env.AI_SEED_JSON_PATH;
+    const aiClassificationPath = process.env.AI_CLASSIFICATION_JSON_PATH;
 
     if (!aiSeedPath || !aiClassificationPath) {
-      return res.status(400).json({
-        message: 'aiSeedPath and aiClassificationPath are required',
+      return res.status(500).json({
+        message:
+          'AI_SEED_JSON_PATH and AI_CLASSIFICATION_JSON_PATH environment variables must be set on the backend.',
       });
     }
+
+    // Optionally log for debugging
+    console.log(
+      'AI classification preview using:',
+      '\n  aiSeedPath=',
+      aiSeedPath,
+      '\n  aiClassificationPath=',
+      aiClassificationPath
+    );
 
     // Read JSON files
     const classificationRaw = fs.readFileSync(aiClassificationPath, 'utf8');

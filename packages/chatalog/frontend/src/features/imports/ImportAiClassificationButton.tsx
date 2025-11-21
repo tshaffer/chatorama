@@ -9,31 +9,20 @@ import {
   IconButton,
   Backdrop,
   Box,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Stack,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import { useApplyChatworthyImportMutation, useImportAiClassificationPreviewMutation, type ImportResponse } from './importsApi';
-import { useGetSubjectsQuery } from '../subjects/subjectsApi';
-import { ImportResultsDialog, type EditableImportedNoteRow } from './ImportResultsDialog';
 
-// import {
-//   useImportAiClassificationPreviewMutation,
-//   type ImportResponse,
-// } from '../features/imports/importsApi';
-// import {
-//   useApplyChatworthyImportMutation,
-// } from '../features/imports/importsApi';
-// import { useGetSubjectsQuery } from '../features/subjects/subjectsApi';
-// import {
-//   ImportResultsDialog,
-//   type EditableImportedNoteRow,
-// } from '../features/imports/ImportResultsDialog';
+import {
+  useImportAiClassificationPreviewMutation,
+  type ImportResponse,
+  useApplyChatworthyImportMutation,
+} from './importsApi'; // adjust path if this file lives elsewhere
+import { useGetSubjectsQuery } from '../subjects/subjectsApi';
+import {
+  ImportResultsDialog,
+  type EditableImportedNoteRow,
+} from './ImportResultsDialog';
 
 type Props = {
   onDone?: () => void;
@@ -43,84 +32,11 @@ type Props = {
   tooltip?: string;
 };
 
-function AiImportLauncherDialog(props: {
-  open: boolean;
-  onClose: () => void;
-  onSubmit: (paths: { aiSeedPath: string; aiClassificationPath: string }) => void;
-  loading: boolean;
-}) {
-  const { open, onClose, onSubmit, loading } = props;
-  const [aiSeedPath, setAiSeedPath] = useState('');
-  const [aiClassificationPath, setAiClassificationPath] = useState('');
-  const [errors, setErrors] = useState<{ seed?: string; classification?: string }>({});
-
-  const handleSubmit = () => {
-    const nextErrors: { seed?: string; classification?: string } = {};
-    if (!aiSeedPath.trim()) nextErrors.seed = 'Required';
-    if (!aiClassificationPath.trim()) nextErrors.classification = 'Required';
-
-    setErrors(nextErrors);
-    if (nextErrors.seed || nextErrors.classification) return;
-
-    onSubmit({ aiSeedPath: aiSeedPath.trim(), aiClassificationPath: aiClassificationPath.trim() });
-  };
-
-  const disabled = loading;
-
-  return (
-    <Dialog open={open} onClose={disabled ? undefined : onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Import from AI Classification</DialogTitle>
-      <DialogContent dividers>
-        <Stack spacing={2} sx={{ mt: 1 }}>
-          <TextField
-            label="Path to ai-seed.json"
-            value={aiSeedPath}
-            onChange={(e) => setAiSeedPath(e.target.value)}
-            error={!!errors.seed}
-            helperText={errors.seed || 'Batch-specific ai-seed.json for this AI import.'}
-            fullWidth
-            size="small"
-            disabled={disabled}
-          />
-          <TextField
-            label="Path to ai-classification.json"
-            value={aiClassificationPath}
-            onChange={(e) => setAiClassificationPath(e.target.value)}
-            error={!!errors.classification}
-            helperText={errors.classification || 'Classification JSON returned by ChatGPT.'}
-            fullWidth
-            size="small"
-            disabled={disabled}
-          />
-          <Box sx={{ mt: 1 }}>
-            <Alert severity="info" variant="outlined">
-              These paths should be readable by the backend process (e.g. on your dev machine).
-            </Alert>
-          </Box>
-        </Stack>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={disabled}>Cancel</Button>
-        <Button
-          variant="contained"
-          onClick={handleSubmit}
-          disabled={disabled}
-          startIcon={loading ? <CircularProgress size={16} /> : null}
-        >
-          Preview…
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
-}
-
 export default function ImportAiClassificationButton({
   onDone,
   mode = 'button',
-  tooltip = 'Import notes from AI classification (ai-seed.json + ai-classification.json)',
+  tooltip = 'Import notes from AI classification (using backend-configured paths)',
 }: Props) {
-  const [launchOpen, setLaunchOpen] = useState(false);
-
   const [importAiPreview, { isLoading: isPreviewLoading }] =
     useImportAiClassificationPreviewMutation();
   const [applyChatworthyImport, { isLoading: isApplying }] =
@@ -137,25 +53,21 @@ export default function ImportAiClassificationButton({
   const [lastImport, setLastImport] = useState<ImportResponse | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
 
-  const handleLaunch = () => setLaunchOpen(true);
-  const handleCloseLaunch = () => setLaunchOpen(false);
-
-  const handleLaunchSubmit = async (paths: { aiSeedPath: string; aiClassificationPath: string }) => {
+  const handleStartPreview = async () => {
     try {
-      const res = await importAiPreview(paths).unwrap();
+      const res = await importAiPreview().unwrap();
+
       if (!res.results.length) {
         setSnack({
           open: true,
           msg: 'No notes found to import in this AI batch.',
           severity: 'error',
         });
-        setLaunchOpen(false);
         return;
       }
 
       setLastImport(res);
       setReviewOpen(true);
-      setLaunchOpen(false);
 
       setSnack({
         open: true,
@@ -283,12 +195,6 @@ export default function ImportAiClassificationButton({
   if (mode === 'icon') {
     return (
       <>
-        <AiImportLauncherDialog
-          open={launchOpen}
-          onClose={handleCloseLaunch}
-          onSubmit={handleLaunchSubmit}
-          loading={isPreviewLoading}
-        />
         {dialog}
         {overlay}
         <Tooltip title={tooltip}>
@@ -296,7 +202,7 @@ export default function ImportAiClassificationButton({
             <IconButton
               size="small"
               aria-label="Import from AI classification"
-              onClick={handleLaunch}
+              onClick={handleStartPreview}
               disabled={buttonDisabled}
               sx={(theme) => ({
                 borderRadius: 2,
@@ -330,12 +236,6 @@ export default function ImportAiClassificationButton({
   // Inline button variant (if you ever want it elsewhere)
   return (
     <>
-      <AiImportLauncherDialog
-        open={launchOpen}
-        onClose={handleCloseLaunch}
-        onSubmit={handleLaunchSubmit}
-        loading={isPreviewLoading}
-      />
       {dialog}
       {overlay}
       <Tooltip title={tooltip}>
@@ -343,8 +243,10 @@ export default function ImportAiClassificationButton({
           <Button
             size="small"
             variant="outlined"
-            startIcon={buttonDisabled ? <CircularProgress size={16} /> : <AutoAwesomeIcon />}
-            onClick={handleLaunch}
+            startIcon={
+              buttonDisabled ? <CircularProgress size={16} /> : <AutoAwesomeIcon />
+            }
+            onClick={handleStartPreview}
             disabled={buttonDisabled}
             color="inherit"
           >

@@ -57,15 +57,14 @@ export const importsApi = baseApi.injectEndpoints({
       // No invalidatesTags here; preview only.
     }),
 
-    // NEW: PREVIEW import from AI classification (ai-seed.json + ai-classification.json)
+    // NEW: PREVIEW import from AI classification (paths come from backend env vars)
     importAiClassificationPreview: build.mutation<
       ImportResponse,
-      { aiSeedPath: string; aiClassificationPath: string }
+      void
     >({
-      query: (payload) => ({
+      query: () => ({
         url: 'imports/ai-classification/preview',
         method: 'POST',
-        body: payload,
       }),
       // Preview only, no invalidations.
     }),
