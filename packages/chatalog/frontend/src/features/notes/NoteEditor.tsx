@@ -6,6 +6,7 @@ import {
   useGetNoteQuery,
   useUpdateNoteMutation,
   useGetAllNotesForRelationsQuery,
+  useGetTopicNotesWithRelationsQuery, // ⬅️ NEW
 } from './notesApi';
 import type {
   Note,
@@ -34,6 +35,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import DoneIcon from '@mui/icons-material/Done';
 import DeleteIcon from '@mui/icons-material/Delete';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';     // ⬅️ NEW
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward'; // ⬅️ NEW
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -314,6 +317,42 @@ export default function NoteEditor({
     return opts;
   }, [notesForPicker]);
 
+  // Helper for topic-notes args
+  const topicNotesArgs =
+    note && (note as Note).subjectId && (note as Note).topicId
+      ? {
+        subjectId: (note as Note).subjectId!, // non-null: guarded above
+        topicId: (note as Note).topicId!,     // non-null: guarded above
+      }
+      : skipToken;
+  const { data: topicNotes } = useGetTopicNotesWithRelationsQuery(topicNotesArgs);
+
+  const { prevNote, nextNote } = useMemo(() => {
+    if (!topicNotes || !note) {
+      return { prevNote: undefined, nextNote: undefined };
+    }
+
+    // topicNotes is a TopicNotesWithRelations; use its notes array
+    const list = topicNotes.notes ?? [];
+    if (!Array.isArray(list) || list.length === 0) {
+      return { prevNote: undefined, nextNote: undefined };
+    }
+
+    const idx = list.findIndex((n) => n.id === (note as Note).id);
+    if (idx === -1) return { prevNote: undefined, nextNote: undefined };
+
+    return {
+      prevNote: idx > 0 ? list[idx - 1] : undefined,
+      nextNote: idx < list.length - 1 ? list[idx + 1] : undefined,
+    };
+  }, [topicNotes, note]);
+
+  const goToNote = (target: any | undefined) => {
+    if (!target) return;
+    const slug = slugify(target.title || 'note');
+    navigate(`/n/${target.id}-${slug}`);
+  };
+
   // Preview-first UX: start with editor hidden
   const [editing, setEditing] = useState(false);
 
@@ -581,12 +620,54 @@ export default function NoteEditor({
         overflow: 'hidden',
       }}
     >
-      {/* Top bar: title (in preview) + status + Edit/Done */}
+      {/* Top bar: title (in preview) + status + Edit/Done + Prev/Next */}
       <Stack direction="row" alignItems="center" justifyContent="space-between">
         <Typography variant="h6">
           {editing ? 'Edit Note' : 'Note'}
         </Typography>
         <Stack direction="row" spacing={1} alignItems="center">
+          {/* Prev/Next only in preview mode */}
+          {!editing && (
+            <Stack direction="row" spacing={0.5} alignItems="center">
+              <Tooltip
+                title={
+                  prevNote
+                    ? `Previous: ${prevNote.title || 'Untitled'}`
+                    : 'No previous note'
+                }
+              >
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={() => goToNote(prevNote)}
+                    disabled={!prevNote}
+                    aria-label="Previous note in topic"
+                  >
+                    <ArrowBackIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip
+                title={
+                  nextNote
+                    ? `Next: ${nextNote.title || 'Untitled'}`
+                    : 'No next note'
+                }
+              >
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={() => goToNote(nextNote)}
+                    disabled={!nextNote}
+                    aria-label="Next note in topic"
+                  >
+                    <ArrowForwardIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </Stack>
+          )}
+
           <Chip
             size="small"
             label={status}
