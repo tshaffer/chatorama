@@ -1,6 +1,17 @@
 import { Router } from 'express';
-import { listSubjects, getSubjectById, renameSubject } from '../controllers/subjectsController';
-import { listTopicsForSubjectId, listNotesForSubjectTopicIds, renameTopic, reorderNotesForTopic } from '../controllers/topicsController';
+import {
+  listSubjects,
+  getSubjectById,
+  renameSubject,
+  reorderSubjects,
+} from '../controllers/subjectsController';
+import {
+  listTopicsForSubjectId,
+  listNotesForSubjectTopicIds,
+  renameTopic,
+  reorderNotesForTopic,
+  reorderTopicsForSubject,
+} from '../controllers/topicsController';
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
 import { deleteSubjectCascade, deleteTopicCascade } from '../models/hooks/cascade';
@@ -11,33 +22,56 @@ import {
 
 const subjectsRouter = Router();
 
+// ---------- Subjects ----------
+
 // /api/v1/subjects
 subjectsRouter.get('/', listSubjects);
+
+// PATCH /api/v1/subjects/reorder
+subjectsRouter.patch('/reorder', reorderSubjects);
 
 // /api/v1/subjects/:subjectId
 subjectsRouter.get('/:subjectId', getSubjectById);
 subjectsRouter.patch('/:subjectId', renameSubject);
 
+// ---------- Topics under a Subject ----------
+
 // /api/v1/subjects/:subjectId/topics
 subjectsRouter.get('/:subjectId/topics', listTopicsForSubjectId);
 
+// PATCH /api/v1/subjects/:subjectId/topics/reorder
+subjectsRouter.patch('/:subjectId/topics/reorder', reorderTopicsForSubject);
+
 // /api/v1/subjects/:subjectId/topics/:topicId/notes
-subjectsRouter.get('/:subjectId/topics/:topicId/notes', listNotesForSubjectTopicIds);
+subjectsRouter.get(
+  '/:subjectId/topics/:topicId/notes',
+  listNotesForSubjectTopicIds,
+);
 
 // PATCH /api/v1/subjects/:subjectId/topics/:topicId/notes/reorder
-subjectsRouter.patch('/:subjectId/topics/:topicId/notes/reorder', reorderNotesForTopic);
+subjectsRouter.patch(
+  '/:subjectId/topics/:topicId/notes/reorder',
+  reorderNotesForTopic,
+);
 
 // /api/v1/subjects/:subjectId/topics/:topicId
 subjectsRouter.patch('/:subjectId/topics/:topicId', renameTopic);
 
 subjectsRouter.get('/:subjectId/relations-summary', getSubjectRelationsSummary);
-subjectsRouter.get('/:subjectId/topics/:topicId/relations-summary', getTopicRelationsSummary);
+subjectsRouter.get(
+  '/:subjectId/topics/:topicId/relations-summary',
+  getTopicRelationsSummary,
+);
+
+// ---------- Subjects create/delete ----------
 
 // POST /api/v1/subjects
 subjectsRouter.post('/', async (req, res, next) => {
   try {
     const { name } = req.body ?? {};
-    if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required' });
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'name is required' });
+    }
 
     const created = await SubjectModel.create({ name });
     // toJSON should map _id -> id already; otherwise send created._id
@@ -67,11 +101,15 @@ subjectsRouter.post('/:subjectId/topics', async (req, res, next) => {
   try {
     const { subjectId } = req.params;
     const { name } = req.body ?? {};
-    if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name is required' });
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'name is required' });
+    }
 
     // ensure parent exists
     const subject = await SubjectModel.findById(subjectId).lean();
-    if (!subject) return res.status(404).json({ error: 'Subject not found' });
+    if (!subject) {
+      return res.status(404).json({ error: 'Subject not found' });
+    }
 
     const created = await TopicModel.create({ name, subjectId });
     return res.status(201).json(created);
@@ -87,7 +125,9 @@ subjectsRouter.delete('/:subjectId/topics/:topicId', async (req, res, next) => {
 
     // optional: verify topic belongs to subject
     const topic = await TopicModel.findOne({ _id: topicId, subjectId }).lean();
-    if (!topic) return res.status(404).json({ error: 'Topic not found' });
+    if (!topic) {
+      return res.status(404).json({ error: 'Topic not found' });
+    }
 
     await deleteTopicCascade(topicId);
     return res.status(204).end();

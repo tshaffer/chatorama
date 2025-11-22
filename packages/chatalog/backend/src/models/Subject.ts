@@ -10,6 +10,7 @@ export interface SubjectDoc extends Document {
   _id: Types.ObjectId;
   name: string;
   slug?: string;
+  order?: number;
   createdAt: Date;
   updatedAt: Date;
 
@@ -21,6 +22,8 @@ const SubjectSchema = new Schema<SubjectDoc>(
   {
     name: { type: String, required: true, trim: true, unique: true },
     slug: { type: String, index: true, trim: true },
+    // lower numbers appear earlier in UI; optional for legacy rows
+    order: { type: Number, index: true },
   },
   { timestamps: true }
 );

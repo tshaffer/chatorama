@@ -11,6 +11,7 @@ export interface TopicDoc extends Document {
   name: string;
   subjectId?: string;
   slug?: string;
+  order?: number;
   createdAt: Date;
   updatedAt: Date;
 
@@ -22,6 +23,8 @@ const TopicSchema = new Schema<TopicDoc>(
     name: { type: String, required: true, trim: true },
     subjectId: { type: String, index: true, trim: true },
     slug: { type: String, index: true, trim: true },
+    // lower numbers appear earlier within a subject
+    order: { type: Number, index: true },
   },
   { timestamps: true }
 );
