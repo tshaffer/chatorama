@@ -11,12 +11,20 @@ import {
   List,
   ListItemButton,
   ListItemText,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from '@mui/material';
 import { skipToken } from '@reduxjs/toolkit/query';
 
-import { useGetTopicNotesWithRelationsQuery } from '../features/notes/notesApi';
+import {
+  useGetTopicNotesWithRelationsQuery,
+  useReorderNotesInTopicMutation,
+  useDeleteNoteMutation, // NEW
+} from '../features/notes/notesApi';
 import { useGetTopicRelationsSummaryQuery } from '../features/subjects/subjectsApi';
-import { useReorderNotesInTopicMutation } from '../features/notes/notesApi';
 import ReorderableNotesList from '../features/notes/ReorderableNotesList';
 import MoveNotesDialog from '../features/notes/MoveNotesDialog';
 import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
@@ -35,10 +43,13 @@ export default function TopicNotesPage() {
   const navigate = useNavigate();
 
   const [reorder] = useReorderNotesInTopicMutation();
+  const [deleteNote, { isLoading: isDeleting }] = useDeleteNoteMutation(); // NEW
 
   // Selected notes (multi-select)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [linkTopicDialogOpen, setLinkTopicDialogOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false); // NEW
 
   const clearSelection = () => setSelectedIds(new Set());
   const toggleSelect = useCallback((id: string) => {
@@ -52,13 +63,12 @@ export default function TopicNotesPage() {
   const selectAll = useCallback((ids: string[]) => setSelectedIds(new Set(ids)), []);
   const hasSelection = selectedIds.size > 0;
 
-  const [moveOpen, setMoveOpen] = useState(false);
-
   const {
     data,
     isLoading,
     isError,
     error,
+    refetch: refetchNotes, // NEW – so we can force refresh after deletes
   } = useGetTopicNotesWithRelationsQuery(
     subjectId && topicId ? { subjectId, topicId } : skipToken,
   );
@@ -83,15 +93,36 @@ export default function TopicNotesPage() {
       if (!subjectId || !topicId) return;
       reorder({ subjectId, topicId, noteIdsInOrder });
     },
-    [reorder, subjectId, topicId]
+    [reorder, subjectId, topicId],
   );
-  
+
   const onOpenNote = (noteId: string) => navigate(`/n/${noteId}`);
 
   const allIds = useMemo(
     () => notes.map(n => String((n as any).id ?? (n as any)._id)),
     [notes],
   );
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!hasSelection) return;
+    try {
+      const ids = Array.from(selectedIds);
+
+      // If the mutation deletes a single note, call it for each id.
+      // If your endpoint supports batch delete, you can replace this with one call.
+      for (const id of ids) {
+        await deleteNote({ noteId: id } as any).unwrap();
+      }
+
+      setDeleteDialogOpen(false);
+      clearSelection();
+      await refetchNotes();
+    } catch (e) {
+      // Optional: add Snackbar for errors later
+      // For now we just close the dialog; RTK Query will log any network errors.
+      setDeleteDialogOpen(false);
+    }
+  }, [deleteNote, hasSelection, selectedIds, refetchNotes]);
 
   const renderRelatedList = (
     title: string,
@@ -105,14 +136,8 @@ export default function TopicNotesPage() {
         </Typography>
         <List dense>
           {items.map(n => (
-            <ListItemButton
-              key={n.id}
-              onClick={() => onOpenNote(n.id)}
-            >
-              <ListItemText
-                primary={n.title || 'Untitled'}
-                secondary={n.summary}
-              />
+            <ListItemButton key={n.id} onClick={() => onOpenNote(n.id)}>
+              <ListItemText primary={n.title || 'Untitled'} secondary={n.summary} />
             </ListItemButton>
           ))}
         </List>
@@ -202,6 +227,20 @@ export default function TopicNotesPage() {
                     </Button>
                   </span>
                 </Tooltip>
+                <Tooltip title="Permanently delete selected notes">
+                  <span>
+                    <Button
+                      size="small"
+                      color="error"
+                      disabled={!hasSelection || isDeleting}
+                      onClick={() => setDeleteDialogOpen(true)}
+                    >
+                      {isDeleting
+                        ? 'Deleting…'
+                        : `Delete (${selectedIds.size})`}
+                    </Button>
+                  </span>
+                </Tooltip>
               </Toolbar>
             </Stack>
 
@@ -219,7 +258,11 @@ export default function TopicNotesPage() {
                     Failed to load notes.
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {String((error as any)?.data ?? (error as any)?.message ?? error)}
+                    {String(
+                      (error as any)?.data ??
+                        (error as any)?.message ??
+                        error,
+                    )}
                   </Typography>
                 </Box>
               ) : isLoading ? (
@@ -236,9 +279,18 @@ export default function TopicNotesPage() {
                   />
 
                   {/* Related sections */}
-                  {renderRelatedList('Related notes from other topics', relatedTopicNotes)}
-                  {renderRelatedList('Related notes by subject', relatedSubjectNotes)}
-                  {renderRelatedList('Directly related notes', relatedDirectNotes)}
+                  {renderRelatedList(
+                    'Related notes from other topics',
+                    relatedTopicNotes,
+                  )}
+                  {renderRelatedList(
+                    'Related notes by subject',
+                    relatedSubjectNotes,
+                  )}
+                  {renderRelatedList(
+                    'Directly related notes',
+                    relatedDirectNotes,
+                  )}
 
                   {/* Incoming references to this topic */}
                   <Box sx={{ mt: 3 }}>
@@ -273,101 +325,111 @@ export default function TopicNotesPage() {
                         Failed to load topic relations:{' '}
                         {String(
                           (topicRelErrorObj as any)?.data ??
-                          (topicRelErrorObj as any)?.message ??
-                          topicRelErrorObj,
+                            (topicRelErrorObj as any)?.message ??
+                            topicRelErrorObj,
                         )}
                       </Typography>
                     )}
 
-                    {!topicRelLoading && !topicRelError && topicRelSummary && (
-                      <>
-                        {topicRelSummary.relatedTopics.length === 0 &&
+                    {!topicRelLoading &&
+                      !topicRelError &&
+                      topicRelSummary && (
+                        <>
+                          {topicRelSummary.relatedTopics.length === 0 &&
                           topicRelSummary.relatedNotes.length === 0 ? (
-                          <Typography variant="body2" color="text.secondary">
-                            No notes in other topics explicitly reference this topic yet.
-                          </Typography>
-                        ) : (
-                          <>
-                            {topicRelSummary.relatedTopics.length > 0 && (
-                              <Box sx={{ mb: 2 }}>
-                                <Typography
-                                  variant="subtitle2"
-                                  color="text.secondary"
-                                  sx={{ mb: 0.5 }}
-                                >
-                                  Other topics that reference this one
-                                </Typography>
-                                <List dense>
-                                  {topicRelSummary.relatedTopics.map((rt) => {
-                                    const t = rt.topic;
-                                    const sameSubject =
-                                      t.subjectId && t.subjectId === subjectId;
-                                    const subjectSlugForNav =
-                                      sameSubject && subjectSlug
-                                        ? subjectSlug
-                                        : t.subjectId
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                            >
+                              No notes in other topics explicitly reference
+                              this topic yet.
+                            </Typography>
+                          ) : (
+                            <>
+                              {topicRelSummary.relatedTopics.length > 0 && (
+                                <Box sx={{ mb: 2 }}>
+                                  <Typography
+                                    variant="subtitle2"
+                                    color="text.secondary"
+                                    sx={{ mb: 0.5 }}
+                                  >
+                                    Other topics that reference this one
+                                  </Typography>
+                                  <List dense>
+                                    {topicRelSummary.relatedTopics.map(rt => {
+                                      const t = rt.topic;
+                                      const sameSubject =
+                                        t.subjectId &&
+                                        t.subjectId === subjectId;
+                                      const subjectSlugForNav =
+                                        sameSubject && subjectSlug
+                                          ? subjectSlug
+                                          : t.subjectId
                                           ? `${t.subjectId}-subject`
                                           : '';
 
-                                    const topicSlugForNav = `${t.id}-${slugify(t.name)}`;
+                                      const topicSlugForNav = `${t.id}-${slugify(
+                                        t.name,
+                                      )}`;
 
-                                    const href =
-                                      subjectSlugForNav && topicSlugForNav
-                                        ? `/s/${subjectSlugForNav}/t/${topicSlugForNav}`
-                                        : undefined;
+                                      const href =
+                                        subjectSlugForNav &&
+                                        topicSlugForNav
+                                          ? `/s/${subjectSlugForNav}/t/${topicSlugForNav}`
+                                          : undefined;
 
-                                    return (
+                                      return (
+                                        <ListItemButton
+                                          key={t.id}
+                                          disabled={!href}
+                                          onClick={() => {
+                                            if (!href) return;
+                                            navigate(href);
+                                          }}
+                                        >
+                                          <ListItemText
+                                            primary={t.name}
+                                            secondary={
+                                              rt.noteCount === 1
+                                                ? '1 note in this topic references this topic.'
+                                                : `${rt.noteCount} notes in this topic reference this topic.`
+                                            }
+                                          />
+                                        </ListItemButton>
+                                      );
+                                    })}
+                                  </List>
+                                </Box>
+                              )}
+
+                              {topicRelSummary.relatedNotes.length > 0 && (
+                                <>
+                                  <Typography
+                                    variant="subtitle2"
+                                    color="text.secondary"
+                                    sx={{ mb: 0.5 }}
+                                  >
+                                    Notes that reference this topic
+                                  </Typography>
+                                  <List dense>
+                                    {topicRelSummary.relatedNotes.map(n => (
                                       <ListItemButton
-                                        key={t.id}
-                                        disabled={!href}
-                                        onClick={() => {
-                                          if (!href) return;
-                                          navigate(href);
-                                        }}
+                                        key={n.id}
+                                        onClick={() => onOpenNote(n.id)}
                                       >
                                         <ListItemText
-                                          primary={t.name}
-                                          secondary={
-                                            rt.noteCount === 1
-                                              ? '1 note in this topic references this topic.'
-                                              : `${rt.noteCount} notes in this topic reference this topic.`
-                                          }
+                                          primary={n.title || 'Untitled'}
+                                          secondary={n.summary}
                                         />
                                       </ListItemButton>
-                                    );
-                                  })}
-                                </List>
-                              </Box>
-                            )}
-
-                            {topicRelSummary.relatedNotes.length > 0 && (
-                              <>
-                                <Typography
-                                  variant="subtitle2"
-                                  color="text.secondary"
-                                  sx={{ mb: 0.5 }}
-                                >
-                                  Notes that reference this topic
-                                </Typography>
-                                <List dense>
-                                  {topicRelSummary.relatedNotes.map((n) => (
-                                    <ListItemButton
-                                      key={n.id}
-                                      onClick={() => onOpenNote(n.id)}
-                                    >
-                                      <ListItemText
-                                        primary={n.title || 'Untitled'}
-                                        secondary={n.summary}
-                                      />
-                                    </ListItemButton>
-                                  ))}
-                                </List>
-                              </>
-                            )}
-                          </>
-                        )}
-                      </>
-                    )}
+                                    ))}
+                                  </List>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </>
+                      )}
                   </Box>
                 </>
               ) : (
@@ -377,7 +439,7 @@ export default function TopicNotesPage() {
               )}
             </Box>
 
-            {/* Dialog lives outside scrollable body */}
+            {/* Move dialog lives outside scrollable body */}
             <MoveNotesDialog
               open={moveOpen}
               onClose={() => {
@@ -387,6 +449,36 @@ export default function TopicNotesPage() {
               noteIds={[...selectedIds]}
               source={{ subjectId, topicId }}
             />
+
+            {/* DELETE CONFIRMATION DIALOG */}
+            <Dialog
+              open={deleteDialogOpen}
+              onClose={() => (!isDeleting ? setDeleteDialogOpen(false) : null)}
+            >
+              <DialogTitle>Delete selected notes?</DialogTitle>
+              <DialogContent>
+                <DialogContentText>
+                  {selectedIds.size === 1
+                    ? 'Are you sure you want to permanently delete this note? This action cannot be undone.'
+                    : `Are you sure you want to permanently delete ${selectedIds.size} notes? This action cannot be undone.`}
+                </DialogContentText>
+              </DialogContent>
+              <DialogActions>
+                <Button
+                  onClick={() => setDeleteDialogOpen(false)}
+                  disabled={isDeleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleConfirmDelete}
+                  color="error"
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? 'Deleting…' : 'Delete'}
+                </Button>
+              </DialogActions>
+            </Dialog>
           </>
         )}
       </Box>
