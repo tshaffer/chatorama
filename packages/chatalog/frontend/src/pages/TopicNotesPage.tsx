@@ -16,6 +16,7 @@ import { skipToken } from '@reduxjs/toolkit/query';
 
 import { useGetTopicNotesWithRelationsQuery } from '../features/notes/notesApi';
 import { useGetTopicRelationsSummaryQuery } from '../features/subjects/subjectsApi';
+import { useReorderNotesInTopicMutation } from '../features/notes/notesApi';
 import ReorderableNotesList from '../features/notes/ReorderableNotesList';
 import MoveNotesDialog from '../features/notes/MoveNotesDialog';
 import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
@@ -32,6 +33,8 @@ export default function TopicNotesPage() {
   const subjectId = useMemo(() => takeObjectId(subjectSlug), [subjectSlug]);
   const topicId = useMemo(() => takeObjectId(topicSlug), [topicSlug]);
   const navigate = useNavigate();
+
+  const [reorder] = useReorderNotesInTopicMutation();
 
   // Selected notes (multi-select)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -77,12 +80,12 @@ export default function TopicNotesPage() {
 
   const onReordered = useCallback(
     (noteIdsInOrder: string[]) => {
-      // reorder mutation (left as-is)
-      // reorder({ subjectId: subjectId!, topicId: topicId!, noteIdsInOrder });
+      if (!subjectId || !topicId) return;
+      reorder({ subjectId, topicId, noteIdsInOrder });
     },
-    [],
+    [reorder, subjectId, topicId]
   );
-
+  
   const onOpenNote = (noteId: string) => navigate(`/n/${noteId}`);
 
   const allIds = useMemo(
@@ -270,8 +273,8 @@ export default function TopicNotesPage() {
                         Failed to load topic relations:{' '}
                         {String(
                           (topicRelErrorObj as any)?.data ??
-                            (topicRelErrorObj as any)?.message ??
-                            topicRelErrorObj,
+                          (topicRelErrorObj as any)?.message ??
+                          topicRelErrorObj,
                         )}
                       </Typography>
                     )}
@@ -279,7 +282,7 @@ export default function TopicNotesPage() {
                     {!topicRelLoading && !topicRelError && topicRelSummary && (
                       <>
                         {topicRelSummary.relatedTopics.length === 0 &&
-                        topicRelSummary.relatedNotes.length === 0 ? (
+                          topicRelSummary.relatedNotes.length === 0 ? (
                           <Typography variant="body2" color="text.secondary">
                             No notes in other topics explicitly reference this topic yet.
                           </Typography>
@@ -303,8 +306,8 @@ export default function TopicNotesPage() {
                                       sameSubject && subjectSlug
                                         ? subjectSlug
                                         : t.subjectId
-                                        ? `${t.subjectId}-subject`
-                                        : '';
+                                          ? `${t.subjectId}-subject`
+                                          : '';
 
                                     const topicSlugForNav = `${t.id}-${slugify(t.name)}`;
 
