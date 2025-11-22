@@ -36,9 +36,36 @@ export const notesApi = baseApi.injectEndpoints({
         url: `notes/by-topic-with-relations`,
         params: { subjectId, topicId },
       }),
-      providesTags: (_res, _err, { subjectId, topicId }) => [
-        { type: 'Note' as const, id: `LIST:${subjectId}:${topicId}` },
-      ],
+      providesTags: (res, _err, { subjectId, topicId }) => {
+        // Base tag for this topic's list
+        const baseTag = {
+          type: 'Note' as const,
+          id: `LIST:${subjectId}:${topicId}`,
+        };
+
+        if (!res) {
+          return [baseTag];
+        }
+
+        // Collect all notes that appear in this payload
+        const allNotes = [
+          ...(res.notes ?? []),
+          ...(res.relatedTopicNotes ?? []),
+          ...(res.relatedSubjectNotes ?? []),
+          ...(res.relatedDirectNotes ?? []),
+        ];
+
+        // One tag per note id
+        const seen = new Set<string>();
+        const noteTags = allNotes
+          .filter((n) => n.id && !seen.has(n.id))
+          .map((n) => {
+            seen.add(n.id);
+            return { type: 'Note' as const, id: n.id };
+          });
+
+        return [baseTag, ...noteTags];
+      },
     }),
 
     getAllNotesForRelations: build.query<NotePreview[], void>({
