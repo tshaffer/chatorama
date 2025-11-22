@@ -222,5 +222,5 @@ Output "notes" length matches input "notes" length.
 
 Each input aiNoteKey appears exactly once.
 
-Finally, write the single JSON object into a file (e.g. ai-classification-v2.json) and return it as a downloadable attachment.
+Finally, write the single JSON object into a file (named ai-classification-v2.json) and return it as a downloadable attachment.
 Do NOT print the JSON inline unless you absolutely cannot return a file.
