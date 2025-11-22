@@ -8,11 +8,15 @@ function slugify(s: string): string {
 }
 
 export async function listTopics(req: Request, res: Response) {
-  const docs = await TopicModel.find().sort({ name: 1 }).exec();
-  res.json(docs.map(d => d.toJSON()));
+  const docs = await TopicModel.find().sort({ order: 1, name: 1 }).exec();
+  res.json(docs.map((d) => d.toJSON()));
 }
 
-export async function listTopicsForSubjectId(req: Request, res: Response, next: NextFunction) {
+export async function listTopicsForSubjectId(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
     const { subjectId } = req.params;
 
@@ -23,10 +27,14 @@ export async function listTopicsForSubjectId(req: Request, res: Response, next: 
       }
     }
 
-    const docs = await TopicModel.find({ subjectId }, null, { sort: { name: 1 } }).exec();
+    const docs = await TopicModel.find(
+      { subjectId },
+      null,
+      { sort: { order: 1, name: 1 } },
+    ).exec();
 
     // Use toJSON so your schema transform sets `id` and drops _id/__v
-    res.json(docs.map(d => d.toJSON()));
+    res.json(docs.map((d) => d.toJSON()));
   } catch (err) {
     next(err);
   }
@@ -37,15 +45,22 @@ export async function listNotesForSubjectTopicIds(req: Request, res: Response) {
   const { subjectId, topicId } = req.params;
 
   // Optional: verify topic belongs to subject
-  const topic = await TopicModel.findOne({ _id: topicId, subjectId }).select({ _id: 1 }).lean();
+  const topic = await TopicModel.findOne({
+    _id: topicId,
+    subjectId,
+  })
+    .select({ _id: 1 })
+    .lean();
   if (!topic) return res.status(404).json({ message: 'Topic not found for subject' });
 
-  const notes = await NoteModel
-    .find({ topicId }, { title: 1, summary: 1, tags: 1, updatedAt: 1, order: 1 })
+  const notes = await NoteModel.find(
+    { topicId },
+    { title: 1, summary: 1, tags: 1, updatedAt: 1, order: 1 },
+  )
     .sort({ order: 1, _id: 1 })
     .exec();
 
-  res.json(notes.map(n => n.toJSON()));
+  res.json(notes.map((n) => n.toJSON()));
 }
 
 // PATCH /api/v1/subjects/:subjectId/topics/:topicId/notes/reorder
@@ -54,32 +69,50 @@ export async function reorderNotesForTopic(req: Request, res: Response) {
   const { noteIdsInOrder } = req.body as { noteIdsInOrder: string[] };
 
   if (!Array.isArray(noteIdsInOrder) || noteIdsInOrder.length === 0) {
-    return res.status(400).json({ error: 'noteIdsInOrder must be a non-empty array' });
+    return res
+      .status(400)
+      .json({ error: 'noteIdsInOrder must be a non-empty array' });
   }
 
   // verify topic exists and belongs to subject
-  const topic = await TopicModel.findOne({ _id: topicId, subjectId }).select({ _id: 1 }).lean();
-  if (!topic) return res.status(404).json({ error: 'Topic not found for subject' });
+  const topic = await TopicModel.findOne({
+    _id: topicId,
+    subjectId,
+  })
+    .select({ _id: 1 })
+    .lean();
+  if (!topic) {
+    return res
+      .status(404)
+      .json({ error: 'Topic not found for subject' });
+  }
 
   // verify all notes belong to this topic
-  const count = await NoteModel.countDocuments({ _id: { $in: noteIdsInOrder }, topicId });
+  const count = await NoteModel.countDocuments({
+    _id: { $in: noteIdsInOrder },
+    topicId,
+  });
   if (count !== noteIdsInOrder.length) {
-    return res.status(400).json({ error: 'All noteIds must belong to the specified topic' });
+    return res
+      .status(400)
+      .json({ error: 'All noteIds must belong to the specified topic' });
   }
 
   // compact rewrite 0..N
   const ops = noteIdsInOrder.map((id, idx) => ({
-    updateOne: { filter: { _id: id, topicId }, update: { $set: { order: idx } } }
+    updateOne: {
+      filter: { _id: id, topicId },
+      update: { $set: { order: idx } },
+    },
   }));
   if (ops.length) await NoteModel.bulkWrite(ops);
 
   // return freshly sorted list
-  const notes = await NoteModel
-    .find({ topicId })
+  const notes = await NoteModel.find({ topicId })
     .sort({ order: 1, _id: 1 })
     .exec();
 
-  res.json(notes.map(n => n.toJSON()));
+  res.json(notes.map((n) => n.toJSON()));
 }
 
 /**
@@ -111,9 +144,59 @@ export async function renameTopic(req: Request, res: Response) {
       return res.status(404).json({ message: 'Topic not found.' });
     }
     if (err?.code === 11000) {
-      return res.status(409).json({ message: 'A topic with that name/slug already exists for this subject.' });
+      return res
+        .status(409)
+        .json({
+          message:
+            'A topic with that name/slug already exists for this subject.',
+        });
     }
     console.error('renameTopic error', err);
     return res.status(500).json({ message: 'Internal error.' });
   }
+}
+
+/**
+ * PATCH /api/v1/subjects/:subjectId/topics/reorder
+ * Body: { orderedTopicIds: string[] }
+ *
+ * Sets Topic.order = index for the given ids, scoped to subjectId.
+ */
+export async function reorderTopicsForSubject(req: Request, res: Response) {
+  const { subjectId } = req.params;
+  const { orderedTopicIds } = req.body as { orderedTopicIds?: string[] };
+
+  if (!Array.isArray(orderedTopicIds) || orderedTopicIds.length === 0) {
+    return res
+      .status(400)
+      .json({ error: 'orderedTopicIds must be a non-empty array' });
+  }
+
+  // verify all topics exist and belong to this subject
+  const count = await TopicModel.countDocuments({
+    _id: { $in: orderedTopicIds },
+    subjectId,
+  }).exec();
+
+  if (count !== orderedTopicIds.length) {
+    return res
+      .status(400)
+      .json({
+        error:
+          'All orderedTopicIds must refer to topics belonging to the specified subject',
+      });
+  }
+
+  const ops = orderedTopicIds.map((id, index) => ({
+    updateOne: {
+      filter: { _id: id, subjectId },
+      update: { $set: { order: index } },
+    },
+  }));
+
+  if (ops.length) {
+    await TopicModel.bulkWrite(ops);
+  }
+
+  return res.status(204).end();
 }

@@ -5,10 +5,10 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
-
 export async function listSubjects(_req: Request, res: Response) {
-  const docs = await SubjectModel.find().sort({ name: 1 }).exec();
-  res.json(docs.map(d => d.toJSON())); // uses your toJSON plugin (adds id, strips __v/_id)
+  // sort by explicit order, then name for any items without order
+  const docs = await SubjectModel.find().sort({ order: 1, name: 1 }).exec();
+  res.json(docs.map((d) => d.toJSON())); // uses your toJSON plugin (adds id, strips __v/_id)
 }
 
 export async function getSubjectById(req: Request, res: Response) {
@@ -48,9 +48,51 @@ export async function renameSubject(req: Request, res: Response) {
     }
     if (err?.code === 11000) {
       // duplicate key (name unique, or slug unique)
-      return res.status(409).json({ message: 'A subject with that name/slug already exists.' });
+      return res
+        .status(409)
+        .json({ message: 'A subject with that name/slug already exists.' });
     }
     console.error('renameSubject error', err);
     return res.status(500).json({ message: 'Internal error.' });
   }
+}
+
+/**
+ * PATCH /api/v1/subjects/reorder
+ * Body: { orderedIds: string[] }
+ *
+ * Sets Subject.order = index for the given ids.
+ */
+export async function reorderSubjects(req: Request, res: Response) {
+  const { orderedIds } = req.body as { orderedIds?: string[] };
+
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+    return res
+      .status(400)
+      .json({ error: 'orderedIds must be a non-empty array of subject ids' });
+  }
+
+  // Optional safety: ensure all ids exist
+  const count = await SubjectModel.countDocuments({
+    _id: { $in: orderedIds },
+  }).exec();
+
+  if (count !== orderedIds.length) {
+    return res
+      .status(400)
+      .json({ error: 'All orderedIds must refer to existing subjects' });
+  }
+
+  const ops = orderedIds.map((id, index) => ({
+    updateOne: {
+      filter: { _id: id },
+      update: { $set: { order: index } },
+    },
+  }));
+
+  if (ops.length) {
+    await SubjectModel.bulkWrite(ops);
+  }
+
+  return res.status(204).end();
 }
