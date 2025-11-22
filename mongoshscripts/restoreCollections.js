@@ -15,7 +15,7 @@ const collections = [
 ];
 
 // Update this to point at the backup you want to restore FROM
-const inputDir = "/Users/tedshaffer/Documents/MongoDBBackups/chatorama/backup-11-20-1";
+const inputDir = "/Users/tedshaffer/Documents/MongoDBBackups/chatorama/backup-11-21-4";
 
 const fs = require("fs");
 const path = require("path");
