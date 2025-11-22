@@ -24,10 +24,18 @@ import {
   useCreateTopicMutation,
   useDeleteTopicMutation,
   useRenameTopicMutation,
+  useReorderSubjectsMutation,
+  useReorderTopicsMutation,
 } from '../features/subjects/subjectsApi';
 import type { Topic } from '@chatorama/chatalog-shared';
 import InlineEditableName from '../components/InlineEditableName';
 import ConfirmIconButton from '../components/ConfirmIconButton';
+
+import ReorderSubjectsDialog, {
+  type ReorderItem as ReorderSubjectItem,
+} from '../features/subjects/ReorderSubjectsDialog';
+import ReorderTopicsDialog from '../features/subjects/ReorderTopicsDialog';
+
 
 const slugify = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -38,11 +46,23 @@ export default function ManageSubjectsPage() {
   const [newSubjectName, setNewSubjectName] = useState('');
   const [createSubject, { isLoading: creatingSubject }] = useCreateSubjectMutation();
 
+  const [reorderSubjectsOpen, setReorderSubjectsOpen] = useState(false);
+  const [reorderSubjects, { isLoading: reorderingSubjects }] = useReorderSubjectsMutation();
+
   const handleCreateSubject = async () => {
     const name = newSubjectName.trim();
     if (!name) return;
     await createSubject({ name }).unwrap();
     setNewSubjectName('');
+  };
+
+  const handleSaveReorderSubjects = async (orderedIds: string[]) => {
+    if (!orderedIds.length) {
+      setReorderSubjectsOpen(false);
+      return;
+    }
+    await reorderSubjects({ orderedIds }).unwrap();
+    setReorderSubjectsOpen(false);
   };
 
   return (
@@ -74,6 +94,13 @@ export default function ManageSubjectsPage() {
           >
             Add
           </Button>
+          <Button
+            variant="outlined"
+            onClick={() => setReorderSubjectsOpen(true)}
+            disabled={isLoading || subjects.length < 2}
+          >
+            Reorder subjects…
+          </Button>
         </Stack>
       </Stack>
 
@@ -101,6 +128,19 @@ export default function ManageSubjectsPage() {
           <Typography color="text.secondary">No subjects yet.</Typography>
         )}
       </Stack>
+
+      <ReorderSubjectsDialog
+        open={reorderSubjectsOpen}
+        onClose={() => setReorderSubjectsOpen(false)}
+        subjects={subjects.map(
+          (s): ReorderSubjectItem => ({
+            id: safeId(s),
+            name: s.name,
+          })
+        )}
+        onSave={handleSaveReorderSubjects}
+        loading={reorderingSubjects}
+      />
     </Box>
   );
 }
@@ -131,6 +171,9 @@ const SubjectCard = memo(function SubjectCard(props: {
   // timers for topic chips (single vs double click)
   const chipTimersRef = useRef<Record<string, number | null>>({});
 
+  const [reorderTopicsOpen, setReorderTopicsOpen] = useState(false);
+  const [reorderTopics, { isLoading: reorderingTopics }] = useReorderTopicsMutation();
+
   const beginEditTopic = (t: Topic) => {
     setEditingTopicId(safeId(t));
     setEditingTopicDraft(t.name);
@@ -159,6 +202,18 @@ const SubjectCard = memo(function SubjectCard(props: {
     if (!name) return;
     await createTopic({ subjectId: props.subjectId, name }).unwrap();
     setNewTopicName('');
+  };
+
+  const handleSaveReorderTopics = async (orderedTopicIds: string[]) => {
+    if (!orderedTopicIds.length) {
+      setReorderTopicsOpen(false);
+      return;
+    }
+    await reorderTopics({
+      subjectId: props.subjectId,
+      orderedTopicIds,
+    }).unwrap();
+    setReorderTopicsOpen(false);
   };
 
   return (
@@ -199,9 +254,30 @@ const SubjectCard = memo(function SubjectCard(props: {
           />
         </Stack>
 
-        <Typography variant="overline" color="text.secondary">
-          Topics
-        </Typography>
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="center"
+          sx={{ mb: 0.5 }}
+        >
+          <Typography variant="overline" color="text.secondary">
+            Topics
+          </Typography>
+
+          {topics.length > 1 && (
+            <Button
+              size="small"
+              variant="text"
+              onClick={(e) => {
+                e.stopPropagation();
+                setReorderTopicsOpen(true);
+              }}
+              disabled={reorderingTopics}
+            >
+              Reorder…
+            </Button>
+          )}
+        </Stack>
 
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           {topics.length === 0 && !isLoading && (
@@ -302,6 +378,19 @@ const SubjectCard = memo(function SubjectCard(props: {
             Add topic
           </Button>
         </Stack>
+
+        <ReorderTopicsDialog
+          open={reorderTopicsOpen}
+          onClose={() => setReorderTopicsOpen(false)}
+          subjectName={props.subjectName}
+          topics={topics.map((t) => ({
+            id: safeId(t),
+            name: t.name,
+          }))}
+          onSave={handleSaveReorderTopics}
+          loading={reorderingTopics}
+        />
+
       </CardContent>
     </Card>
   );
