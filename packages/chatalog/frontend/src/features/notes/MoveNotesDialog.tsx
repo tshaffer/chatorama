@@ -49,6 +49,8 @@ export default function MoveNotesDialog({ open, onClose, noteIds, source }: Prop
       await moveNotes({
         noteIds,
         dest: { subjectId, topicId },
+        // ⬇️ this is only used client-side for invalidatesTags
+        source,
       }).unwrap();
       onClose();
     } catch (e) {

@@ -63,15 +63,19 @@ export default function TopicNotesPage() {
   const selectAll = useCallback((ids: string[]) => setSelectedIds(new Set(ids)), []);
   const hasSelection = selectedIds.size > 0;
 
+  const topicNotesQueryArg =
+    subjectId && topicId ? { subjectId, topicId } : skipToken;
+
   const {
     data,
     isLoading,
     isError,
     error,
-    refetch: refetchNotes, // NEW – so we can force refresh after deletes
-  } = useGetTopicNotesWithRelationsQuery(
-    subjectId && topicId ? { subjectId, topicId } : skipToken,
-  );
+    refetch: refetchNotes, // so we can force refresh after deletes
+  } = useGetTopicNotesWithRelationsQuery(topicNotesQueryArg, {
+    // whenever subjectId or topicId in the arg changes, force a refetch
+    refetchOnMountOrArgChange: true,
+  });
 
   const {
     data: topicRelSummary,

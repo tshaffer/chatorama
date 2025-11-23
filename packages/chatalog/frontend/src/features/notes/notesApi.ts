@@ -44,6 +44,7 @@ export const notesApi = baseApi.injectEndpoints({
         url: `notes/by-topic-with-relations`,
         params: { subjectId, topicId },
       }),
+      // Always refetch when subject/topic changes (navigation)
       providesTags: (res, _err, { subjectId, topicId }) => {
         // Base tag for this topic's list
         const baseTag = {
@@ -165,41 +166,40 @@ export const notesApi = baseApi.injectEndpoints({
       invalidatesTags: [{ type: 'Note', id: 'LIST' }],
     }),
 
-    moveNotes: build.mutation<MoveNotesResult, MoveNotesPayload>({
-      query: (body) => ({
+    moveNotes: build.mutation<
+      MoveNotesResult,
+      MoveNotesPayload & { source?: { subjectId: string; topicId: string } }
+    >({
+      query: ({ noteIds, dest }) => ({
         url: 'notes:move',
         method: 'POST',
-        body,
+        // ⬇️ only send what the backend expects
+        body: { noteIds, dest },
       }),
-      // 🔁 Cache strategy:
-      // invalidate source & dest note lists and their topic summaries
-      async onQueryStarted(arg, { dispatch, queryFulfilled, getState }) {
-        const { noteIds, dest } = arg;
-        const patchUps: Array<() => void> = [];
+      // Invalidate:
+      // - each moved note
+      // - dest topic's list
+      // - source topic's list (if provided)
+      invalidatesTags: (_res, _err, { noteIds, dest, source }) => {
+        const tags: { type: 'Note'; id: string }[] = [
+          // per-note tags
+          ...noteIds.map((id) => ({ type: 'Note' as const, id })),
+          // destination topic list
+          {
+            type: 'Note' as const,
+            id: `LIST:${dest.subjectId}:${dest.topicId}`,
+          },
+        ];
 
-        try {
-          // Keep it robust & simple: rely on invalidations after success.
-          await queryFulfilled;
-
-          // After success, proactively invalidate the impacted lists:
-          dispatch(
-            baseApi.util.invalidateTags([
-              // If you tag Note by id elsewhere:
-              ...noteIds.map((id) => ({ type: 'Note' as const, id })),
-              // If you tag topic lists:
-              { type: 'TopicNotes' as const, id: `${dest.subjectId}:${dest.topicId}` },
-            ]),
-          );
-        } catch {
-          // rollback optimistic changes if any
-          for (const undo of patchUps) undo();
+        if (source?.subjectId && source?.topicId) {
+          tags.push({
+            type: 'Note' as const,
+            id: `LIST:${source.subjectId}:${source.topicId}`,
+          });
         }
+
+        return tags;
       },
-      // If you prefer tag-based invalidation instead of the manual call above:
-      // invalidatesTags: (res, err, { noteIds, dest }) => [
-      //   ...noteIds.map(id => ({ type: 'Note' as const, id })),
-      //   { type: 'TopicNotes' as const, id: `${dest.subjectId}:${dest.topicId}` },
-      // ],
     }),
   }),
   overrideExisting: true,
