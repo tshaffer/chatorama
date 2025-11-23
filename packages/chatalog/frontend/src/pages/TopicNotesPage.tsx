@@ -22,13 +22,14 @@ import { skipToken } from '@reduxjs/toolkit/query';
 import {
   useGetTopicNotesWithRelationsQuery,
   useReorderNotesInTopicMutation,
-  useDeleteNoteMutation, // NEW
+  useDeleteNoteMutation,
 } from '../features/notes/notesApi';
 import { useGetTopicRelationsSummaryQuery } from '../features/subjects/subjectsApi';
 import ReorderableNotesList from '../features/notes/ReorderableNotesList';
 import MoveNotesDialog from '../features/notes/MoveNotesDialog';
 import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
 import LinkNoteToTargetDialog from '../features/relations/LinkNoteToTargetDialog';
+import { NoteStatusIndicator } from '../features/notes/NoteStatusIndicator'; // ⬅️ NEW
 
 // Extract leading ObjectId from "<id>" or "<id>-<slug>"
 const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
@@ -43,13 +44,13 @@ export default function TopicNotesPage() {
   const navigate = useNavigate();
 
   const [reorder] = useReorderNotesInTopicMutation();
-  const [deleteNote, { isLoading: isDeleting }] = useDeleteNoteMutation(); // NEW
+  const [deleteNote, { isLoading: isDeleting }] = useDeleteNoteMutation();
 
   // Selected notes (multi-select)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [linkTopicDialogOpen, setLinkTopicDialogOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false); // NEW
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const clearSelection = () => setSelectedIds(new Set());
   const toggleSelect = useCallback((id: string) => {
@@ -73,7 +74,6 @@ export default function TopicNotesPage() {
     error,
     refetch: refetchNotes, // so we can force refresh after deletes
   } = useGetTopicNotesWithRelationsQuery(topicNotesQueryArg, {
-    // whenever subjectId or topicId in the arg changes, force a refetch
     refetchOnMountOrArgChange: true,
   });
 
@@ -88,8 +88,6 @@ export default function TopicNotesPage() {
   );
 
   const notes = data?.notes ?? [];
-  // We no longer surface topic-type related notes as a list here
-  // const relatedTopicNotes = data?.relatedTopicNotes ?? [];
   const relatedSubjectNotes = data?.relatedSubjectNotes ?? [];
   const relatedDirectNotes = data?.relatedDirectNotes ?? [];
 
@@ -113,8 +111,6 @@ export default function TopicNotesPage() {
     try {
       const ids = Array.from(selectedIds);
 
-      // If the mutation deletes a single note, call it for each id.
-      // If your endpoint supports batch delete, you can replace this with one call.
       for (const id of ids) {
         await deleteNote({ noteId: id } as any).unwrap();
       }
@@ -123,8 +119,6 @@ export default function TopicNotesPage() {
       clearSelection();
       await refetchNotes();
     } catch (e) {
-      // Optional: add Snackbar for errors later
-      // For now we just close the dialog; RTK Query will log any network errors.
       setDeleteDialogOpen(false);
     }
   }, [deleteNote, hasSelection, selectedIds, refetchNotes]);
@@ -146,19 +140,8 @@ export default function TopicNotesPage() {
                 primary={
                   <span>
                     {n.title || 'Untitled'}
-                    {n.status && n.status.trim() && (
-                      <Tooltip title={n.status}>
-                        <span
-                          style={{
-                            marginLeft: 6,
-                            fontSize: '0.75rem',
-                            opacity: 0.7,
-                          }}
-                        >
-                          ●
-                        </span>
-                      </Tooltip>
-                    )}
+                    {/* status indicator for related notes */}
+                    <NoteStatusIndicator status={n.status} />
                   </span>
                 }
                 secondary={n.summary}
@@ -175,14 +158,12 @@ export default function TopicNotesPage() {
       id="topic-notes-page"
       sx={{
         display: 'flex',
-        // Constrain this route to the viewport area under the AppBar.
-        // Adjust 64px if your AppBar height is different.
         height: 'calc(100vh - 64px)',
         minHeight: 0,
-        overflow: 'hidden', // page itself doesn't scroll; inner panes do
+        overflow: 'hidden',
       }}
     >
-      {/* LEFT: hierarchy tree (gets its own scroll via SubjectTopicTree) */}
+      {/* LEFT: hierarchy tree */}
       <SubjectTopicTree width={260} />
 
       {/* RIGHT: notes UI */}
@@ -194,7 +175,7 @@ export default function TopicNotesPage() {
           p: 2,
           display: 'flex',
           flexDirection: 'column',
-          minHeight: 0, // allow inner scroll container to work
+          minHeight: 0,
         }}
       >
         {/* If URL is malformed / missing ids, show a friendly message */}
@@ -209,7 +190,7 @@ export default function TopicNotesPage() {
           </Box>
         ) : (
           <>
-            {/* Header + toolbar (fixed, does NOT scroll) */}
+            {/* Header + toolbar (fixed) */}
             <Stack
               direction="row"
               alignItems="center"
@@ -274,7 +255,7 @@ export default function TopicNotesPage() {
               sx={{
                 flex: 1,
                 minHeight: 0,
-                overflowY: 'auto', // right-hand panel scrolls independently
+                overflowY: 'auto',
               }}
             >
               {isError ? (
@@ -442,19 +423,8 @@ export default function TopicNotesPage() {
                                           primary={
                                             <span>
                                               {n.title || 'Untitled'}
-                                              {n.status && n.status.trim() && (
-                                                <Tooltip title={n.status}>
-                                                  <span
-                                                    style={{
-                                                      marginLeft: 6,
-                                                      fontSize: '0.75rem',
-                                                      opacity: 0.7,
-                                                    }}
-                                                  >
-                                                    ●
-                                                  </span>
-                                                </Tooltip>
-                                              )}
+                                              {/* status indicator for incoming-reference notes */}
+                                              <NoteStatusIndicator status={n.status} />
                                             </span>
                                           }
                                           secondary={n.summary}
@@ -477,7 +447,7 @@ export default function TopicNotesPage() {
               )}
             </Box>
 
-            {/* Move dialog lives outside scrollable body */}
+            {/* Move dialog */}
             <MoveNotesDialog
               open={moveOpen}
               onClose={() => {

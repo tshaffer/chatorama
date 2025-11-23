@@ -12,16 +12,16 @@ import {
   IconButton,
   ListItemIcon,
   Checkbox,
-  Tooltip,
 } from '@mui/material';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import { NoteStatusIndicator } from './NoteStatusIndicator'; // ⬅️ NEW
 
 type NoteLite = {
   id?: string;
   _id?: string;
   title?: string;
   order?: number;
-  status?: string; // 🔹 NEW: short status/meta text
+  status?: string; // short status/meta text
 };
 
 type Props = {
@@ -137,7 +137,7 @@ function SortableNoteRow({
       {/* Row click should OPEN the note, not toggle selection */}
       <ListItemButton
         selected={selected}
-        onClick={onOpen}           // ← open preview on row click
+        onClick={onOpen}
       >
         <ListItemIcon sx={{ minWidth: 36 }}>
           <Checkbox
@@ -154,19 +154,8 @@ function SortableNoteRow({
           primary={
             <span>
               {title}
-              {status && status.trim() && (
-                <Tooltip title={status}>
-                  <span
-                    style={{
-                      marginLeft: 6,
-                      fontSize: '0.75rem',
-                      opacity: 0.7,
-                    }}
-                  >
-                    ●
-                  </span>
-                </Tooltip>
-              )}
+              {/* status indicator in main list */}
+              <NoteStatusIndicator status={status} />
             </span>
           }
         />

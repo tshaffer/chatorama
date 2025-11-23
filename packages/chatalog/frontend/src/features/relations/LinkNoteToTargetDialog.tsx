@@ -24,6 +24,7 @@ import {
   useGetAllNotesForRelationsQuery,
   useUpdateNoteMutation,
 } from '../notes/notesApi';
+import { NoteStatusIndicator } from '../notes/NoteStatusIndicator'; // ⬅️ NEW
 
 type Props = {
   open: boolean;
@@ -116,7 +117,6 @@ export default function LinkNoteToTargetDialog({
       onClose();
       setSelectedNoteId('');
     } catch (e) {
-      // could show a snackbar here later if desired
       console.error('Failed to add relation', e);
     } finally {
       setSubmitting(false);
@@ -167,15 +167,8 @@ export default function LinkNoteToTargetDialog({
               {sortedNotes.map((n) => (
                 <MenuItem key={n.id} value={n.id}>
                   {n.title || 'Untitled'}
-                  {n.status && n.status.trim() && (
-                    <Typography
-                      component="span"
-                      variant="caption"
-                      sx={{ ml: 1, opacity: 0.7 }}
-                    >
-                      •
-                    </Typography>
-                  )}
+                  {/* status indicator inline with note title */}
+                  <NoteStatusIndicator status={n.status} />
                 </MenuItem>
               ))}
             </TextField>
