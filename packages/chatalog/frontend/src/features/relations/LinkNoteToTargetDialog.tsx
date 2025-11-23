@@ -167,6 +167,15 @@ export default function LinkNoteToTargetDialog({
               {sortedNotes.map((n) => (
                 <MenuItem key={n.id} value={n.id}>
                   {n.title || 'Untitled'}
+                  {n.status && n.status.trim() && (
+                    <Typography
+                      component="span"
+                      variant="caption"
+                      sx={{ ml: 1, opacity: 0.7 }}
+                    >
+                      •
+                    </Typography>
+                  )}
                 </MenuItem>
               ))}
             </TextField>

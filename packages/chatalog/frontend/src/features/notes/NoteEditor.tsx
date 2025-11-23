@@ -361,6 +361,7 @@ export default function NoteEditor({
   const [relations, setRelations] = useState<NoteRelation[] | undefined>(
     undefined,
   );
+  const [noteStatus, setNoteStatus] = useState('');
   const [dirty, setDirty] = useState(false);
   const [snack, setSnack] = useState<{
     open: boolean;
@@ -380,6 +381,7 @@ export default function NoteEditor({
     setTitle(note.title ?? '');
     setMarkdown(note.markdown ?? '');
     setRelations(note.relations ?? []);
+    setNoteStatus((note as Note).status ?? '');
     setDirty(false);
   }, [resolvedNoteId, note]);
 
@@ -392,9 +394,16 @@ export default function NoteEditor({
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       try {
+        const trimmedStatus = noteStatus.trim();
         await updateNote({
           noteId: resolvedNoteId, // now typed as string
-          patch: { title, markdown, relations },
+          patch: {
+            title,
+            markdown,
+            relations,
+            // 🔹 NEW: send undefined when empty so it clears cleanly
+            status: trimmedStatus || undefined,
+          },
         }).unwrap();
         setSnack({ open: true, msg: 'Saved', sev: 'success' });
         setDirty(false);
@@ -417,9 +426,15 @@ export default function NoteEditor({
         if (!note || !resolvedNoteId) return; // 👈 narrow here too
         if (saveTimer.current) clearTimeout(saveTimer.current);
         try {
+          const trimmedStatus = noteStatus.trim();
           await updateNote({
             noteId: resolvedNoteId,
-            patch: { title, markdown, relations },
+            patch: {
+              title,
+              markdown,
+              relations,
+              status: trimmedStatus || undefined, // 🔹 NEW
+            },
           }).unwrap();
           setSnack({ open: true, msg: 'Saved', sev: 'success' });
           setDirty(false);
@@ -430,7 +445,7 @@ export default function NoteEditor({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [note, resolvedNoteId, title, markdown, relations, updateNote]);
+  }, [note, resolvedNoteId, title, markdown, relations, noteStatus, updateNote]);
 
   // Before-unload dirty guard (optional)
   useEffect(() => {
@@ -494,7 +509,7 @@ export default function NoteEditor({
     body.replace(/^#\s*Transcript\s*\r?\n?/, ''),
   );
   console.log('previewBody', previewBody);
-  
+
   // --- relations UI handlers ---
 
   const handleAddRelation = () => {
@@ -1018,6 +1033,20 @@ export default function NoteEditor({
             fullWidth
           />
 
+          {/* 🔹 NEW: short freeform status/meta text */}
+          <TextField
+            label="Status (optional)"
+            value={noteStatus}
+            onChange={(e) => {
+              setNoteStatus(e.target.value);
+              setDirty(true);
+            }}
+            size="small"
+            fullWidth
+            margin="dense"
+            helperText="Short note about follow-ups or changes for this note."
+          />
+
           <TextField
             label="Markdown"
             value={markdown}
@@ -1042,9 +1071,25 @@ export default function NoteEditor({
         Preview
       </Typography>
       <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
-        <Typography variant="h5" sx={{ mb: 1 }}>
+        <Typography variant="h5" sx={{ mb: 0.5 }}>
           {title || 'Untitled'}
         </Typography>
+
+        {/* 🔹 NEW: show status if present */}
+        {noteStatus.trim() && (
+          <Chip
+            size="small"
+            variant="outlined"
+            color="info"
+            label={noteStatus}
+            sx={{
+              mb: 1,
+              maxWidth: '100%',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          />
+        )}
 
         {/* Context & relations (read-only, always visible in preview) */}
         {(noteSubject || noteTopic || (relations && relations.length > 0)) && (

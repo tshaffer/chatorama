@@ -26,6 +26,7 @@ export interface NoteDoc extends Document {
   slug: string;
   markdown: string;
   summary?: string;
+  status?: string;
   tags: string[];
   links: string[];
   backlinks: string[];
@@ -83,6 +84,7 @@ const NoteSchema = new Schema<NoteDoc>(
     slug:      { type: String, required: true, index: true },
     markdown:  { type: String, required: true, default: '' },
     summary:   { type: String },
+    status:    { type: String },
     tags:      { type: [String], default: [] },
     links:     { type: [String], default: [] },
     backlinks: { type: [String], default: [] },

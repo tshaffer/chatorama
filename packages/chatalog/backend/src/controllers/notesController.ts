@@ -8,12 +8,15 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
-// Helper to map Note docs → NotePreview
 function toPreview(doc: any): NotePreview {
   return {
     id: String(doc._id ?? doc.id),
     title: doc.title ?? 'Untitled',
     summary: doc.summary,
+
+    // 🔹 NEW: pass through status when present
+    status: doc.status,
+
     tags: doc.tags ?? [],
     updatedAt: (doc.updatedAt instanceof Date
       ? doc.updatedAt.toISOString()
@@ -44,7 +47,14 @@ export async function listNotes(req: Request, res: Response) {
   if (topicId) filter.topicId = topicId;
 
   // include relations so NotePreview can use them
-  const projection = { title: 1, summary: 1, tags: 1, updatedAt: 1, relations: 1 };
+  const projection = {
+    title: 1,
+    summary: 1,
+    status: 1,     // 🔹 NEW
+    tags: 1,
+    updatedAt: 1,
+    relations: 1,
+  };
 
   let query = NoteModel.find(filter, projection);
 
@@ -70,7 +80,16 @@ export async function listNotesByTopicWithRelations(req: Request, res: Response)
 
   // 1) Notes in this subject/topic
   const baseFilter: any = { subjectId, topicId };
-  const projection = { title: 1, summary: 1, tags: 1, updatedAt: 1, relations: 1, subjectId: 1, topicId: 1 };
+  const projection = {
+    title: 1,
+    summary: 1,
+    status: 1,     // 🔹 NEW
+    tags: 1,
+    updatedAt: 1,
+    relations: 1,
+    subjectId: 1,
+    topicId: 1,
+  };
 
   const topicNotes = await NoteModel.find(baseFilter, projection)
     .sort({ order: 1, _id: 1 })
@@ -168,6 +187,7 @@ export async function createNote(req: Request, res: Response) {
     title = 'Untitled',
     markdown = '',
     summary,
+    status,
     tags = [],
     relations = [],
   } = req.body ?? {};
@@ -189,6 +209,7 @@ export async function createNote(req: Request, res: Response) {
     slug,
     markdown,
     summary,
+    status,   // 🔹 NEW
     tags,
     relations,
     order: topOrder,

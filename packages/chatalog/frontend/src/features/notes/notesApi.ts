@@ -11,14 +11,22 @@ import { chatalogApi as baseApi } from '../api/chatalogApi';
 import { subjectsApi } from '../subjects/subjectsApi';
 
 type CreateNoteRequest = Partial<
-  Pick<Note, 'subjectId' | 'topicId' | 'title' | 'markdown' | 'summary' | 'tags' | 'relations'>
+  Pick<
+    Note,
+    'subjectId' | 'topicId' | 'title' | 'markdown' | 'summary' | 'status' | 'tags' | 'relations'
+  >
 >;
+
 type UpdateNoteRequest = {
   noteId: string;
   patch: Partial<
-    Pick<Note, 'title' | 'markdown' | 'summary' | 'tags' | 'links' | 'relations'>
+    Pick<
+      Note,
+      'title' | 'markdown' | 'summary' | 'status' | 'tags' | 'links' | 'relations'
+    >
   >;
 };
+
 type DeleteNoteRequest = { noteId: string };
 
 export const notesApi = baseApi.injectEndpoints({

@@ -138,7 +138,27 @@ export default function TopicNotesPage() {
         <List dense>
           {items.map(n => (
             <ListItemButton key={n.id} onClick={() => onOpenNote(n.id)}>
-              <ListItemText primary={n.title || 'Untitled'} secondary={n.summary} />
+              <ListItemText
+                primary={
+                  <span>
+                    {n.title || 'Untitled'}
+                    {n.status && n.status.trim() && (
+                      <Tooltip title={n.status}>
+                        <span
+                          style={{
+                            marginLeft: 6,
+                            fontSize: '0.75rem',
+                            opacity: 0.7,
+                          }}
+                        >
+                          ●
+                        </span>
+                      </Tooltip>
+                    )}
+                  </span>
+                }
+                secondary={n.summary}
+              />
             </ListItemButton>
           ))}
         </List>
@@ -415,7 +435,24 @@ export default function TopicNotesPage() {
                                         onClick={() => onOpenNote(n.id)}
                                       >
                                         <ListItemText
-                                          primary={n.title || 'Untitled'}
+                                          primary={
+                                            <span>
+                                              {n.title || 'Untitled'}
+                                              {n.status && n.status.trim() && (
+                                                <Tooltip title={n.status}>
+                                                  <span
+                                                    style={{
+                                                      marginLeft: 6,
+                                                      fontSize: '0.75rem',
+                                                      opacity: 0.7,
+                                                    }}
+                                                  >
+                                                    ●
+                                                  </span>
+                                                </Tooltip>
+                                              )}
+                                            </span>
+                                          }
                                           secondary={n.summary}
                                         />
                                       </ListItemButton>

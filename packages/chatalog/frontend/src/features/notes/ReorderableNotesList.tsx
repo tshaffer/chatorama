@@ -12,10 +12,18 @@ import {
   IconButton,
   ListItemIcon,
   Checkbox,
+  Tooltip,
 } from '@mui/material';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 
-type NoteLite = { id?: string; _id?: string; title?: string; order?: number };
+type NoteLite = {
+  id?: string;
+  _id?: string;
+  title?: string;
+  order?: number;
+  status?: string; // 🔹 NEW: short status/meta text
+};
+
 type Props = {
   topicId: string;
   notes: NoteLite[];                             // already sorted by order on first render
@@ -70,11 +78,14 @@ export default function ReorderableNotesList({
             const id = String(n.id ?? n._id);
             const title = n.title || '(Untitled)';
             const selected = selectedIds.has(id);
+            const status = (n as any).status as string | undefined; // from backend NotePreview
+
             return (
               <SortableNoteRow
                 key={id}
                 id={id}
                 title={title}
+                status={status}
                 selected={selected}
                 onToggleSelect={() => onToggleSelect(id)}
                 onOpen={() => onOpenNote?.(id)}
@@ -90,12 +101,14 @@ export default function ReorderableNotesList({
 function SortableNoteRow({
   id,
   title,
+  status,
   selected,
   onToggleSelect,
   onOpen,
 }: {
   id: string;
   title: string;
+  status?: string;
   selected: boolean;
   onToggleSelect: () => void;
   onOpen?: () => void;
@@ -137,7 +150,26 @@ function SortableNoteRow({
             onChange={() => onToggleSelect()}
           />
         </ListItemIcon>
-        <ListItemText primary={title} />
+        <ListItemText
+          primary={
+            <span>
+              {title}
+              {status && status.trim() && (
+                <Tooltip title={status}>
+                  <span
+                    style={{
+                      marginLeft: 6,
+                      fontSize: '0.75rem',
+                      opacity: 0.7,
+                    }}
+                  >
+                    ●
+                  </span>
+                </Tooltip>
+              )}
+            </span>
+          }
+        />
       </ListItemButton>
     </ListItem>
   );

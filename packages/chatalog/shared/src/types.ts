@@ -47,6 +47,7 @@ export interface Note {
   markdown: string;          // canonical content
   summary?: string;          // AI or manual
   tags: string[];
+  status?: string;           // new status field
 
   // Linking (MVP: store ids; can grow later)
   links: string[];           // noteIds this note links to
@@ -55,7 +56,7 @@ export interface Note {
   // Networked relationships (generic)
   relations?: NoteRelation[];
 
-  sources?: { url?: string; type?: 'chatworthy'|'clip'|'manual' }[];
+  sources?: { url?: string; type?: 'chatworthy' | 'clip' | 'manual' }[];
 
   chatworthyNoteId?: string;
   chatId?: string;
@@ -69,6 +70,7 @@ export interface NotePreview {
   id: string;
   title: string;
   summary?: string;
+  status?: string;           // new status field
   tags: string[];
   updatedAt: string;         // ISO
 
