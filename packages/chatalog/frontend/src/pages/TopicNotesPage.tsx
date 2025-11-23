@@ -84,7 +84,8 @@ export default function TopicNotesPage() {
   );
 
   const notes = data?.notes ?? [];
-  const relatedTopicNotes = data?.relatedTopicNotes ?? [];
+  // We no longer surface topic-type related notes as a list here
+  // const relatedTopicNotes = data?.relatedTopicNotes ?? [];
   const relatedSubjectNotes = data?.relatedSubjectNotes ?? [];
   const relatedDirectNotes = data?.relatedDirectNotes ?? [];
 
@@ -260,8 +261,8 @@ export default function TopicNotesPage() {
                   <Typography variant="body2" color="text.secondary">
                     {String(
                       (error as any)?.data ??
-                        (error as any)?.message ??
-                        error,
+                      (error as any)?.message ??
+                      error,
                     )}
                   </Typography>
                 </Box>
@@ -279,10 +280,6 @@ export default function TopicNotesPage() {
                   />
 
                   {/* Related sections */}
-                  {renderRelatedList(
-                    'Related notes from other topics',
-                    relatedTopicNotes,
-                  )}
                   {renderRelatedList(
                     'Related notes by subject',
                     relatedSubjectNotes,
@@ -325,8 +322,8 @@ export default function TopicNotesPage() {
                         Failed to load topic relations:{' '}
                         {String(
                           (topicRelErrorObj as any)?.data ??
-                            (topicRelErrorObj as any)?.message ??
-                            topicRelErrorObj,
+                          (topicRelErrorObj as any)?.message ??
+                          topicRelErrorObj,
                         )}
                       </Typography>
                     )}
@@ -336,7 +333,7 @@ export default function TopicNotesPage() {
                       topicRelSummary && (
                         <>
                           {topicRelSummary.relatedTopics.length === 0 &&
-                          topicRelSummary.relatedNotes.length === 0 ? (
+                            topicRelSummary.relatedNotes.length === 0 ? (
                             <Typography
                               variant="body2"
                               color="text.secondary"
@@ -365,8 +362,8 @@ export default function TopicNotesPage() {
                                         sameSubject && subjectSlug
                                           ? subjectSlug
                                           : t.subjectId
-                                          ? `${t.subjectId}-subject`
-                                          : '';
+                                            ? `${t.subjectId}-subject`
+                                            : '';
 
                                       const topicSlugForNav = `${t.id}-${slugify(
                                         t.name,
@@ -374,7 +371,7 @@ export default function TopicNotesPage() {
 
                                       const href =
                                         subjectSlugForNav &&
-                                        topicSlugForNav
+                                          topicSlugForNav
                                           ? `/s/${subjectSlugForNav}/t/${topicSlugForNav}`
                                           : undefined;
 
