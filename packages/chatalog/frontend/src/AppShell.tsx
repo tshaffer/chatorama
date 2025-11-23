@@ -95,7 +95,7 @@ export default function AppShell() {
               Quick Notes
             </TopNavButton>
             <TopNavButton to="/subjects/manage" icon={<CategoryOutlinedIcon fontSize="small" />}>
-              Manage Subjects
+              Manage Hierarchy
             </TopNavButton>
             <TopNavButton to="/relations" icon={<HubOutlinedIcon fontSize="small" />}>
               Relations

@@ -71,7 +71,7 @@ export default function ManageSubjectsPage() {
       <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1.5 }}>
         <Box>
           <Typography variant="h4" gutterBottom>
-            Manage Subjects
+            Manage Hierarchy
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Create, rename, and delete subjects and topics. Changes here update the Notes hierarchy.
