@@ -493,7 +493,8 @@ export default function NoteEditor({
   const previewBody = normalizeTurns(
     body.replace(/^#\s*Transcript\s*\r?\n?/, ''),
   );
-
+  console.log('previewBody', previewBody);
+  
   // --- relations UI handlers ---
 
   const handleAddRelation = () => {

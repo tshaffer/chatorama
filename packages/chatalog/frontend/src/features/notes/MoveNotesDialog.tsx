@@ -1,9 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   Button, Stack, FormControl, InputLabel, Select, MenuItem, CircularProgress
 } from '@mui/material';
-import { useSelector } from 'react-redux';
 import { useMoveNotesMutation } from './notesApi';
 import { subjectsApi } from '../subjects/subjectsApi';
 import { skipToken } from '@reduxjs/toolkit/query/react';
@@ -20,6 +19,21 @@ export default function MoveNotesDialog({ open, onClose, noteIds, source }: Prop
   const { data: subjects } = subjectsApi.useGetSubjectsQuery();
   const [subjectId, setSubjectId] = useState<string>('');
   const [topicId, setTopicId] = useState<string>('');
+
+  // ⬇️ When dialog opens, default Subject/Topic to current note's location (if provided)
+  useEffect(() => {
+    if (!open) return;
+
+    // If we have a source, always sync to it when dialog opens
+    if (source) {
+      setSubjectId(source.subjectId ?? '');
+      setTopicId(source.topicId ?? '');
+    } else {
+      // If no source is provided, reset selections when opening
+      setSubjectId('');
+      setTopicId('');
+    }
+  }, [open, source?.subjectId, source?.topicId]);
 
   // Lazy-fetch topics for the chosen subject (adjust to your API)
   const { data: topicsData, isFetching: topicsLoading } =
@@ -39,13 +53,14 @@ export default function MoveNotesDialog({ open, onClose, noteIds, source }: Prop
       onClose();
     } catch (e) {
       // Optional: toast/snackbar
-      // console.error(e);
     }
   }
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Move {noteIds.length} {noteIds.length === 1 ? 'note' : 'notes'}</DialogTitle>
+      <DialogTitle>
+        Move {noteIds.length} {noteIds.length === 1 ? 'note' : 'notes'}
+      </DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
           <FormControl fullWidth>
@@ -59,8 +74,10 @@ export default function MoveNotesDialog({ open, onClose, noteIds, source }: Prop
                 setTopicId(''); // reset topic when subject changes
               }}
             >
-              {(subjects ?? []).map(s => (
-                <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+              {(subjects ?? []).map((s) => (
+                <MenuItem key={s.id} value={s.id}>
+                  {s.name}
+                </MenuItem>
               ))}
             </Select>
           </FormControl>
@@ -73,13 +90,19 @@ export default function MoveNotesDialog({ open, onClose, noteIds, source }: Prop
               label="Topic"
               onChange={(e) => setTopicId(e.target.value)}
               renderValue={(v) => {
-                const t = topicsData?.find(t => t.id === v);
+                const t = topicsData?.find((t) => t.id === v);
                 return t?.name ?? '';
               }}
             >
-              {topicsLoading && <MenuItem value=""><CircularProgress size={18} /></MenuItem>}
-              {(topicsData ?? []).map(t => (
-                <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>
+              {topicsLoading && (
+                <MenuItem value="">
+                  <CircularProgress size={18} />
+                </MenuItem>
+              )}
+              {(topicsData ?? []).map((t) => (
+                <MenuItem key={t.id} value={t.id}>
+                  {t.name}
+                </MenuItem>
               ))}
             </Select>
           </FormControl>
