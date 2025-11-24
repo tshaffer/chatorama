@@ -4,6 +4,8 @@ import { setupListeners } from '@reduxjs/toolkit/query';
 import type { TypedUseSelectorHook } from 'react-redux';
 import { useDispatch, useSelector } from 'react-redux';
 import { chatalogApi } from '../features/api/chatalogApi';
+// existing imports...
+import settingsReducer from '../features/settings/settingsSlice'; // ⬅️ NEW
 
 // If/when you add more slices, import and add to reducer below.
 // import uiReducer from '../features/ui/uiSlice';
@@ -15,6 +17,7 @@ export const store = configureStore({
 
     // other reducers here:
     // ui: uiReducer,
+    settings: settingsReducer,
   },
   middleware: (getDefault) =>
     getDefault().concat(chatalogApi.middleware),

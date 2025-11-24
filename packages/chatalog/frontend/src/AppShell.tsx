@@ -11,8 +11,11 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import FlashOnOutlinedIcon from '@mui/icons-material/FlashOnOutlined';
 import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
+import SettingsIcon from '@mui/icons-material/Settings';
 
 import QuickCaptureDialog from './features/quickNotes/QuickCaptureDialog';
+import SettingsDialog from './features/settings/SettingsDialog';
+
 import ImportAiClassificationButton from './features/imports/ImportAiClassificationButton';
 
 type TopNavButtonProps = {
@@ -54,6 +57,7 @@ export default function AppShell() {
   const { pathname } = useLocation();
   const { subjectSlug, topicSlug } = useParams();
   const [qcOpen, setQcOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     fetchJSON<{ ok: boolean }>('/health')
@@ -125,11 +129,23 @@ export default function AppShell() {
                 <NoteAddIcon />
               </IconButton>
             </Tooltip>
+
+            <Tooltip title="Settings">
+              <IconButton color="inherit" onClick={() => setSettingsOpen(true)}>
+                <SettingsIcon />
+              </IconButton>
+            </Tooltip>
+
           </Stack>
         </Toolbar>
       </AppBar>
 
       <QuickCaptureDialog open={qcOpen} onClose={() => setQcOpen(false)} />
+
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
 
       {/* Full-width main area with small side padding */}
       <Box

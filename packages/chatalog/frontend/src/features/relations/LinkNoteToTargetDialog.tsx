@@ -24,20 +24,18 @@ import {
   useGetAllNotesForRelationsQuery,
   useUpdateNoteMutation,
 } from '../notes/notesApi';
-import { NoteStatusIndicator } from '../notes/NoteStatusIndicator'; // ⬅️ NEW
+import { NoteStatusIndicator } from '../notes/NoteStatusIndicator';
+import { useSelector } from 'react-redux';
+import { selectNoteStatusVisibility } from '../settings/settingsSlice';
 
 type Props = {
   open: boolean;
   onClose: () => void;
 
-  targetType: NoteRelationTargetType; // 'subject' | 'topic' | 'note' (we'll use subject/topic)
+  targetType: NoteRelationTargetType;
   targetId: string;
 
   defaultKind?: NoteRelationKind;
-  /**
-   * Optional callback after a successful link.
-   * Use this to refetch Subject/Topic relation summaries.
-   */
   onLinked?: () => void;
 };
 
@@ -76,6 +74,7 @@ export default function LinkNoteToTargetDialog({
   const [submitting, setSubmitting] = useState(false);
 
   const [updateNote] = useUpdateNoteMutation();
+  const noteStatusVisibility = useSelector(selectNoteStatusVisibility);
 
   const sortedNotes = useMemo(() => {
     const arr = [...notes] as NotePreview[];
@@ -96,7 +95,6 @@ export default function LinkNoteToTargetDialog({
     try {
       const existing: NoteRelation[] = (selectedNote.relations ?? []) as NoteRelation[];
 
-      // avoid exact duplicates
       const already = existing.some(
         (r) =>
           r.targetType === targetType &&
@@ -167,8 +165,10 @@ export default function LinkNoteToTargetDialog({
               {sortedNotes.map((n) => (
                 <MenuItem key={n.id} value={n.id}>
                   {n.title || 'Untitled'}
-                  {/* status indicator inline with note title */}
-                  <NoteStatusIndicator status={n.status} />
+                  <NoteStatusIndicator
+                    status={n.status}
+                    {...noteStatusVisibility}
+                  />
                 </MenuItem>
               ))}
             </TextField>

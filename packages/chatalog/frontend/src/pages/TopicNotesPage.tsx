@@ -18,6 +18,7 @@ import {
   DialogActions,
 } from '@mui/material';
 import { skipToken } from '@reduxjs/toolkit/query';
+import { useSelector } from 'react-redux';
 
 import {
   useGetTopicNotesWithRelationsQuery,
@@ -29,7 +30,8 @@ import ReorderableNotesList from '../features/notes/ReorderableNotesList';
 import MoveNotesDialog from '../features/notes/MoveNotesDialog';
 import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
 import LinkNoteToTargetDialog from '../features/relations/LinkNoteToTargetDialog';
-import { NoteStatusIndicator } from '../features/notes/NoteStatusIndicator'; // ⬅️ NEW
+import { NoteStatusIndicator } from '../features/notes/NoteStatusIndicator';
+import { selectNoteStatusVisibility } from '../features/settings/settingsSlice';
 
 // Extract leading ObjectId from "<id>" or "<id>-<slug>"
 const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
@@ -42,6 +44,8 @@ export default function TopicNotesPage() {
   const subjectId = useMemo(() => takeObjectId(subjectSlug), [subjectSlug]);
   const topicId = useMemo(() => takeObjectId(topicSlug), [topicSlug]);
   const navigate = useNavigate();
+
+  const noteStatusVisibility = useSelector(selectNoteStatusVisibility);
 
   const [reorder] = useReorderNotesInTopicMutation();
   const [deleteNote, { isLoading: isDeleting }] = useDeleteNoteMutation();
@@ -72,7 +76,7 @@ export default function TopicNotesPage() {
     isLoading,
     isError,
     error,
-    refetch: refetchNotes, // so we can force refresh after deletes
+    refetch: refetchNotes,
   } = useGetTopicNotesWithRelationsQuery(topicNotesQueryArg, {
     refetchOnMountOrArgChange: true,
   });
@@ -140,8 +144,10 @@ export default function TopicNotesPage() {
                 primary={
                   <span>
                     {n.title || 'Untitled'}
-                    {/* status indicator for related notes */}
-                    <NoteStatusIndicator status={n.status} />
+                    <NoteStatusIndicator
+                      status={n.status}
+                      {...noteStatusVisibility}
+                    />
                   </span>
                 }
                 secondary={n.summary}
@@ -178,7 +184,6 @@ export default function TopicNotesPage() {
           minHeight: 0,
         }}
       >
-        {/* If URL is malformed / missing ids, show a friendly message */}
         {!subjectId || !topicId ? (
           <Box sx={{ flex: 1 }}>
             <Typography variant="h6" sx={{ mb: 1 }}>
@@ -190,7 +195,7 @@ export default function TopicNotesPage() {
           </Box>
         ) : (
           <>
-            {/* Header + toolbar (fixed) */}
+            {/* Header + toolbar */}
             <Stack
               direction="row"
               alignItems="center"
@@ -250,7 +255,7 @@ export default function TopicNotesPage() {
               </Toolbar>
             </Stack>
 
-            {/* SCROLLABLE body of the right panel */}
+            {/* Scrollable body */}
             <Box
               sx={{
                 flex: 1,
@@ -284,7 +289,6 @@ export default function TopicNotesPage() {
                     onOpenNote={onOpenNote}
                   />
 
-                  {/* Related sections */}
                   {renderRelatedList(
                     'Related notes by subject',
                     relatedSubjectNotes,
@@ -294,7 +298,7 @@ export default function TopicNotesPage() {
                     relatedDirectNotes,
                   )}
 
-                  {/* Incoming references to this topic */}
+                  {/* Incoming references */}
                   <Box sx={{ mt: 3 }}>
                     <Stack
                       direction="row"
@@ -423,8 +427,10 @@ export default function TopicNotesPage() {
                                           primary={
                                             <span>
                                               {n.title || 'Untitled'}
-                                              {/* status indicator for incoming-reference notes */}
-                                              <NoteStatusIndicator status={n.status} />
+                                              <NoteStatusIndicator
+                                                status={n.status}
+                                                {...noteStatusVisibility}
+                                              />
                                             </span>
                                           }
                                           secondary={n.summary}

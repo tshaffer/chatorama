@@ -14,19 +14,21 @@ import {
   Checkbox,
 } from '@mui/material';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
-import { NoteStatusIndicator } from './NoteStatusIndicator'; // ⬅️ NEW
+import { useSelector } from 'react-redux';
+import { NoteStatusIndicator } from './NoteStatusIndicator';
+import { selectNoteStatusVisibility } from '../settings/settingsSlice';
 
 type NoteLite = {
   id?: string;
   _id?: string;
   title?: string;
   order?: number;
-  status?: string; // short status/meta text
+  status?: string;
 };
 
 type Props = {
   topicId: string;
-  notes: NoteLite[];                             // already sorted by order on first render
+  notes: NoteLite[];
   onReordered: (noteIdsInOrder: string[]) => void;
   onOpenNote?: (noteId: string) => void;
   selectedIds: Set<string>;
@@ -45,12 +47,12 @@ export default function ReorderableNotesList({
     [...notes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
   );
 
-  // If the incoming notes list changes (e.g., after refetch), resync local ordering state.
+  const noteStatusVisibility = useSelector(selectNoteStatusVisibility);
+
   React.useEffect(() => {
     setItems([...notes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
   }, [notes]);
 
-  // Only start drag after small pointer move; and only from the handle (listeners attached to handle)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const ids = useMemo(
@@ -78,7 +80,7 @@ export default function ReorderableNotesList({
             const id = String(n.id ?? n._id);
             const title = n.title || '(Untitled)';
             const selected = selectedIds.has(id);
-            const status = (n as any).status as string | undefined; // from backend NotePreview
+            const status = (n as any).status as string | undefined;
 
             return (
               <SortableNoteRow
@@ -89,6 +91,7 @@ export default function ReorderableNotesList({
                 selected={selected}
                 onToggleSelect={() => onToggleSelect(id)}
                 onOpen={() => onOpenNote?.(id)}
+                noteStatusVisibility={noteStatusVisibility}
               />
             );
           })}
@@ -98,6 +101,16 @@ export default function ReorderableNotesList({
   );
 }
 
+type RowProps = {
+  id: string;
+  title: string;
+  status?: string;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onOpen?: () => void;
+  noteStatusVisibility: ReturnType<typeof selectNoteStatusVisibility>;
+};
+
 function SortableNoteRow({
   id,
   title,
@@ -105,14 +118,8 @@ function SortableNoteRow({
   selected,
   onToggleSelect,
   onOpen,
-}: {
-  id: string;
-  title: string;
-  status?: string;
-  selected: boolean;
-  onToggleSelect: () => void;
-  onOpen?: () => void;
-}) {
+  noteStatusVisibility,
+}: RowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
   const style: React.CSSProperties = {
@@ -128,13 +135,11 @@ function SortableNoteRow({
       style={style}
       disablePadding
       secondaryAction={
-        // Drag by handle only
         <IconButton edge="end" size="small" {...listeners} {...attributes} aria-label="drag-handle">
           <DragIndicatorIcon />
         </IconButton>
       }
     >
-      {/* Row click should OPEN the note, not toggle selection */}
       <ListItemButton
         selected={selected}
         onClick={onOpen}
@@ -145,7 +150,6 @@ function SortableNoteRow({
             tabIndex={-1}
             disableRipple
             checked={selected}
-            // Don’t let checkbox clicks bubble and trigger onOpen
             onClick={(e) => e.stopPropagation()}
             onChange={() => onToggleSelect()}
           />
@@ -154,8 +158,10 @@ function SortableNoteRow({
           primary={
             <span>
               {title}
-              {/* status indicator in main list */}
-              <NoteStatusIndicator status={status} />
+              <NoteStatusIndicator
+                status={status}
+                {...noteStatusVisibility}
+              />
             </span>
           }
         />
