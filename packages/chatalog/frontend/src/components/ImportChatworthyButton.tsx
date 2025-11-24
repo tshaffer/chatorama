@@ -102,10 +102,10 @@ export default function ImportChatworthyButton({
       const payload = {
         rows: rows.map(r => ({
           importKey: r.importKey,
-          title: r.title,
+          title: r.editedTitle,
           body: r.body,
-          subjectLabel: r.subjectName,
-          topicLabel: r.topicName,
+          subjectLabel: r.subjectLabel,
+          topicLabel: r.topicLabel,
           tags: r.tags,
           summary: r.summary,
           provenanceUrl: r.provenanceUrl,
