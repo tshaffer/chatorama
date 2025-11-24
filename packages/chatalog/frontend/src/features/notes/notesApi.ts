@@ -44,16 +44,22 @@ export const notesApi = baseApi.injectEndpoints({
         url: `notes/by-topic-with-relations`,
         params: { subjectId, topicId },
       }),
-      // Always refetch when subject/topic changes (navigation)
       providesTags: (res, _err, { subjectId, topicId }) => {
-        // Base tag for this topic's list
-        const baseTag = {
+        // Global "all notes" list tag (used by imports, createNote, etc.)
+        const globalListTag = {
+          type: 'Note' as const,
+          id: 'LIST',
+        };
+
+        // Per-topic list tag
+        const topicListTag = {
           type: 'Note' as const,
           id: `LIST:${subjectId}:${topicId}`,
         };
 
         if (!res) {
-          return [baseTag];
+          // No data yet; still provide list tags so invalidations work
+          return [globalListTag, topicListTag];
         }
 
         // Collect all notes that appear in this payload
@@ -64,7 +70,6 @@ export const notesApi = baseApi.injectEndpoints({
           ...(res.relatedDirectNotes ?? []),
         ];
 
-        // One tag per note id
         const seen = new Set<string>();
         const noteTags = allNotes
           .filter((n) => n.id && !seen.has(n.id))
@@ -73,7 +78,7 @@ export const notesApi = baseApi.injectEndpoints({
             return { type: 'Note' as const, id: n.id };
           });
 
-        return [baseTag, ...noteTags];
+        return [globalListTag, topicListTag, ...noteTags];
       },
     }),
 

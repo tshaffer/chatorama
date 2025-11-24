@@ -12,17 +12,19 @@ import {
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import { useDispatch } from 'react-redux';
 
 import {
   useImportChatworthyMutation,
   type ImportResponse,
   useApplyChatworthyImportMutation,
-} from '../features/imports/importsApi';
-import { useGetSubjectsQuery } from '../features/subjects/subjectsApi';
+} from './importsApi';
+import { useGetSubjectsQuery } from '../subjects/subjectsApi';
 import {
   ImportResultsDialog,
   type EditableImportedNoteRow,
-} from '../features/imports/ImportResultsDialog';
+} from './ImportResultsDialog';
+import { chatalogApi } from '../api/chatalogApi';
 
 type Props = {
   onDone?: () => void;
@@ -40,9 +42,12 @@ export default function ImportChatworthyButton({
   tooltip = 'Import Chatworthy export (ZIP or Markdown)',
   accept = '.zip,.cbz,.tar,.tgz,.gz,.md,.markdown',
 }: Props) {
+  const dispatch = useDispatch();
+
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [importChatworthy, { isLoading }] = useImportChatworthyMutation();
-  const [applyChatworthyImport, { isLoading: isApplying }] = useApplyChatworthyImportMutation();
+  const [applyChatworthyImport, { isLoading: isApplying }] =
+    useApplyChatworthyImportMutation();
 
   const { data: subjects = [] } = useGetSubjectsQuery();
 
@@ -74,7 +79,10 @@ export default function ImportChatworthyButton({
 
       setSnack({
         open: true,
-        msg: res.imported === 1 ? 'Imported 1 note for review' : `Imported ${res.imported} notes for review`,
+        msg:
+          res.imported === 1
+            ? 'Imported 1 note for review'
+            : `Imported ${res.imported} notes for review`,
         severity: 'success',
       });
       // We'll call onDone() after the user finishes the review dialog + apply.
@@ -100,7 +108,7 @@ export default function ImportChatworthyButton({
 
     try {
       const payload = {
-        rows: rows.map(r => ({
+        rows: rows.map((r) => ({
           importKey: r.importKey,
           title: r.editedTitle,
           body: r.body,
@@ -131,6 +139,11 @@ export default function ImportChatworthyButton({
 
       setReviewOpen(false);
       setLastImport(null);
+
+      // 🔥 Force all RTK Query data to refetch so new notes show up everywhere
+      dispatch(chatalogApi.util.resetApiState());
+
+      // Optional callback for callers (if passed)
       onDone?.();
     } catch (err: any) {
       const msg =

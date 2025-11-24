@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { Outlet, Link, useLocation, useParams, useMatch } from 'react-router-dom';
 import { AppBar, Toolbar, Typography, Button, Stack, Box, alpha, IconButton, Tooltip } from '@mui/material';
-import ImportChatworthyButton from './components/ImportChatworthyButton';
+import ImportChatworthyButton from './features/imports/ImportChatworthyButton';
 import { fetchJSON } from './lib/api';
 import NoteAddIcon from '@mui/icons-material/NoteAdd';
 
