@@ -253,11 +253,17 @@ export default function QuickNotePage() {
   };
 
   const handleConvertConfirm = async () => {
+    const trimmedSubject = subjectLabel.trim();
+    const trimmedTopic = topicLabel.trim();
+    if (!trimmedSubject || !trimmedTopic) {
+      return;
+    }
+
     try {
       const res = await convertQuickNote({
         id: note.id,
-        subjectLabel: subjectLabel.trim() || undefined,
-        topicLabel: topicLabel.trim() || undefined,
+        subjectLabel: trimmedSubject,
+        topicLabel: trimmedTopic,
       }).unwrap();
 
       setConvertDialogOpen(false);
@@ -280,6 +286,9 @@ export default function QuickNotePage() {
       });
     }
   };
+
+  const isConvertConfirmDisabled =
+    isConverting || !subjectLabel.trim() || !topicLabel.trim();
 
   return (
     <Box sx={{ p: 2 }}>
@@ -459,6 +468,7 @@ export default function QuickNotePage() {
                 <TextField
                   {...params}
                   label="Subject label"
+                  placeholder="Subject label"
                   size="small"
                 />
               )}
@@ -476,6 +486,7 @@ export default function QuickNotePage() {
                 <TextField
                   {...params}
                   label="Topic label"
+                  placeholder="Topic label"
                   size="small"
                 />
               )}
@@ -492,7 +503,7 @@ export default function QuickNotePage() {
           <Button
             variant="contained"
             onClick={handleConvertConfirm}
-            disabled={isConverting}
+            disabled={isConvertConfirmDisabled}
           >
             {isConverting ? 'Converting…' : 'OK'}
           </Button>
