@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { SubjectModel } from '../models/Subject';
+import { TopicModel } from '../models/Topic'; // <-- ADD THIS
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -9,6 +10,44 @@ export async function listSubjects(_req: Request, res: Response) {
   // sort by explicit order, then name for any items without order
   const docs = await SubjectModel.find().sort({ order: 1, name: 1 }).exec();
   res.json(docs.map((d) => d.toJSON())); // uses your toJSON plugin (adds id, strips __v/_id)
+}
+
+export async function listSubjectsWithTopics(_req: Request, res: Response) {
+  // Fetch all subjects in UI order
+  const subjects = await SubjectModel.find()
+    .sort({ order: 1, name: 1 })
+    .exec();
+
+  const subjectIds = subjects.map((s) => s._id.toString());
+
+  // Fetch all topics that belong to these subjects
+  const topics = await TopicModel.find({
+    subjectId: { $in: subjectIds },
+  })
+    .sort({ order: 1, name: 1 })
+    .exec();
+
+  // Group topics by subjectId
+  const topicsBySubjectId = new Map<string, any[]>();
+  topics.forEach((t) => {
+    const key = t.subjectId?.toString();
+    if (!key) return;
+    const arr = topicsBySubjectId.get(key) ?? [];
+    arr.push(t.toJSON());
+    topicsBySubjectId.set(key, arr);
+  });
+
+  // Attach `topics` array to each subject
+  const result = subjects.map((s) => {
+    const json = s.toJSON(); // applyToJSON already adds id / strips _id
+    const key = s._id.toString();
+    return {
+      ...json,
+      topics: topicsBySubjectId.get(key) ?? [],
+    };
+  });
+
+  res.json(result);
 }
 
 export async function getSubjectById(req: Request, res: Response) {

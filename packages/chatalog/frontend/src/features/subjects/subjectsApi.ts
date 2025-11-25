@@ -17,12 +17,26 @@ export const subjectsApi = baseApi.injectEndpoints({
       providesTags: (res) =>
         res
           ? [
-              { type: 'Subject' as const, id: 'LIST' },
-              ...res.map((s) => ({
-                type: 'Subject' as const,
-                id: safeId(s as any),
-              })),
-            ]
+            { type: 'Subject' as const, id: 'LIST' },
+            ...res.map((s) => ({
+              type: 'Subject' as const,
+              id: safeId(s as any),
+            })),
+          ]
+          : [{ type: 'Subject' as const, id: 'LIST' }],
+    }),
+
+    getSubjectsWithTopics: build.query<(Subject & { topics: Topic[] })[], void>({
+      query: () => ({ url: 'subjects/with-topics' }),
+      providesTags: (res) =>
+        res
+          ? [
+            { type: 'Subject' as const, id: 'LIST' },
+            ...res.map((s) => ({
+              type: 'Subject' as const,
+              id: safeId(s as any),
+            })),
+          ]
           : [{ type: 'Subject' as const, id: 'LIST' }],
     }),
 
@@ -160,9 +174,8 @@ export const subjectsApi = baseApi.injectEndpoints({
       { subjectId: string; topicId: string; name: string; preserveSlug?: boolean }
     >({
       query: ({ subjectId, topicId, name, preserveSlug }) => ({
-        url: `subjects/${subjectId}/topics/${topicId}${
-          preserveSlug ? '?preserveSlug=1' : ''
-        }`,
+        url: `subjects/${subjectId}/topics/${topicId}${preserveSlug ? '?preserveSlug=1' : ''
+          }`,
         method: 'PATCH',
         body: { name },
       }),
@@ -211,6 +224,7 @@ export const subjectsApi = baseApi.injectEndpoints({
 
 export const {
   useGetSubjectsQuery,
+  useGetSubjectsWithTopicsQuery,
   useGetTopicsForSubjectQuery,
   useGetNotePreviewsForTopicQuery,
   useCreateSubjectMutation,

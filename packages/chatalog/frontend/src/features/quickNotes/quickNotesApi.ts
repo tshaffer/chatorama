@@ -70,8 +70,13 @@ export const quickNotesApi = baseApi.injectEndpoints({
       ],
     }),
 
-    convertQuickNote: build.mutation<{ noteId: string }, { id: string }>({
-      query: ({ id }) => ({ url: `quicknotes/${id}/convert`, method: 'POST' }),
+    // adjust this type:
+    convertQuickNote: build.mutation<{ noteId: string }, { id: string; subjectLabel?: string; topicLabel?: string }>({
+      query: ({ id, subjectLabel, topicLabel }) => ({
+        url: `quicknotes/${id}/convert`,
+        method: 'POST',
+        body: { subjectLabel, topicLabel },
+      }),
       invalidatesTags: [{ type: 'QuickNote', id: 'LIST' }],
     }),
   }),

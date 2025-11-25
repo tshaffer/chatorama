@@ -10,6 +10,7 @@
 #   /path/to/backup/dir/subjects.json
 #   /path/to/backup/dir/topics.json
 #   /path/to/backup/dir/notes.json
+#   /path/to/backup/dir/quicknotes.json
 
 set -euo pipefail
 
@@ -35,7 +36,7 @@ echo "Using MONGO_URI: $MONGO_URI"
 echo "Writing backups to: $OUTPUT_DIR"
 echo
 
-collections=("subjects" "topics" "notes")
+collections=("subjects" "topics" "notes" "quicknotes")
 
 for coll in "${collections[@]}"; do
   out_file="$OUTPUT_DIR/${coll}.json"

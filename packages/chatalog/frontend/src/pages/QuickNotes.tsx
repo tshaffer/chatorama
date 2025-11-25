@@ -67,7 +67,6 @@ export default function QuickNotesPage() {
               (qn.markdown ? truncate(qn.markdown.split('\n')[0], 60) : '(untitled quick note)');
             const preview =
               qn.markdown ? truncate(qn.markdown.replace(/\s+/g, ' ').trim(), 180) : '';
-            console.log('Rendering quick note', qn.id, qn.markdown, { title, preview });
 
             return (
               <ListItemButton

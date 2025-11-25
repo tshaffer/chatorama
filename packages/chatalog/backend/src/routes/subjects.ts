@@ -4,6 +4,7 @@ import {
   getSubjectById,
   renameSubject,
   reorderSubjects,
+  listSubjectsWithTopics, // <-- ADD THIS
 } from '../controllers/subjectsController';
 import {
   listTopicsForSubjectId,
@@ -26,6 +27,9 @@ const subjectsRouter = Router();
 
 // /api/v1/subjects
 subjectsRouter.get('/', listSubjects);
+
+// /api/v1/subjects/with-topics
+subjectsRouter.get('/with-topics', listSubjectsWithTopics); // <-- ADD
 
 // PATCH /api/v1/subjects/reorder
 subjectsRouter.patch('/reorder', reorderSubjects);
