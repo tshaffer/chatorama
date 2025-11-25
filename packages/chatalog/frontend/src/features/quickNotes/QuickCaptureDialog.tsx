@@ -2,8 +2,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog, DialogTitle, DialogContent, DialogActions, TextField, Stack, Button, FormControl, InputLabel, Select, MenuItem, Box, Typography } from '@mui/material';
 import { useAddQuickNoteMutation } from './quickNotesApi';
-import { useGetSubjectsQuery } from '../subjects/subjectsApi';
-import type { Subject } from '@chatorama/chatalog-shared';
+import { useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
+import type { Subject, Topic } from '@chatorama/chatalog-shared';
 
 type Props = {
   open: boolean;
@@ -34,7 +34,7 @@ export default function QuickCaptureDialog({
   const [topicId, setTopicId] = useState<string | undefined>(defaultTopicId);
 
   const [addQuickNote, { isLoading, error, data }] = useAddQuickNoteMutation();
-  const { data: subjects = [] } = useGetSubjectsQuery();
+  const { data: subjects = [] } = useGetSubjectsWithTopicsQuery();
 
   const derivedTitle = useMemo(() => title.trim() ? '' : deriveTitle(markdown), [title, markdown]);
 
@@ -68,7 +68,7 @@ export default function QuickCaptureDialog({
   };
 
   // simple subject→topic select data
-  const selectedSubject = subjects.find(s => s.id === subjectId) as (Subject & { topics?: any[] }) | undefined;
+  const selectedSubject = subjects.find(s => s.id === subjectId) as (Subject & { topics?: Topic[] }) | undefined;
   const topics = selectedSubject?.topics ?? [];
 
   return (

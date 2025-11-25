@@ -18,7 +18,7 @@ import {
   type ImportResponse,
   useApplyChatworthyImportMutation,
 } from './importsApi';
-import { useGetSubjectsQuery } from '../subjects/subjectsApi';
+import { useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
 import {
   ImportResultsDialog,
   type EditableImportedNoteRow,
@@ -39,7 +39,7 @@ export default function ImportAiClassificationButton({
 }: Props) {
   const [importAiPreview] = useImportAiClassificationPreviewMutation();
   const [applyChatworthyImport] = useApplyChatworthyImportMutation();
-  const { data: subjects = [] } = useGetSubjectsQuery();
+  const { data: subjects = [] } = useGetSubjectsWithTopicsQuery();
 
   const [snack, setSnack] = useState<{
     open: boolean;

@@ -1,6 +1,6 @@
 // frontend/src/features/imports/ImportResultsDialog.tsx
 import React, { useMemo, useState } from 'react';
-import type { Subject } from '@chatorama/chatalog-shared';
+import type { Subject, Topic } from '@chatorama/chatalog-shared';
 import {
   Dialog,
   DialogTitle,
@@ -34,11 +34,13 @@ export type EditableImportedNoteRow = ImportedNoteSummary & {
   topicTouched: boolean;
 };
 
+type SubjectWithTopics = Subject & { topics?: Topic[] };
+
 type Props = {
   open: boolean;
   onClose: () => void;
   importedNotes: ImportedNoteSummary[];
-  subjects: Subject[];
+  subjects: SubjectWithTopics[];
   onApply: (rows: EditableImportedNoteRow[]) => void;
 };
 
@@ -121,23 +123,28 @@ export function ImportResultsDialog({
     return Array.from(set);
   }, [defaultSubjectLabel, importedNotes, rows, subjects]);
 
-  const topicOptions = useMemo(() => {
+  const topicOptionsForSubject = (
+    subjectLabel: string,
+    currentTopicLabel: string,
+  ) => {
+    const trimmedSubject = subjectLabel.trim();
+    const trimmedTopic = currentTopicLabel.trim();
+
+    const subject = subjects.find(
+      (s) => s.name?.trim() === trimmedSubject,
+    ) as SubjectWithTopics | undefined;
+
     const set = new Set<string>();
 
-    if (defaultTopicLabel?.trim()) set.add(defaultTopicLabel.trim());
+    (subject?.topics ?? []).forEach((t) => {
+      const name = t.name?.trim();
+      if (name) set.add(name);
+    });
 
-    importedNotes
-      .map((n) => n.topicName?.trim())
-      .filter(Boolean)
-      .forEach((name) => set.add(name as string));
-
-    rows
-      .map((r) => r.topicLabel?.trim())
-      .filter(Boolean)
-      .forEach((name) => set.add(name as string));
+    if (trimmedTopic) set.add(trimmedTopic);
 
     return Array.from(set);
-  }, [defaultTopicLabel, importedNotes, rows]);
+  };
 
   const handleRowChange = (
     importKey: string,
@@ -213,7 +220,10 @@ export function ImportResultsDialog({
 
           <Autocomplete
             freeSolo
-            options={topicOptions}
+            options={topicOptionsForSubject(
+              defaultSubjectLabel,
+              defaultTopicLabel,
+            )}
             value={defaultTopicLabel}
             onInputChange={(_e, newInputValue) =>
               updateDefaultTopic(newInputValue ?? '')
@@ -298,10 +308,13 @@ export function ImportResultsDialog({
                     />
                   </TableCell>
                   <TableCell sx={{ minWidth: 220 }}>
-                    <Autocomplete
-                      freeSolo
-                      options={topicOptions}
-                      value={row.topicLabel}
+                  <Autocomplete
+                    freeSolo
+                    options={topicOptionsForSubject(
+                      row.subjectLabel,
+                      row.topicLabel,
+                    )}
+                    value={row.topicLabel}
                       onChange={(_e, newValue) => {
                         if (topicBulkUpdateRef.current) return;
                         handleRowChange(row.importKey, {
