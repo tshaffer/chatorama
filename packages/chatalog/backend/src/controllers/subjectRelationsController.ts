@@ -8,20 +8,7 @@ import type {
   RelatedTopicSummary,
   TopicRelationsSummary,
 } from '@chatorama/chatalog-shared';
-
-// Small local helper – same shape as your existing toPreview
-function toPreview(doc: any): NotePreview {
-  return {
-    id: String(doc._id ?? doc.id),
-    title: doc.title ?? 'Untitled',
-    summary: doc.summary,
-    tags: doc.tags ?? [],
-    updatedAt:
-      doc.updatedAt instanceof Date
-        ? doc.updatedAt.toISOString()
-        : doc.updatedAt ?? new Date().toISOString(),
-  };
-}
+import { toPreview } from '../utilities';
 
 function dedupeNotePreviews(arr: NotePreview[]): NotePreview[] {
   const seen = new Set<string>();

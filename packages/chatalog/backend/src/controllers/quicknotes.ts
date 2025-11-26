@@ -1,63 +1,12 @@
 // chatalog/backend/src/routes/quicknotes.ts
 import { Router } from 'express';
-import { isValidObjectId, Types } from 'mongoose';
+import { isValidObjectId } from 'mongoose';
 import { QuickNoteModel } from '../models/QuickNote';
-import { SubjectModel } from '../models/Subject';
-import { TopicModel } from '../models/Topic';
 import { NoteModel } from '../models/Note';
+import { slugifyAscentStripping } from '@chatorama/chatalog-shared';
+import { dedupeSlug, ensureSubjectTopicExist, toObjectId } from '../utilities';
 
 const router = Router();
-
-// ------- helpers -------
-function toObjectId(id?: string) {
-  if (!id) return undefined;
-  if (!isValidObjectId(id)) throw new Error('Invalid ObjectId');
-  return new Types.ObjectId(id);
-}
-
-async function ensureSubjectTopicExist(subjectId?: string, topicId?: string) {
-  if (subjectId) {
-    const sub = await SubjectModel.findById(subjectId).select('_id').lean();
-    if (!sub) throw new Error('subjectId not found');
-  }
-  if (topicId) {
-    const top = await TopicModel.findById(topicId).select('_id').lean();
-    if (!top) throw new Error('topicId not found');
-  }
-}
-
-// Basic slugify
-function slugify(s: string): string {
-  return (s || '')
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')     // strip accents
-    .replace(/[^a-z0-9]+/g, '-')         // non-alnum -> dashes
-    .replace(/(^-|-$)/g, '')             // trim dashes
-    .slice(0, 80) || 'note';
-}
-
-// topicId is a string (or undefined), matching NoteModel/QuickNoteModel
-async function dedupeSlug(baseSlug: string, topicId?: string): Promise<string> {
-  let slug = baseSlug || 'note';
-  let i = 2;
-
-  for (; ;) {
-    const filter: any = { slug };
-
-    if (topicId) {
-      filter.topicId = topicId;
-    } else {
-      // Notes without a topicId
-      filter.topicId = { $exists: false };
-    }
-
-    const exists = await NoteModel.findOne(filter).select('_id').lean();
-    if (!exists) return slug;
-
-    slug = `${baseSlug}-${i++}`;
-  }
-}
 
 // ------- GET /api/v1/quicknotes -------
 /**
@@ -234,7 +183,7 @@ router.post('/:id/convert', async (req, res) => {
     }
 
     // Build a unique slug within this topic
-    const baseSlug = slugify(quick.title || 'note');
+    const baseSlug = slugifyAscentStripping(quick.title || 'note');
 
     // Quick note stores topicId as string (per QuickNoteDoc/schema)
     const topicId = quick.topicId ? String(quick.topicId) : undefined;

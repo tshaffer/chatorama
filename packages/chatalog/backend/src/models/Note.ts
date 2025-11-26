@@ -1,22 +1,7 @@
 // models/Note.ts
 import mongoose, { Schema, Document, Types } from 'mongoose';
 import { applyToJSON } from '../db/toJsonPlugin';
-
-export type NoteRelationTargetType = 'note' | 'topic' | 'subject';
-
-export type NoteRelationKind =
-  | 'also-about'
-  | 'see-also'
-  | 'supports'
-  | 'contrasts-with'
-  | 'warning'
-  | 'background';
-
-export interface NoteRelation {
-  targetType: NoteRelationTargetType;
-  targetId: string;
-  kind: NoteRelationKind;
-}
+import { NoteRelation } from '@chatorama/chatalog-shared';
 
 export interface NoteDoc extends Document {
   _id: Types.ObjectId;

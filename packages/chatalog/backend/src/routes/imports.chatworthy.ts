@@ -10,6 +10,7 @@ import { NoteModel } from '../models/Note';
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
 import type { NoteDoc } from '../models/Note';
+import { slugifyStandard } from '@chatorama/chatalog-shared';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -83,10 +84,6 @@ function stripForChatalog(md: string, opts: StripOpts = {}): string {
   out = out.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trimEnd();
 
   return out;
-}
-
-function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
 async function dedupeSubjectSlug(base: string): Promise<string> {
@@ -333,7 +330,7 @@ async function ensureSubjectTopic(
     const name = subjectName.trim();
     let subj = await SubjectModel.findOne({ name }).exec();
     if (!subj) {
-      const slug = await dedupeSubjectSlug(slugify(name));
+      const slug = await dedupeSubjectSlug(slugifyStandard(name));
       subj = await SubjectModel.create({ name, slug });
     }
     subjectId = subj.id;
@@ -344,7 +341,7 @@ async function ensureSubjectTopic(
     const name = topicName.trim();
     let topic = await TopicModel.findOne({ subjectId: sid, name }).exec();
     if (!topic) {
-      const slug = await dedupeTopicSlug(sid, slugify(name));
+      const slug = await dedupeTopicSlug(sid, slugifyStandard(name));
       topic = await TopicModel.create({ subjectId: sid, name, slug });
     }
     topicId = topic.id;
@@ -487,7 +484,7 @@ router.post('/chatworthy/apply', async (req, res, next) => {
 
       const { subjectId, topicId } = await ensureSubjectTopic(subjectName, topicName);
 
-      const baseSlug = slugify(row.title || 'Untitled');
+      const baseSlug = slugifyStandard(row.title || 'Untitled');
       const slug = await dedupeNoteSlug(topicId, baseSlug);
 
       const doc: NoteDoc = await NoteModel.create({

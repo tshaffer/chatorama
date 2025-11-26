@@ -12,16 +12,7 @@ import {
   Skeleton,
 } from '@mui/material';
 import { useGetQuickNotesQuery } from '../features/quickNotes/quickNotesApi';
-
-export type QuickNote = {
-  id: string;
-  title: string;
-  markdown: string;
-  subjectId?: string;
-  topicId?: string;
-  createdAt: string;
-  updatedAt: string;
-};
+import type { QuickNote } from '../types/entities';
 
 const truncate = (text: string, max = 140) =>
   text.length > max ? text.slice(0, max - 1) + '…' : text;

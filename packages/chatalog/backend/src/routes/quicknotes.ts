@@ -5,58 +5,10 @@ import { QuickNoteModel } from '../models/QuickNote';
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
 import { NoteModel } from '../models/Note';
+import { slugifyAscentStripping } from '@chatorama/chatalog-shared';
+import { dedupeSlug, ensureSubjectTopicExist, toObjectId } from '../utilities';
 
 const router = Router();
-
-// ------- helpers -------
-function toObjectId(id?: string) {
-  if (!id) return undefined;
-  if (!isValidObjectId(id)) throw new Error('Invalid ObjectId');
-  return new Types.ObjectId(id);
-}
-
-async function ensureSubjectTopicExist(subjectId?: string, topicId?: string) {
-  if (subjectId) {
-    const sub = await SubjectModel.findById(subjectId).select('_id').lean();
-    if (!sub) throw new Error('subjectId not found');
-  }
-  if (topicId) {
-    const top = await TopicModel.findById(topicId).select('_id').lean();
-    if (!top) throw new Error('topicId not found');
-  }
-}
-
-// Basic slugify
-function slugify(s: string): string {
-  return (s || '')
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')     // strip accents
-    .replace(/[^a-z0-9]+/g, '-')         // non-alnum -> dashes
-    .replace(/(^-|-$)/g, '')             // trim dashes
-    .slice(0, 80) || 'note';
-}
-
-// topicId is a string (or undefined), matching NoteModel/QuickNoteModel
-async function dedupeSlug(baseSlug: string, topicId?: string): Promise<string> {
-  let slug = baseSlug || 'note';
-  let i = 2;
-
-  for (; ;) {
-    const filter: any = { slug };
-    if (topicId) {
-      filter.topicId = topicId;
-    } else {
-      // No topic: ensure we only clash with notes that also have no topic
-      filter.topicId = { $exists: false };
-    }
-
-    const exists = await NoteModel.findOne(filter).select('_id').lean();
-    if (!exists) return slug;
-
-    slug = `${baseSlug}-${i++}`;
-  }
-}
 
 // Find or create a Subject from a free-form label (like ImportResultsDialog)
 async function findOrCreateSubjectByLabel(
@@ -75,7 +27,7 @@ async function findOrCreateSubjectByLabel(
     // create a new subject (Document)
     const created = await SubjectModel.create({
       name,
-      slug: slugify(name),
+      slug: slugifyAscentStripping(name),
       description: '',
     });
 
@@ -109,7 +61,7 @@ async function findOrCreateTopicByLabel(
 
   const created = await TopicModel.create({
     name,
-    slug: slugify(name),
+    slug: slugifyAscentStripping(name),
     subjectId,
     description: '',
   });
@@ -297,7 +249,7 @@ router.post('/:id/convert', async (req, res) => {
     subjectId = await findOrCreateSubjectByLabel(subjectLabel, subjectId);
     topicId = await findOrCreateTopicByLabel(topicLabel, subjectId, topicId);
 
-    const baseSlug = slugify(quick.title || 'note');
+    const baseSlug = slugifyAscentStripping(quick.title || 'note');
     const uniqueSlug = await dedupeSlug(
       baseSlug,
       topicId ? topicId.toString() : undefined

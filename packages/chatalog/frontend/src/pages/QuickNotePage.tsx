@@ -38,16 +38,7 @@ import {
 } from '../features/quickNotes/quickNotesApi';
 import { useGetSubjectsWithTopicsQuery } from '../features/subjects/subjectsApi';
 import type { Subject, Topic } from '@chatorama/chatalog-shared';
-
-type QuickNote = {
-  id: string;
-  title: string;
-  markdown: string;
-  subjectId?: string;
-  topicId?: string;
-  createdAt: string;
-  updatedAt: string;
-};
+import type { QuickNote } from '../types/entities';
 
 export default function QuickNotePage() {
   const { quickNoteId } = useParams<{ quickNoteId: string }>();

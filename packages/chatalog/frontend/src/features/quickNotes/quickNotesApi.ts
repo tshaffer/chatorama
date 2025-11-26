@@ -1,15 +1,5 @@
-import type { BaseQueryFn } from '@reduxjs/toolkit/query';
 import { chatalogApi as baseApi } from '../api/chatalogApi';
-
-export type QuickNote = {
-  id: string;
-  title: string;
-  markdown: string;
-  subjectId?: string;
-  topicId?: string;
-  createdAt: string;
-  updatedAt: string;
-};
+import type { QuickNote } from '../../types/entities';
 
 type ListParams = {
   q?: string;

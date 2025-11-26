@@ -1,34 +1,15 @@
 import { Request, Response } from 'express';
 import { NoteModel } from '../models/Note';
-import type {
-  TopicNotesWithRelations,
-  NotePreview,
-  NoteRelation,
-  MergeNotesRequest,
-  MergeNotesResult,
+import {
+  type TopicNotesWithRelations,
+  type NotePreview,
+  type NoteRelation,
+  type MergeNotesRequest,
+  type MergeNotesResult,
+  slugifyStandard,
 } from '@chatorama/chatalog-shared';
+import { toPreview } from '../utilities';
 
-
-// keep your shared slugify if you have one
-function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-}
-
-function toPreview(doc: any): NotePreview {
-  return {
-    id: String(doc._id ?? doc.id),
-    title: doc.title ?? 'Untitled',
-    summary: doc.summary,
-
-    // 🔹 NEW: pass through status when present
-    status: doc.status,
-
-    tags: doc.tags ?? [],
-    updatedAt: (doc.updatedAt instanceof Date
-      ? doc.updatedAt.toISOString()
-      : doc.updatedAt ?? new Date().toISOString()),
-  };
-}
 
 // Ensure slug is unique within a topic; optionally exclude current note id
 async function dedupeNoteSlug(topicId: string | undefined, base: string, excludeId?: string): Promise<string> {
@@ -275,7 +256,7 @@ export async function mergeNotesInTopic(req: Request, res: Response) {
   const finalTitle = (title ?? '').trim() || primary.title || 'Untitled';
   const finalSlug = await dedupeNoteSlug(
     topicId,
-    slugify(finalTitle || 'untitled'),
+    slugifyStandard(finalTitle || 'untitled'),
     primaryNoteId,
   );
 
@@ -325,12 +306,12 @@ export async function patchNote(req: Request, res: Response) {
 
   // If client didn’t provide a slug but did change title, derive + dedupe
   if (typeof patch.title === 'string' && !patch.slug) {
-    const base = slugify(patch.title);
+    const base = slugifyStandard(patch.title);
     patch.slug = await dedupeNoteSlug(patch.topicId ?? current.topicId, base, id);
   }
   // If client provided a slug explicitly, normalize and dedupe as well
   if (typeof patch.slug === 'string') {
-    const base = slugify(patch.slug);
+    const base = slugifyStandard(patch.slug);
     patch.slug = await dedupeNoteSlug(patch.topicId ?? current.topicId, base, id);
   }
 

@@ -1,10 +1,7 @@
 // models/Subject.ts
 import mongoose, { Schema, Document, Types } from 'mongoose';
 import { applyToJSON } from '../db/toJsonPlugin';
-
-function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-}
+import { slugifyStandard } from '@chatorama/chatalog-shared';
 
 export interface SubjectDoc extends Document {
   _id: Types.ObjectId;
@@ -31,9 +28,9 @@ const SubjectSchema = new Schema<SubjectDoc>(
 // Ensure a slug exists; regenerate on name change unless $locals.preserveSlug
 SubjectSchema.pre('validate', function (next) {
   if (!this.slug || this.slug.trim() === '') {
-    this.slug = slugify(this.name || '');
+    this.slug = slugifyStandard(this.name || '');
   } else if (this.isModified('name') && !this.$locals?.preserveSlug) {
-    this.slug = slugify(this.name || '');
+    this.slug = slugifyStandard(this.name || '');
   }
   next();
 });

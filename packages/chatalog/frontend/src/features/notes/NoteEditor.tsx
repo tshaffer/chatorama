@@ -8,14 +8,15 @@ import {
   useGetAllNotesForRelationsQuery,
   useGetTopicNotesWithRelationsQuery, // ⬅️ NEW
 } from './notesApi';
-import type {
-  Note,
-  NoteRelation,
-  NoteRelationKind,
-  NoteRelationTargetType,
-  Subject,
-  Topic,
-  NotePreview,
+import {
+  type Note,
+  type NoteRelation,
+  type NoteRelationKind,
+  type NoteRelationTargetType,
+  type Subject,
+  type Topic,
+  type NotePreview,
+  slugifyStandard,
 } from '@chatorama/chatalog-shared';
 import {
   Box,
@@ -226,10 +227,6 @@ function takeObjectId(s?: string) {
 }
 
 // Slug helper for subject/topic links
-function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-}
-
 // ---------------- relations helpers ----------------
 
 const ALL_TARGET_TYPES: NoteRelationTargetType[] = ['note', 'topic', 'subject'];
@@ -349,7 +346,7 @@ export default function NoteEditor({
 
   const goToNote = (target: any | undefined) => {
     if (!target) return;
-    const slug = slugify(target.title || 'note');
+    const slug = slugifyStandard(target.title || 'note');
     navigate(`/n/${target.id}-${slug}`);
   };
 
@@ -569,9 +566,9 @@ export default function NoteEditor({
         const topic = (topics as Topic[]).find((t) => t.id === target.topicId);
 
         if (subj && topic) {
-          const subjSlug = slugify(subj.name);
-          const topicSlug = slugify(topic.name);
-          const noteSlug = slugify(target.label || 'note');
+          const subjSlug = slugifyStandard(subj.name);
+          const topicSlug = slugifyStandard(topic.name);
+          const noteSlug = slugifyStandard(target.label || 'note');
 
           navigate(
             `/s/${subj.id}-${subjSlug}/t/${topic.id}-${topicSlug}/n/${target.id}-${noteSlug}`,
@@ -588,7 +585,7 @@ export default function NoteEditor({
     if (rel.targetType === 'subject') {
       const subj = (subjects as Subject[]).find((s) => s.id === rel.targetId);
       if (!subj) return;
-      const slug = slugify(subj.name);
+      const slug = slugifyStandard(subj.name);
       navigate(`/s/${subj.id}-${slug}`);
       return;
     }
@@ -600,8 +597,8 @@ export default function NoteEditor({
       const subj = (subjects as Subject[]).find((s) => s.id === topic.subjectId);
       if (!subj) return;
 
-      const subjSlug = slugify(subj.name);
-      const topicSlug = slugify(topic.name);
+      const subjSlug = slugifyStandard(subj.name);
+      const topicSlug = slugifyStandard(topic.name);
       navigate(`/s/${subj.id}-${subjSlug}/t/${topic.id}-${topicSlug}`);
     }
   };
@@ -1118,7 +1115,7 @@ export default function NoteEditor({
                       variant="outlined"
                       label={`Subject: ${noteSubject.name}`}
                       onClick={() => {
-                        const slug = slugify(noteSubject.name);
+                        const slug = slugifyStandard(noteSubject.name);
                         navigate(`/s/${noteSubject.id}-${slug}`);
                       }}
                     />
@@ -1131,8 +1128,8 @@ export default function NoteEditor({
                       onClick={() => {
                         const subj = noteSubject;
                         if (!subj) return;
-                        const subjSlug = slugify(subj.name);
-                        const topicSlug = slugify(noteTopic.name);
+                        const subjSlug = slugifyStandard(subj.name);
+                        const topicSlug = slugifyStandard(noteTopic.name);
                         navigate(`/s/${subj.id}-${subjSlug}/t/${noteTopic.id}-${topicSlug}`);
                       }}
                     />
