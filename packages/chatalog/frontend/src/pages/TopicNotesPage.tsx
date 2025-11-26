@@ -28,6 +28,7 @@ import {
 import { useGetTopicRelationsSummaryQuery } from '../features/subjects/subjectsApi';
 import ReorderableNotesList from '../features/notes/ReorderableNotesList';
 import MoveNotesDialog from '../features/notes/MoveNotesDialog';
+import MergeNotesDialog from '../features/notes/MergeNotesDialog';
 import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
 import LinkNoteToTargetDialog from '../features/relations/LinkNoteToTargetDialog';
 import { NoteStatusIndicator } from '../features/notes/NoteStatusIndicator';
@@ -54,6 +55,7 @@ export default function TopicNotesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [linkTopicDialogOpen, setLinkTopicDialogOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const clearSelection = () => setSelectedIds(new Set());
@@ -108,6 +110,10 @@ export default function TopicNotesPage() {
   const allIds = useMemo(
     () => notes.map(n => String((n as any).id ?? (n as any)._id)),
     [notes],
+  );
+  const selectedNotes = useMemo(
+    () => notes.filter(n => selectedIds.has(n.id)),
+    [notes, selectedIds],
   );
 
   const handleConfirmDelete = useCallback(async () => {
@@ -235,6 +241,18 @@ export default function TopicNotesPage() {
                       onClick={() => setMoveOpen(true)}
                     >
                       Move ({selectedIds.size})
+                    </Button>
+                  </span>
+                </Tooltip>
+                <Tooltip title="Merge selected notes into one">
+                  <span>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      disabled={selectedIds.size < 2}
+                      onClick={() => setMergeOpen(true)}
+                    >
+                      Merge ({selectedIds.size})
                     </Button>
                   </span>
                 </Tooltip>
@@ -463,6 +481,19 @@ export default function TopicNotesPage() {
               noteIds={[...selectedIds]}
               source={{ subjectId, topicId }}
             />
+            {topicId && (
+              <MergeNotesDialog
+                open={mergeOpen}
+                topicId={topicId}
+                notes={selectedNotes}
+                onClose={() => setMergeOpen(false)}
+                onMerged={() => {
+                  setMergeOpen(false);
+                  clearSelection();
+                  refetchNotes();
+                }}
+              />
+            )}
 
             {/* DELETE CONFIRMATION DIALOG */}
             <Dialog

@@ -6,6 +6,8 @@ import type {
   MoveNotesPayload,
   MoveNotesResult,
   TopicNotesWithRelations,
+  MergeNotesRequest,
+  MergeNotesResult,
 } from '@chatorama/chatalog-shared';
 import { chatalogApi as baseApi } from '../api/chatalogApi';
 import { subjectsApi } from '../subjects/subjectsApi';
@@ -206,6 +208,28 @@ export const notesApi = baseApi.injectEndpoints({
         return tags;
       },
     }),
+
+    mergeNotesInTopic: build.mutation<
+      MergeNotesResult,
+      MergeNotesRequest & { subjectId?: string }
+    >({
+      query: ({ topicId, primaryNoteId, noteIdsInOrder, title }) => ({
+        url: `topics/${topicId}/merge-notes`,
+        method: 'POST',
+        body: { primaryNoteId, noteIdsInOrder, title },
+      }),
+      invalidatesTags: (_res, _err, { subjectId, topicId, primaryNoteId, noteIdsInOrder }) => {
+        const tags: { type: 'Note'; id: string }[] = [{ type: 'Note', id: 'LIST' }];
+        if (subjectId) {
+          tags.push({ type: 'Note', id: `LIST:${subjectId}:${topicId}` });
+        }
+        const ids = Array.from(
+          new Set([...(noteIdsInOrder ?? []), primaryNoteId].filter(Boolean) as string[]),
+        );
+        tags.push(...ids.map((id) => ({ type: 'Note' as const, id }))); // merged + deleted
+        return tags;
+      },
+    }),
   }),
   overrideExisting: true,
 });
@@ -219,4 +243,5 @@ export const {
   useMoveNotesMutation,
   useGetTopicNotesWithRelationsQuery,
   useGetAllNotesForRelationsQuery,
+  useMergeNotesInTopicMutation,
 } = notesApi;

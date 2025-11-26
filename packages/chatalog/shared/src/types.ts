@@ -119,6 +119,18 @@ export interface MoveNotesResult {
   dest: { subjectId: string; topicId: string; assignedOrders?: Record<string, number> };
 }
 
+export interface MergeNotesRequest {
+  topicId: string;
+  primaryNoteId: string;
+  noteIdsInOrder: string[];
+  title?: string;
+}
+
+export interface MergeNotesResult {
+  mergedNoteId: string;
+  deletedNoteIds: string[];
+}
+
 // --- Subject-level relations summary ---
 
 export interface RelatedTopicSummary {

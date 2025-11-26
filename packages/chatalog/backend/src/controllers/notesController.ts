@@ -1,6 +1,12 @@
 import { Request, Response } from 'express';
 import { NoteModel } from '../models/Note';
-import type { TopicNotesWithRelations, NotePreview, NoteRelation } from '@chatorama/chatalog-shared';
+import type {
+  TopicNotesWithRelations,
+  NotePreview,
+  NoteRelation,
+  MergeNotesRequest,
+  MergeNotesResult,
+} from '@chatorama/chatalog-shared';
 
 
 // keep your shared slugify if you have one
@@ -216,6 +222,84 @@ export async function createNote(req: Request, res: Response) {
   });
 
   res.status(201).json(doc.toJSON());
+}
+
+export async function mergeNotesInTopic(req: Request, res: Response) {
+  const { topicId } = req.params;
+  const { primaryNoteId, noteIdsInOrder, title } =
+    (req.body ?? {}) as MergeNotesRequest;
+
+  if (!topicId) {
+    return res.status(400).json({ message: 'topicId is required' });
+  }
+  if (!Array.isArray(noteIdsInOrder) || noteIdsInOrder.length < 2) {
+    return res.status(400).json({ message: 'noteIdsInOrder[] with 2+ ids is required' });
+  }
+  if (!primaryNoteId || !noteIdsInOrder.includes(primaryNoteId)) {
+    return res.status(400).json({ message: 'primaryNoteId must be included in noteIdsInOrder' });
+  }
+
+  const uniqueIds = Array.from(new Set(noteIdsInOrder));
+  const notes = await NoteModel.find({ _id: { $in: uniqueIds }, topicId }).lean();
+  if (notes.length < uniqueIds.length) {
+    return res.status(404).json({ message: 'One or more notes not found in this topic' });
+  }
+
+  const byId = new Map<string, any>();
+  for (const n of notes) {
+    if (String(n.topicId) !== String(topicId)) {
+      return res.status(400).json({ message: 'All notes must belong to the target topic' });
+    }
+    byId.set(String(n._id), n);
+  }
+
+  const ordered = uniqueIds.filter((id) => byId.has(id));
+  const primary = byId.get(primaryNoteId);
+  if (!primary) {
+    return res.status(404).json({ message: 'Primary note not found in this topic' });
+  }
+
+  const tagsSet = new Set<string>();
+  ordered.forEach((id) => {
+    const note = byId.get(id);
+    (note?.tags ?? []).forEach((t: string) => tagsSet.add(t));
+  });
+
+  const mergedMarkdown = ordered
+    .map((id) => {
+      const note = byId.get(id);
+      return (note?.markdown ?? '').toString();
+    })
+    .join('\n\n---\n\n');
+
+  const finalTitle = (title ?? '').trim() || primary.title || 'Untitled';
+  const finalSlug = await dedupeNoteSlug(
+    topicId,
+    slugify(finalTitle || 'untitled'),
+    primaryNoteId,
+  );
+
+  await NoteModel.findByIdAndUpdate(primaryNoteId, {
+    $set: {
+      title: finalTitle,
+      slug: finalSlug,
+      markdown: mergedMarkdown,
+      tags: Array.from(tagsSet),
+      updatedAt: new Date(),
+    },
+  });
+
+  const deletedNoteIds = ordered.filter((id) => id !== primaryNoteId);
+  if (deletedNoteIds.length) {
+    await NoteModel.deleteMany({ _id: { $in: deletedNoteIds } });
+  }
+
+  const payload: MergeNotesResult = {
+    mergedNoteId: primaryNoteId,
+    deletedNoteIds,
+  };
+
+  res.json(payload);
 }
 
 // controllers/notesController.ts
