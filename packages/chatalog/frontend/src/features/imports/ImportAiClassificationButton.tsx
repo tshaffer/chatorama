@@ -9,6 +9,7 @@ import {
   IconButton,
   Backdrop,
   Box,
+  Portal,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
@@ -160,41 +161,49 @@ export default function ImportAiClassificationButton({
     ) : null;
 
   const overlay = (
-    <Backdrop
-      open={busy}
-      sx={{
-        color: '#fff',
-        zIndex: (theme) => theme.zIndex.modal + 1,
-      }}
-    >
-      <Box
+    <Portal>
+      <Backdrop
+        open={busy}
         sx={{
-          display: 'flex',
-          gap: 1,
-          '@keyframes pulse': {
-            '0%, 80%, 100%': { transform: 'scale(0)', opacity: 0.4 },
-            '40%': { transform: 'scale(1)', opacity: 1 },
-          },
-          '& .dot': {
-            width: 10,
-            height: 10,
-            borderRadius: '50%',
-            bgcolor: 'common.white',
-            animation: 'pulse 1.2s infinite ease-in-out both',
-          },
-          '& .dot:nth-of-type(2)': {
-            animationDelay: '0.2s',
-          },
-          '& .dot:nth-of-type(3)': {
-            animationDelay: '0.4s',
-          },
+          color: '#fff',
+          // Keep spinner above the ImportResultsDialog paper/backdrop
+          zIndex: (theme) => theme.zIndex.modal + 20,
+          position: 'fixed',
+          bgcolor: 'rgba(0,0,0,0.6)',
         }}
       >
-        <Box className="dot" />
-        <Box className="dot" />
-        <Box className="dot" />
-      </Box>
-    </Backdrop>
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 1,
+            '@keyframes pulse': {
+              '0%, 80%, 100%': { transform: 'scale(0)', opacity: 0.4 },
+              '40%': { transform: 'scale(1)', opacity: 1 },
+            },
+            '& .dot': {
+              width: 10,
+              height: 10,
+              borderRadius: '50%',
+              bgcolor: 'common.white',
+              animation: 'pulse 1.2s infinite ease-in-out both',
+              // Fallback visibility even if animation is suppressed
+              opacity: 0.8,
+              transform: 'scale(1)',
+            },
+            '& .dot:nth-of-type(2)': {
+              animationDelay: '0.2s',
+            },
+            '& .dot:nth-of-type(3)': {
+              animationDelay: '0.4s',
+            },
+          }}
+        >
+          <Box className="dot" />
+          <Box className="dot" />
+          <Box className="dot" />
+        </Box>
+      </Backdrop>
+    </Portal>
   );
 
   const buttonDisabled = busy;
