@@ -9,7 +9,8 @@
 //   # BRIEF MODE: only files that are none/partial, with prompt snippets
 //   MONGO_URI="mongodb://localhost:27017/chatalog_dev" \
 //     npx ts-node scripts/check-chatworthy-files-against-db.ts /path/to/chatworthy/exports --brief
-//
+//     npx ts-node scripts/check-chatworthy-files-against-db.ts /Users/tedshaffer/Documents/ChatworthyExports/manual --brief
+
 // This script:
 //   - Scans a directory recursively for .md files
 //   - For each file, parses Chatworthy front matter + anchors:
