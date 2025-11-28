@@ -5,6 +5,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   useGetNoteQuery,
   useUpdateNoteMutation,
+  useDeleteNoteMutation,
   useGetAllNotesForRelationsQuery,
   useGetTopicNotesWithRelationsQuery, // ⬅️ NEW
 } from './notesApi';
@@ -272,6 +273,7 @@ export default function NoteEditor({
   });
 
   const [updateNote, { isLoading: isSaving }] = useUpdateNoteMutation();
+  const [deleteNote, { isLoading: isDeleting }] = useDeleteNoteMutation();
 
   // Data for pickers
   const { data: subjects = [] } = useGetSubjectsQuery();
@@ -348,6 +350,46 @@ export default function NoteEditor({
     if (!target) return;
     const slug = slugifyStandard(target.title || 'note');
     navigate(`/n/${target.id}-${slug}`);
+  };
+
+  const goToSubjectOverview = (subjectId?: string) => {
+    if (!subjectId) {
+      navigate('/notes');
+      return;
+    }
+    const subj = (subjects as Subject[]).find((s) => s.id === subjectId);
+    const slug = slugifyStandard(subj?.name || 'subject');
+    navigate(`/s/${subjectId}-${slug}`);
+  };
+
+  const handleDeleteNote = async () => {
+    if (!note || isDeleting) return;
+    const noteIdToDelete = (note as Note).id;
+    const subjectId = (note as Note).subjectId;
+    const topicId = (note as Note).topicId;
+
+    const list = topicNotes?.notes ?? [];
+    const idx = list.findIndex((n) => n.id === noteIdToDelete);
+    const fallback =
+      idx !== -1
+        ? list[idx + 1] || list[idx - 1] || undefined
+        : undefined;
+
+    const confirmed = window.confirm('Delete this note? This cannot be undone.');
+    if (!confirmed) return;
+
+    try {
+      await deleteNote({ noteId: noteIdToDelete }).unwrap();
+      if (fallback) {
+        goToNote(fallback);
+      } else if (subjectId && topicId) {
+        goToSubjectOverview(subjectId);
+      } else {
+        navigate('/notes');
+      }
+    } catch (err) {
+      console.error('Failed to delete note', err);
+    }
   };
 
   // Preview-first UX: start with editor hidden
@@ -705,6 +747,20 @@ export default function NoteEditor({
                 disabled={isLoading || isSaving}
               >
                 {editing ? 'Done' : 'Edit'}
+              </Button>
+            </span>
+          </Tooltip>
+          <Tooltip title="Delete this note">
+            <span>
+              <Button
+                size="small"
+                color="error"
+                variant="outlined"
+                startIcon={<DeleteIcon />}
+                onClick={handleDeleteNote}
+                disabled={isLoading || isSaving || isDeleting}
+              >
+                {isDeleting ? 'Deleting…' : 'Delete'}
               </Button>
             </span>
           </Tooltip>
