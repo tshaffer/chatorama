@@ -1,6 +1,5 @@
 // src/router.tsx
 import { createBrowserRouter, Navigate } from 'react-router-dom';
-import AppShell from './AppShell';
 import Home from './pages/Home';
 import SubjectsPage from './pages/Subjects';
 import TopicNotesPage from './pages/TopicNotesPage';
@@ -9,11 +8,12 @@ import SubjectIndex from './pages/SubjectIndex';
 import QuickNotesPage from './pages/QuickNotes';
 import QuickNotePage from './pages/QuickNotePage';
 import RelationsPage from './pages/RelationsPage';
+import TmpShell from './TmpShell';
 
 export const router = createBrowserRouter([
   {
     path: '/',
-    element: <AppShell />,
+    element: <TmpShell />,
     children: [
       { index: true, element: <Home /> },
       { path: 'home', element: <Home /> },
