@@ -2,6 +2,11 @@
 import { AppBar, Toolbar, Typography, Box } from '@mui/material';
 
 export default function TmpShell() {
+
+  let test = 1;
+
+  debugger;
+
   return (
     <Box sx={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column' }}>
       <AppBar position="sticky" color="primary" enableColorOnDark>
@@ -13,18 +18,36 @@ export default function TmpShell() {
       </AppBar>
 
       {/* Full-width main area with small side padding */}
-      <Box
-        component="main"
-        sx={{
-          flex: 1,
-          width: '100%',
-          px: { xs: 1, sm: 1.5 },   // tiny margins (~8–12px each side)
-          py: 3,
-          minWidth: 0,              // prevents child overflow clipping
-        }}
-      >
-        pizza
-      </Box>
+      {(test === 0 &&
+        <Box
+          component="main"
+          sx={{
+            flex: 1,
+            width: '100%',
+            px: { xs: 1, sm: 1.5 },   // tiny margins (~8–12px each side)
+            py: 3,
+            minWidth: 0,              // prevents child overflow clipping
+          }}
+        >
+          pizza
+        </Box>
+      )}
+      
+      {(test === 1 &&
+        <Box
+          component="main"
+          sx={{
+            flex: 1,
+            width: '100%',
+            px: { xs: 1, sm: 1.5 },   // tiny margins (~8–12px each side)
+            py: 3,
+            minWidth: 0,              // prevents child overflow clipping
+          }}
+        >
+          burger
+        </Box>
+      )}
+      
     </Box>
   );
 }
