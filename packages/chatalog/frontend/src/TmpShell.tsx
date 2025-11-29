@@ -5,18 +5,23 @@ export default function TmpShell() {
   // flip between test0 and test1 as needed
   const test: number = 1;
 
+  // Key principle: The page itself doesn't scroll.
+  // The content below the AppBar fills the rest of the height and manages its own internal scrolling.
   return (
     <>
-      <CssBaseline /> {/* Optional: helps normalize CSS across browsers */}
+      <CssBaseline />
       <Box
         id="tmpShell"
         sx={{
           minHeight: '100dvh',
           display: 'flex',
           flexDirection: 'column',
+          // Ensure the main app container is the only thing taking up the screen height
+          // and does not introduce a main page scrollbar.
+          overflow: 'hidden',
         }}
       >
-        <AppBar position="sticky" color="primary" enableColorOnDark>
+        <AppBar position="static" color="primary" enableColorOnDark>
           <Toolbar disableGutters sx={{ px: { xs: 1, sm: 1.5 } }}>
             <Typography variant="h6" sx={{ flexGrow: 1 }}>
               Chatalog
@@ -24,14 +29,13 @@ export default function TmpShell() {
           </Toolbar>
         </AppBar>
 
-        {/* The main content area below the AppBar */}
+        {/* The main content area below the AppBar - this flex item fills the remaining vertical space */}
         {test === 0 && (
           <Box
             id="test0"
             sx={{
               flex: 1,
-              // minHeight: 0 is important when the parent uses flex: 1 and has a defined height (100dvh)
-              minHeight: 0,
+              minHeight: 0, // Crucial for flex item sizing
               px: { xs: 1, sm: 1.5 },
               py: 2,
               overflowY: 'auto', // This makes the entire main content area scrollable
@@ -49,8 +53,8 @@ export default function TmpShell() {
           <Box
             id="test1"
             sx={{
-              flex: 1,
-              minHeight: 0,
+              flex: 1, // Fills the rest of the vertical height in #tmpShell
+              minHeight: 0, // Prevents flex item from growing past container height
               px: { xs: 1, sm: 1.5 },
               py: 2,
               display: 'flex',
@@ -61,7 +65,6 @@ export default function TmpShell() {
           >
             <Box
               id='fixedHeader'
-              // This component naturally respects flexbox layout and does not scroll with the content below it.
               sx={{
                 height: 64,
                 border: '1px solid',
@@ -70,8 +73,7 @@ export default function TmpShell() {
                 px: 2,
                 display: 'flex',
                 alignItems: 'center',
-                // Optional: ensure it doesn't shrink if space is tight
-                flexShrink: 0,
+                flexShrink: 0, // Prevents this fixed header from shrinking
               }}
             >
               Fixed 64px header (test1)
@@ -80,8 +82,8 @@ export default function TmpShell() {
             <Box
               id='scrollableFill'
               sx={{
-                flex: 1,
-                minHeight: 0, // This is crucial for flex items with overflowY: 'auto'
+                flex: 1, // Takes all remaining space below fixedHeader
+                minHeight: 0, // Ensures overflowY: 'auto' works correctly
                 overflowY: 'auto',
                 overflowX: 'hidden',
                 border: '1px dashed',
