@@ -26,6 +26,8 @@ export interface NoteDoc extends Document {
   chatworthyTurnIndex?: number;
   chatworthyTotalTurns?: number;
 
+  importBatchId?: string;
+
   order: number;
   createdAt: Date;
   updatedAt: Date;
@@ -84,6 +86,8 @@ const NoteSchema = new Schema<NoteDoc>(
     chatworthyFileName:   { type: String },
     chatworthyTurnIndex:  { type: Number },
     chatworthyTotalTurns: { type: Number },
+
+    importBatchId: { type: String, index: true },
 
     order:     { type: Number, required: true, default: 0, index: true },
   },

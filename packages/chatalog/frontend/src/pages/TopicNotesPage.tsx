@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState } from 'react';
+import { useMemo, useCallback, useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Box,
@@ -25,6 +25,10 @@ import {
   useReorderNotesInTopicMutation,
   useDeleteNoteMutation,
 } from '../features/notes/notesApi';
+import {
+  useGetImportBatchesQuery,
+  useGetImportBatchNotesQuery,
+} from '../features/imports/importsApi';
 import { useGetTopicRelationsSummaryQuery } from '../features/subjects/subjectsApi';
 import ReorderableNotesList from '../features/notes/ReorderableNotesList';
 import MoveNotesDialog from '../features/notes/MoveNotesDialog';
@@ -57,6 +61,16 @@ export default function TopicNotesPage() {
   const [moveOpen, setMoveOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelectedBatchId(null);
+    setSelectedIds(new Set());
+  }, [subjectSlug, topicSlug]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [selectedBatchId]);
 
   const clearSelection = () => setSelectedIds(new Set());
   const toggleSelect = useCallback((id: string) => {
@@ -83,6 +97,19 @@ export default function TopicNotesPage() {
     refetchOnMountOrArgChange: true,
   });
 
+  const { data: importBatches = [], refetch: refetchBatches } = useGetImportBatchesQuery();
+  const selectedBatch = useMemo(
+    () => importBatches.find((b) => b.id === selectedBatchId) ?? null,
+    [importBatches, selectedBatchId],
+  );
+  const {
+    data: batchNotes = [],
+    isLoading: batchLoading,
+    isError: batchError,
+    error: batchErrorObj,
+    refetch: refetchBatchNotes,
+  } = useGetImportBatchNotesQuery(selectedBatchId ?? skipToken);
+
   const {
     data: topicRelSummary,
     isLoading: topicRelLoading,
@@ -97,23 +124,30 @@ export default function TopicNotesPage() {
   const relatedSubjectNotes = data?.relatedSubjectNotes ?? [];
   const relatedDirectNotes = data?.relatedDirectNotes ?? [];
 
+  const isBatchMode = !!selectedBatchId;
+  const activeNotes = isBatchMode ? batchNotes : notes;
+  const activeLoading = isBatchMode ? batchLoading : isLoading;
+  const activeError = isBatchMode ? batchError : isError;
+  const activeErrorObj = isBatchMode ? batchErrorObj : error;
+
   const onReordered = useCallback(
     (noteIdsInOrder: string[]) => {
+      if (selectedBatchId) return;
       if (!subjectId || !topicId) return;
       reorder({ subjectId, topicId, noteIdsInOrder });
     },
-    [reorder, subjectId, topicId],
+    [reorder, subjectId, topicId, selectedBatchId],
   );
 
   const onOpenNote = (noteId: string) => navigate(`/n/${noteId}`);
 
   const allIds = useMemo(
-    () => notes.map(n => String((n as any).id ?? (n as any)._id)),
-    [notes],
+    () => activeNotes.map(n => String((n as any).id ?? (n as any)._id)),
+    [activeNotes],
   );
   const selectedNotes = useMemo(
-    () => notes.filter(n => selectedIds.has(n.id)),
-    [notes, selectedIds],
+    () => activeNotes.filter(n => selectedIds.has(n.id)),
+    [activeNotes, selectedIds],
   );
 
   const handleConfirmDelete = useCallback(async () => {
@@ -127,11 +161,15 @@ export default function TopicNotesPage() {
 
       setDeleteDialogOpen(false);
       clearSelection();
-      await refetchNotes();
+      if (selectedBatchId) {
+        await Promise.all([refetchBatchNotes(), refetchBatches()]);
+      } else {
+        await refetchNotes();
+      }
     } catch (e) {
       setDeleteDialogOpen(false);
     }
-  }, [deleteNote, hasSelection, selectedIds, refetchNotes]);
+  }, [deleteNote, hasSelection, selectedIds, refetchNotes, refetchBatchNotes, refetchBatches, selectedBatchId, clearSelection]);
 
   const renderRelatedList = (
     title: string,
@@ -176,7 +214,37 @@ export default function TopicNotesPage() {
       }}
     >
       {/* LEFT: hierarchy tree */}
-      <SubjectTopicTree width={260} />
+      <Box
+        sx={{
+          width: 260,
+          flexShrink: 0,
+          borderRight: (theme) => `1px solid ${theme.palette.divider}`,
+          pr: 1.5,
+          mr: 1.5,
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          maxHeight: '100%',
+          overflowY: 'auto',
+          gap: 2,
+        }}
+      >
+        <SubjectTopicTree
+          width="100%"
+          disableBorder
+          onSubjectSelected={() => setSelectedBatchId(null)}
+          onTopicSelected={() => setSelectedBatchId(null)}
+        />
+
+        <ImportHistorySection
+          batches={importBatches}
+          selectedBatchId={selectedBatchId}
+          onSelectBatch={(id) => {
+            setSelectedBatchId(id);
+            clearSelection();
+          }}
+        />
+      </Box>
 
       {/* RIGHT: notes UI */}
       <Box
@@ -190,7 +258,7 @@ export default function TopicNotesPage() {
           minHeight: 0,
         }}
       >
-        {!subjectId || !topicId ? (
+        {(!subjectId || !topicId) && !isBatchMode ? (
           <Box sx={{ flex: 1 }}>
             <Typography variant="h6" sx={{ mb: 1 }}>
               No topic selected
@@ -208,13 +276,25 @@ export default function TopicNotesPage() {
               justifyContent="space-between"
               sx={{ mb: 1 }}
             >
-              <Typography variant="h6">Notes</Typography>
+              <Box>
+                <Typography variant="h6">
+                  {isBatchMode && selectedBatch
+                    ? `Import on ${new Date(selectedBatch.createdAt).toLocaleString()}`
+                    : 'Notes'}
+                </Typography>
+                {isBatchMode && selectedBatch && (
+                  <Typography variant="body2" color="text.secondary">
+                    {selectedBatch.importedCount} notes imported,{' '}
+                    {selectedBatch.remainingCount} currently in Chatalog
+                  </Typography>
+                )}
+              </Box>
               <Toolbar disableGutters sx={{ gap: 1, minHeight: 'auto' }}>
                 <Tooltip title="Select all notes in this topic">
                   <span>
                     <Button
                       size="small"
-                      disabled={!notes.length}
+                      disabled={!activeNotes.length}
                       onClick={() => selectAll(allIds)}
                     >
                       Select All
@@ -249,7 +329,7 @@ export default function TopicNotesPage() {
                     <Button
                       size="small"
                       variant="contained"
-                      disabled={selectedIds.size < 2}
+                      disabled={selectedIds.size < 2 || isBatchMode}
                       onClick={() => setMergeOpen(true)}
                     >
                       Merge ({selectedIds.size})
@@ -281,188 +361,192 @@ export default function TopicNotesPage() {
                 overflowY: 'auto',
               }}
             >
-              {isError ? (
+              {activeError ? (
                 <Box>
                   <Typography color="error" sx={{ mb: 1 }}>
                     Failed to load notes.
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     {String(
-                      (error as any)?.data ??
-                      (error as any)?.message ??
-                      error,
+                      (activeErrorObj as any)?.data ??
+                      (activeErrorObj as any)?.message ??
+                      activeErrorObj,
                     )}
                   </Typography>
                 </Box>
-              ) : isLoading ? (
+              ) : activeLoading ? (
                 <LinearProgress />
-              ) : notes.length ? (
+              ) : activeNotes.length ? (
                 <>
                   <ReorderableNotesList
-                    topicId={topicId}
-                    notes={notes}
+                    topicId={selectedBatchId || topicId || ''}
+                    notes={activeNotes}
                     selectedIds={selectedIds}
                     onToggleSelect={toggleSelect}
-                    onReordered={onReordered}
+                    onReordered={isBatchMode ? () => {} : onReordered}
                     onOpenNote={onOpenNote}
                   />
 
-                  {renderRelatedList(
-                    'Related notes by subject',
-                    relatedSubjectNotes,
-                  )}
-                  {renderRelatedList(
-                    'Directly related notes',
-                    relatedDirectNotes,
-                  )}
-
-                  {/* Incoming references */}
-                  <Box sx={{ mt: 3 }}>
-                    <Stack
-                      direction="row"
-                      alignItems="center"
-                      justifyContent="space-between"
-                      sx={{ mb: 1 }}
-                    >
-                      <Typography variant="subtitle1">
-                        Incoming references to this topic
-                      </Typography>
-                      {topicId && (
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          onClick={() => setLinkTopicDialogOpen(true)}
-                        >
-                          Link note to topic
-                        </Button>
+                  {!isBatchMode && (
+                    <>
+                      {renderRelatedList(
+                        'Related notes by subject',
+                        relatedSubjectNotes,
                       )}
-                    </Stack>
+                      {renderRelatedList(
+                        'Directly related notes',
+                        relatedDirectNotes,
+                      )}
 
-                    {topicRelLoading && !topicRelSummary && (
-                      <Typography variant="body2" color="text.secondary">
-                        Loading incoming relations…
-                      </Typography>
-                    )}
-
-                    {topicRelError && (
-                      <Typography variant="body2" color="error">
-                        Failed to load topic relations:{' '}
-                        {String(
-                          (topicRelErrorObj as any)?.data ??
-                          (topicRelErrorObj as any)?.message ??
-                          topicRelErrorObj,
-                        )}
-                      </Typography>
-                    )}
-
-                    {!topicRelLoading &&
-                      !topicRelError &&
-                      topicRelSummary && (
-                        <>
-                          {topicRelSummary.relatedTopics.length === 0 &&
-                            topicRelSummary.relatedNotes.length === 0 ? (
-                            <Typography
-                              variant="body2"
-                              color="text.secondary"
+                      {/* Incoming references */}
+                      <Box sx={{ mt: 3 }}>
+                        <Stack
+                          direction="row"
+                          alignItems="center"
+                          justifyContent="space-between"
+                          sx={{ mb: 1 }}
+                        >
+                          <Typography variant="subtitle1">
+                            Incoming references to this topic
+                          </Typography>
+                          {topicId && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => setLinkTopicDialogOpen(true)}
                             >
-                              No notes in other topics explicitly reference
-                              this topic yet.
-                            </Typography>
-                          ) : (
+                              Link note to topic
+                            </Button>
+                          )}
+                        </Stack>
+
+                        {topicRelLoading && !topicRelSummary && (
+                          <Typography variant="body2" color="text.secondary">
+                            Loading incoming relations…
+                          </Typography>
+                        )}
+
+                        {topicRelError && (
+                          <Typography variant="body2" color="error">
+                            Failed to load topic relations:{' '}
+                            {String(
+                              (topicRelErrorObj as any)?.data ??
+                              (topicRelErrorObj as any)?.message ??
+                              topicRelErrorObj,
+                            )}
+                          </Typography>
+                        )}
+
+                        {!topicRelLoading &&
+                          !topicRelError &&
+                          topicRelSummary && (
                             <>
-                              {topicRelSummary.relatedTopics.length > 0 && (
-                                <Box sx={{ mb: 2 }}>
-                                  <Typography
-                                    variant="subtitle2"
-                                    color="text.secondary"
-                                    sx={{ mb: 0.5 }}
-                                  >
-                                    Other topics that reference this one
-                                  </Typography>
-                                  <List dense>
-                                    {topicRelSummary.relatedTopics.map(rt => {
-                                      const t = rt.topic;
-                                      const sameSubject =
-                                        t.subjectId &&
-                                        t.subjectId === subjectId;
-                                      const subjectSlugForNav =
-                                        sameSubject && subjectSlug
-                                          ? subjectSlug
-                                          : t.subjectId
-                                            ? `${t.subjectId}-subject`
-                                            : '';
-
-                                      const topicSlugForNav = `${t.id}-${slugify(
-                                        t.name,
-                                      )}`;
-
-                                      const href =
-                                        subjectSlugForNav &&
-                                          topicSlugForNav
-                                          ? `/s/${subjectSlugForNav}/t/${topicSlugForNav}`
-                                          : undefined;
-
-                                      return (
-                                        <ListItemButton
-                                          key={t.id}
-                                          disabled={!href}
-                                          onClick={() => {
-                                            if (!href) return;
-                                            navigate(href);
-                                          }}
-                                        >
-                                          <ListItemText
-                                            primary={t.name}
-                                            secondary={
-                                              rt.noteCount === 1
-                                                ? '1 note in this topic references this topic.'
-                                                : `${rt.noteCount} notes in this topic reference this topic.`
-                                            }
-                                          />
-                                        </ListItemButton>
-                                      );
-                                    })}
-                                  </List>
-                                </Box>
-                              )}
-
-                              {topicRelSummary.relatedNotes.length > 0 && (
+                              {topicRelSummary.relatedTopics.length === 0 &&
+                                topicRelSummary.relatedNotes.length === 0 ? (
+                                <Typography
+                                  variant="body2"
+                                  color="text.secondary"
+                                >
+                                  No notes in other topics explicitly reference
+                                  this topic yet.
+                                </Typography>
+                              ) : (
                                 <>
-                                  <Typography
-                                    variant="subtitle2"
-                                    color="text.secondary"
-                                    sx={{ mb: 0.5 }}
-                                  >
-                                    Notes that reference this topic
-                                  </Typography>
-                                  <List dense>
-                                    {topicRelSummary.relatedNotes.map(n => (
-                                      <ListItemButton
-                                        key={n.id}
-                                        onClick={() => onOpenNote(n.id)}
+                                  {topicRelSummary.relatedTopics.length > 0 && (
+                                    <Box sx={{ mb: 2 }}>
+                                      <Typography
+                                        variant="subtitle2"
+                                        color="text.secondary"
+                                        sx={{ mb: 0.5 }}
                                       >
-                                        <ListItemText
-                                          primary={
-                                            <span>
-                                              {n.title || 'Untitled'}
-                                              <NoteStatusIndicator
-                                                status={n.status}
-                                                {...noteStatusVisibility}
+                                        Other topics that reference this one
+                                      </Typography>
+                                      <List dense>
+                                        {topicRelSummary.relatedTopics.map(rt => {
+                                          const t = rt.topic;
+                                          const sameSubject =
+                                            t.subjectId &&
+                                            t.subjectId === subjectId;
+                                          const subjectSlugForNav =
+                                            sameSubject && subjectSlug
+                                              ? subjectSlug
+                                              : t.subjectId
+                                                ? `${t.subjectId}-subject`
+                                                : '';
+
+                                          const topicSlugForNav = `${t.id}-${slugify(
+                                            t.name,
+                                          )}`;
+
+                                          const href =
+                                            subjectSlugForNav &&
+                                              topicSlugForNav
+                                              ? `/s/${subjectSlugForNav}/t/${topicSlugForNav}`
+                                              : undefined;
+
+                                          return (
+                                            <ListItemButton
+                                              key={t.id}
+                                              disabled={!href}
+                                              onClick={() => {
+                                                if (!href) return;
+                                                navigate(href);
+                                              }}
+                                            >
+                                              <ListItemText
+                                                primary={t.name}
+                                                secondary={
+                                                  rt.noteCount === 1
+                                                    ? '1 note in this topic references this topic.'
+                                                    : `${rt.noteCount} notes in this topic reference this topic.`
+                                                }
                                               />
-                                            </span>
-                                          }
-                                          secondary={n.summary}
-                                        />
-                                      </ListItemButton>
-                                    ))}
-                                  </List>
+                                            </ListItemButton>
+                                          );
+                                        })}
+                                      </List>
+                                    </Box>
+                                  )}
+
+                                  {topicRelSummary.relatedNotes.length > 0 && (
+                                    <>
+                                      <Typography
+                                        variant="subtitle2"
+                                        color="text.secondary"
+                                        sx={{ mb: 0.5 }}
+                                      >
+                                        Notes that reference this topic
+                                      </Typography>
+                                      <List dense>
+                                        {topicRelSummary.relatedNotes.map(n => (
+                                          <ListItemButton
+                                            key={n.id}
+                                            onClick={() => onOpenNote(n.id)}
+                                          >
+                                            <ListItemText
+                                              primary={
+                                                <span>
+                                                  {n.title || 'Untitled'}
+                                                  <NoteStatusIndicator
+                                                    status={n.status}
+                                                    {...noteStatusVisibility}
+                                                  />
+                                                </span>
+                                              }
+                                              secondary={n.summary}
+                                            />
+                                          </ListItemButton>
+                                        ))}
+                                      </List>
+                                    </>
+                                  )}
                                 </>
                               )}
                             </>
                           )}
-                        </>
-                      )}
-                  </Box>
+                      </Box>
+                    </>
+                  )}
                 </>
               ) : (
                 <Box sx={{ color: 'text.secondary', fontSize: 14 }}>
@@ -479,9 +563,13 @@ export default function TopicNotesPage() {
                 clearSelection();
               }}
               noteIds={[...selectedIds]}
-              source={{ subjectId, topicId }}
+              source={
+                selectedBatchId || !subjectId || !topicId
+                  ? undefined
+                  : { subjectId, topicId }
+              }
             />
-            {topicId && (
+            {topicId && !isBatchMode && (
               <MergeNotesDialog
                 open={mergeOpen}
                 topicId={topicId}
@@ -537,6 +625,73 @@ export default function TopicNotesPage() {
           defaultKind="also-about"
           onLinked={refetchTopicRelations}
         />
+      )}
+    </Box>
+  );
+}
+
+type ImportHistoryProps = {
+  batches: { id: string; createdAt: string; importedCount: number; remainingCount: number }[];
+  selectedBatchId: string | null;
+  onSelectBatch: (id: string) => void;
+};
+
+function ImportHistorySection({ batches, selectedBatchId, onSelectBatch }: ImportHistoryProps) {
+  const items = useMemo(
+    () => [...batches].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [batches],
+  );
+
+  const formatDate = (iso: string) => {
+    const d = new Date(iso);
+    const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    return { date, time };
+  };
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <Typography
+        variant="subtitle2"
+        color="text.secondary"
+        sx={{ flexShrink: 0 }}
+      >
+        Import History
+      </Typography>
+
+      {items.length === 0 ? (
+        <Typography variant="body2" color="text.secondary">
+          No imports yet
+        </Typography>
+      ) : (
+        <Stack spacing={0.5}>
+          {items.map((b) => {
+            const { date, time } = formatDate(b.createdAt);
+            const selected = selectedBatchId === b.id;
+            return (
+              <Box
+                key={b.id}
+                onClick={() => onSelectBatch(b.id)}
+                sx={{
+                  border: '1px solid',
+                  borderColor: selected ? 'primary.main' : 'divider',
+                  borderRadius: 1,
+                  p: 1,
+                  cursor: 'pointer',
+                  bgcolor: selected ? 'action.selected' : 'transparent',
+                  '&:hover': { bgcolor: 'action.hover' },
+                }}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {date}, {time}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {b.importedCount} imported, {b.remainingCount} remaining
+                </Typography>
+              </Box>
+            );
+          })}
+        </Stack>
       )}
     </Box>
   );

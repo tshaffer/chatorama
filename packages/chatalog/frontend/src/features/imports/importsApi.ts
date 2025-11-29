@@ -1,5 +1,6 @@
 // frontend/src/features/imports/importsApi.ts
 import { chatalogApi as baseApi } from '../api/chatalogApi';
+import type { ImportBatch, NotePreview } from '@chatorama/chatalog-shared';
 
 export type ImportedNoteSummary = {
   file: string;
@@ -82,6 +83,21 @@ export const importsApi = baseApi.injectEndpoints({
         { type: 'Note' as const, id: 'LIST' },
       ],
     }),
+
+    getImportBatches: build.query<ImportBatch[], void>({
+      query: () => ({ url: 'import-batches' }),
+    }),
+
+    getImportBatchNotes: build.query<NotePreview[], string>({
+      query: (batchId) => ({ url: `import-batches/${batchId}/notes` }),
+      providesTags: (res, _err, batchId) =>
+        res
+          ? [
+            { type: 'ImportBatch' as const, id: batchId },
+            ...res.map((n) => ({ type: 'Note' as const, id: n.id })),
+          ]
+          : [{ type: 'ImportBatch' as const, id: batchId }],
+    }),
   }),
   overrideExisting: true,
 });
@@ -90,4 +106,6 @@ export const {
   useImportChatworthyMutation,
   useImportAiClassificationPreviewMutation,
   useApplyChatworthyImportMutation,
+  useGetImportBatchesQuery,
+  useGetImportBatchNotesQuery,
 } = importsApi;

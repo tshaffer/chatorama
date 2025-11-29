@@ -23,6 +23,9 @@ const topicItemId = (topicId: string) => `topic:${topicId}`;
 
 type SubjectTopicTreeProps = {
   width?: number | string;
+  onSubjectSelected?: () => void;
+  onTopicSelected?: () => void;
+  disableBorder?: boolean;
 };
 
 /**
@@ -30,7 +33,12 @@ type SubjectTopicTreeProps = {
  * - Left pane in TopicNotesPage (and potentially NotePage later).
  * - Does NOT handle create/delete/rename (that still lives on /subjects).
  */
-export default function SubjectTopicTree({ width = 260 }: SubjectTopicTreeProps) {
+export default function SubjectTopicTree({
+  width = 260,
+  onSubjectSelected,
+  onTopicSelected,
+  disableBorder = false,
+}: SubjectTopicTreeProps) {
   const { subjectSlug, topicSlug } = useParams<{
     subjectSlug?: string;
     topicSlug?: string;
@@ -58,61 +66,63 @@ export default function SubjectTopicTree({ width = 260 }: SubjectTopicTreeProps)
   );
 
   return (
-    <Box
-      id="subject-topic-tree"
-      sx={{
-        width,
-        flexShrink: 0,
-        borderRight: (theme) => `1px solid ${theme.palette.divider}`,
-        pr: 1.5,
-        mr: 1.5,
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: 0,
-        maxHeight: '100%',   // 👈 constrained by TopicNotesPage height
-        overflowY: 'auto',   // 👈 left pane scrolls inside this column
-      }}
-    >
-      <Typography
-        variant="subtitle2"
-        color="text.secondary"
-        sx={{ mb: 1, flexShrink: 0 }}
+    <CallbacksContext.Provider value={{ onSubjectSelected, onTopicSelected }}>
+      <Box
+        id="subject-topic-tree"
+        sx={{
+          width,
+          flexShrink: 0,
+          borderRight: disableBorder ? 'none' : (theme) => `1px solid ${theme.palette.divider}`,
+          pr: disableBorder ? 0 : 1.5,
+          mr: disableBorder ? 0 : 1.5,
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          maxHeight: '100%',   // 👈 constrained by TopicNotesPage height
+          overflowY: 'auto',   // 👈 left pane scrolls inside this column
+        }}
       >
-        Subjects &amp; Topics
-      </Typography>
-
-      {isLoading ? (
-        <Box sx={{ mt: 1 }}>
-          <Skeleton variant="text" height={24} />
-          <Skeleton variant="text" height={24} />
-          <Skeleton variant="text" height={24} />
-        </Box>
-      ) : subjects.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
-          No subjects yet. Use the <strong>Subjects</strong> page to create some.
-        </Typography>
-      ) : (
-        <Box
-          sx={{
-            flex: 1,
-            minHeight: 0,
-            // 👈 no overflow here; outer Box already scrolls
-          }}
+        <Typography
+          variant="subtitle2"
+          color="text.secondary"
+          sx={{ mb: 1, flexShrink: 0 }}
         >
-          <SimpleTreeView
-            expandedItems={expanded}
-            onExpandedItemsChange={(_event, itemIds) => {
-              setExpanded(itemIds);
+          Subjects &amp; Topics
+        </Typography>
+
+        {isLoading ? (
+          <Box sx={{ mt: 1 }}>
+            <Skeleton variant="text" height={24} />
+            <Skeleton variant="text" height={24} />
+            <Skeleton variant="text" height={24} />
+          </Box>
+        ) : subjects.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            No subjects yet. Use the <strong>Subjects</strong> page to create some.
+          </Typography>
+        ) : (
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              // 👈 no overflow here; outer Box already scrolls
             }}
-            selectedItems={selectedItemId}
           >
-            {subjects.map((s) => (
-              <SubjectNode key={s.id} subject={s} />
-            ))}
-          </SimpleTreeView>
-        </Box>
-      )}
-    </Box>
+            <SimpleTreeView
+              expandedItems={expanded}
+              onExpandedItemsChange={(_event, itemIds) => {
+                setExpanded(itemIds);
+              }}
+              selectedItems={selectedItemId}
+            >
+              {subjects.map((s) => (
+                <SubjectNode key={s.id} subject={s} />
+              ))}
+            </SimpleTreeView>
+          </Box>
+        )}
+      </Box>
+    </CallbacksContext.Provider>
   );
 }
 
@@ -125,6 +135,7 @@ type SubjectNodeProps = {
 function SubjectNode({ subject }: SubjectNodeProps) {
   const { data: topics = [] } = useGetTopicsForSubjectQuery(subject.id);
   const navigate = useNavigate();
+  const { onSubjectSelected } = React.useContext(CallbacksContext) || {};
 
   const subjectSlug = useMemo(
     () => `${subject.id}-${slugify(subject.name)}`,
@@ -136,6 +147,7 @@ function SubjectNode({ subject }: SubjectNodeProps) {
     event.stopPropagation();
     event.preventDefault();
     navigate(`/s/${subjectSlug}`);
+    onSubjectSelected?.();
   };
 
   return (
@@ -168,6 +180,7 @@ type TopicNodeProps = {
 
 function TopicNode({ subject, topic }: TopicNodeProps) {
   const navigate = useNavigate();
+  const { onTopicSelected } = React.useContext(CallbacksContext) || {};
 
   const subjectSlugPart = useMemo(
     () => `${subject.id}-${slugify(subject.name)}`,
@@ -182,6 +195,7 @@ function TopicNode({ subject, topic }: TopicNodeProps) {
     event.stopPropagation();
     event.preventDefault();
     navigate(`/s/${subjectSlugPart}/t/${topicSlugPart}`);
+    onTopicSelected?.();
   };
 
   return (
@@ -198,3 +212,9 @@ function TopicNode({ subject, topic }: TopicNodeProps) {
     />
   );
 }
+
+// Lightweight context to avoid prop-drilling into nodes
+const CallbacksContext = React.createContext<{
+  onSubjectSelected?: () => void;
+  onTopicSelected?: () => void;
+}>({});
