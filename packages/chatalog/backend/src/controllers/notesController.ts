@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { NoteModel } from '../models/Note';
+import { ImportBatchModel } from '../models/ImportBatch';
 import {
   type TopicNotesWithRelations,
   type NotePreview,
@@ -336,5 +337,13 @@ export async function deleteNote(req: Request, res: Response) {
   const { id } = req.params;
   const doc = await NoteModel.findByIdAndDelete(id).exec();
   if (!doc) return res.status(404).json({ message: 'Note not found' });
+
+  if (doc.importBatchId) {
+    await ImportBatchModel.updateOne(
+      { _id: doc.importBatchId },
+      { $inc: { remainingCount: -1 }, $max: { remainingCount: 0 } },
+    ).exec();
+  }
+
   res.status(204).send();
 }

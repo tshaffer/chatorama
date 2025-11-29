@@ -41,6 +41,7 @@ export interface Note {
   id: string;
   subjectId?: string;
   topicId?: string;
+  importBatchId?: string;
 
   title: string;
   slug: string;
@@ -73,6 +74,8 @@ export interface NotePreview {
   status?: string;           // new status field
   tags: string[];
   updatedAt: string;         // ISO
+
+  importBatchId?: string;
 
   // Include relations for smarter UIs (optional; may or may not be populated)
   relations?: NoteRelation[];
@@ -117,6 +120,14 @@ export interface MoveNotesResult {
   // optional: for optimistic updates & cache surgery
   source?: { subjectId: string; topicId: string };
   dest: { subjectId: string; topicId: string; assignedOrders?: Record<string, number> };
+}
+
+export interface ImportBatch {
+  id: string;
+  createdAt: string; // ISO
+  importedCount: number;
+  remainingCount: number;
+  sourceType?: string;
 }
 
 export interface MergeNotesRequest {

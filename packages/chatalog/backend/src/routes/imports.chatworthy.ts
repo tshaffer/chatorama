@@ -11,6 +11,7 @@ import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
 import type { NoteDoc } from '../models/Note';
 import { slugifyStandard } from '@chatorama/chatalog-shared';
+import { ImportBatchModel } from '../models/ImportBatch';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -513,9 +514,26 @@ router.post('/chatworthy/apply', async (req, res, next) => {
       createdNotes.push(doc);
     }
 
+    let batchId: string | undefined;
+    if (createdNotes.length > 0) {
+      const batch = await ImportBatchModel.create({
+        createdAt: new Date(),
+        importedCount: createdNotes.length,
+        remainingCount: createdNotes.length,
+        sourceType: 'chatworthy',
+      });
+      batchId = String(batch._id);
+
+      await NoteModel.updateMany(
+        { _id: { $in: createdNotes.map((n) => n._id) } },
+        { $set: { importBatchId: batchId } },
+      );
+    }
+
     res.json({
       created: createdNotes.length,
       noteIds: createdNotes.map((n) => n.id),
+      importBatchId: batchId,
     });
   } catch (err) {
     next(err);

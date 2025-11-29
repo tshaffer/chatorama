@@ -6,6 +6,7 @@ import importsChatworthyRouter from './imports.chatworthy';
 import quicknotesRouter from './quicknotes';
 import notesMoveRouter from './notes.move';
 import topicsRouter from './topics';
+import importBatchesRouter from './importBatches';
 
 export function createRoutes(app: Express) {
   const api = Router();
@@ -24,6 +25,7 @@ export function createRoutes(app: Express) {
 
   // Chatworthy imports
   api.use('/imports', importsChatworthyRouter);
+  api.use('/import-batches', importBatchesRouter);
 
   // QuickNotes CRUD
   api.use('/quicknotes', quicknotesRouter);
