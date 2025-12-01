@@ -24,7 +24,7 @@ type UpdateNoteRequest = {
   patch: Partial<
     Pick<
       Note,
-      'title' | 'markdown' | 'summary' | 'status' | 'tags' | 'links' | 'relations'
+      'title' | 'markdown' | 'summary' | 'status' | 'tags' | 'links' | 'relations' | 'subjectId' | 'topicId'
     >
   >;
 };

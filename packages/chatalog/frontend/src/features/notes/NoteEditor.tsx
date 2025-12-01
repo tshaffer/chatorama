@@ -1,5 +1,5 @@
 // frontend/src/features/notes/NoteEditor.tsx
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -47,7 +47,8 @@ import remarkBreaks from 'remark-breaks';
 import 'highlight.js/styles/github.css';
 import '../../styles/markdown.css';
 
-import { useGetSubjectsQuery } from '../subjects/subjectsApi';
+import { useGetSubjectsQuery, useGetSubjectsWithTopicsQuery, useCreateSubjectMutation, useCreateTopicMutation } from '../subjects/subjectsApi';
+import Autocomplete from '@mui/material/Autocomplete';
 import { useGetAllTopicsQuery } from '../topics/topicsApi';
 
 // ---------------- helpers ----------------
@@ -277,6 +278,9 @@ export default function NoteEditor({
 
   // Data for pickers
   const { data: subjects = [] } = useGetSubjectsQuery();
+  const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery();
+  const [createSubject] = useCreateSubjectMutation();
+  const [createTopic] = useCreateTopicMutation();
   const { data: topics = [] } = useGetAllTopicsQuery();
   const { data: notesForPicker = [] } = useGetAllNotesForRelationsQuery();
 
@@ -401,6 +405,8 @@ export default function NoteEditor({
     undefined,
   );
   const [noteStatus, setNoteStatus] = useState('');
+  const [subjectLabel, setSubjectLabel] = useState('');
+  const [topicLabel, setTopicLabel] = useState('');
   const [dirty, setDirty] = useState(false);
   const [snack, setSnack] = useState<{
     open: boolean;
@@ -410,6 +416,86 @@ export default function NoteEditor({
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastInitNoteIdRef = useRef<string | undefined>(undefined);
+
+  // Ancestors: subject & topic for this note
+  const noteSubject = useMemo(
+    () =>
+      (subjects as Subject[]).find(
+        (s) => s.id === (note as Note | undefined)?.subjectId,
+      ),
+    [subjects, note],
+  );
+
+  const noteTopic = useMemo(
+    () =>
+      (topics as Topic[]).find(
+        (t) => t.id === (note as Note | undefined)?.topicId,
+      ),
+    [topics, note],
+  );
+
+  // Subject/topic editing helpers
+  const subjectLabelOptions = useMemo(() => {
+    const set = new Set<string>();
+    (subjectsWithTopics as (Subject & { topics?: Topic[] })[]).forEach((s) => {
+      if (s.name?.trim()) set.add(s.name.trim());
+    });
+    if (subjectLabel.trim()) set.add(subjectLabel.trim());
+    return Array.from(set);
+  }, [subjectsWithTopics, subjectLabel]);
+
+  const selectedSubjectForEdit = useMemo(() => {
+    const trimmed = subjectLabel.trim();
+    if (!trimmed) return undefined;
+    return (subjectsWithTopics as (Subject & { topics?: Topic[] })[]).find(
+      (s) => s.name?.trim() === trimmed,
+    );
+  }, [subjectsWithTopics, subjectLabel]);
+
+  const topicLabelOptions = useMemo(() => {
+    const set = new Set<string>();
+    (selectedSubjectForEdit?.topics ?? []).forEach((t) => {
+      if (t.name?.trim()) set.add(t.name.trim());
+    });
+    const trimmedTopic = topicLabel.trim();
+    if (trimmedTopic) set.add(trimmedTopic);
+    return Array.from(set);
+  }, [selectedSubjectForEdit, topicLabel]);
+
+  const resolveSubjectTopicIds = useCallback(async () => {
+    let subjectId: string | undefined;
+    let topicId: string | undefined;
+
+    const trimmedSubject = subjectLabel.trim();
+    const trimmedTopic = topicLabel.trim();
+
+    if (trimmedSubject) {
+      const existingSubject = (subjectsWithTopics as (Subject & { topics?: Topic[] })[]).find(
+        (s) => s.name?.trim() === trimmedSubject,
+      );
+      if (existingSubject) {
+        subjectId = existingSubject.id;
+      } else {
+        const created = await createSubject({ name: trimmedSubject }).unwrap();
+        subjectId = created.id;
+      }
+    }
+
+    if (trimmedTopic && subjectId) {
+      const existingSubject = (subjectsWithTopics as (Subject & { topics?: Topic[] })[]).find(
+        (s) => s.id === subjectId,
+      );
+      const existingTopic = existingSubject?.topics?.find((t) => t.name?.trim() === trimmedTopic);
+      if (existingTopic) {
+        topicId = existingTopic.id;
+      } else {
+        const createdTopic = await createTopic({ subjectId, name: trimmedTopic }).unwrap();
+        topicId = createdTopic.id;
+      }
+    }
+
+    return { subjectId: subjectId || undefined, topicId: topicId || undefined };
+  }, [subjectLabel, topicLabel, subjectsWithTopics, createSubject, createTopic]);
 
   // Load note -> form (initialize once per note id)
   useEffect(() => {
@@ -421,8 +507,10 @@ export default function NoteEditor({
     setMarkdown(note.markdown ?? '');
     setRelations(note.relations ?? []);
     setNoteStatus((note as Note).status ?? '');
+    setSubjectLabel(noteSubject?.name ?? '');
+    setTopicLabel(noteTopic?.name ?? '');
     setDirty(false);
-  }, [resolvedNoteId, note]);
+  }, [resolvedNoteId, note, noteSubject?.name, noteTopic?.name]);
 
   // Debounced autosave
   useEffect(() => {
@@ -434,6 +522,7 @@ export default function NoteEditor({
     saveTimer.current = setTimeout(async () => {
       try {
         const trimmedStatus = noteStatus.trim();
+        const { subjectId: resolvedSubjectId, topicId: resolvedTopicId } = await resolveSubjectTopicIds();
         await updateNote({
           noteId: resolvedNoteId, // now typed as string
           patch: {
@@ -442,6 +531,8 @@ export default function NoteEditor({
             relations,
             // 🔹 NEW: send undefined when empty so it clears cleanly
             status: trimmedStatus || undefined,
+            subjectId: resolvedSubjectId,
+            topicId: resolvedTopicId,
           },
         }).unwrap();
         setSnack({ open: true, msg: 'Saved', sev: 'success' });
@@ -454,7 +545,7 @@ export default function NoteEditor({
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [dirty, title, markdown, relations, resolvedNoteId, debounceMs, updateNote, note]);
+  }, [dirty, title, markdown, relations, resolvedNoteId, debounceMs, updateNote, note, noteStatus, resolveSubjectTopicIds]);
 
   // Cmd/Ctrl+S
   useEffect(() => {
@@ -466,6 +557,7 @@ export default function NoteEditor({
         if (saveTimer.current) clearTimeout(saveTimer.current);
         try {
           const trimmedStatus = noteStatus.trim();
+          const { subjectId: resolvedSubjectId, topicId: resolvedTopicId } = await resolveSubjectTopicIds();
           await updateNote({
             noteId: resolvedNoteId,
             patch: {
@@ -473,6 +565,8 @@ export default function NoteEditor({
               markdown,
               relations,
               status: trimmedStatus || undefined, // 🔹 NEW
+              subjectId: resolvedSubjectId,
+              topicId: resolvedTopicId,
             },
           }).unwrap();
           setSnack({ open: true, msg: 'Saved', sev: 'success' });
@@ -484,7 +578,7 @@ export default function NoteEditor({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [note, resolvedNoteId, title, markdown, relations, noteStatus, updateNote]);
+  }, [note, resolvedNoteId, title, markdown, relations, noteStatus, updateNote, resolveSubjectTopicIds]);
 
   // Before-unload dirty guard (optional)
   useEffect(() => {
@@ -505,23 +599,6 @@ export default function NoteEditor({
     if (dirty) return 'Unsaved changes';
     return 'Saved';
   }, [isLoading, isSaving, dirty]);
-
-  // Ancestors: subject & topic for this note
-  const noteSubject = useMemo(
-    () =>
-      (subjects as Subject[]).find(
-        (s) => s.id === (note as Note | undefined)?.subjectId,
-      ),
-    [subjects, note],
-  );
-
-  const noteTopic = useMemo(
-    () =>
-      (topics as Topic[]).find(
-        (t) => t.id === (note as Note | undefined)?.topicId,
-      ),
-    [topics, note],
-  );
 
   if (isError) {
     return (
@@ -1073,6 +1150,57 @@ export default function NoteEditor({
               </Typography>
             )}
           </Box>
+
+          {/* Subject / Topic (editable) */}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mt: 1 }}>
+            <Autocomplete
+              freeSolo
+              options={subjectLabelOptions}
+              value={subjectLabel}
+              sx={{ flex: 1, minWidth: { xs: '100%', sm: 240 } }}
+              onInputChange={(_e, v) => {
+                setSubjectLabel(v ?? '');
+                setTopicLabel('');
+                setDirty(true);
+              }}
+              onChange={(_e, v) => {
+                setSubjectLabel(v ?? '');
+                setTopicLabel('');
+                setDirty(true);
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Subject"
+                  size="small"
+                  fullWidth
+                />
+              )}
+            />
+            <Autocomplete
+              freeSolo
+              options={topicLabelOptions}
+              value={topicLabel}
+              sx={{ flex: 1, minWidth: { xs: '100%', sm: 240 } }}
+              onInputChange={(_e, v) => {
+                setTopicLabel(v ?? '');
+                setDirty(true);
+              }}
+              onChange={(_e, v) => {
+                setTopicLabel(v ?? '');
+                setDirty(true);
+              }}
+              disabled={!subjectLabel.trim()}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Topic"
+                  size="small"
+                  fullWidth
+                />
+              )}
+            />
+          </Stack>
 
           <TextField
             label="Title"
