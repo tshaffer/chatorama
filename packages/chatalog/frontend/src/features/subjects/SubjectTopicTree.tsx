@@ -78,14 +78,23 @@ export default function SubjectTopicTree({
           display: 'flex',
           flexDirection: 'column',
           minHeight: 0,
-          maxHeight: '100%',   // 👈 constrained by TopicNotesPage height
-          overflowY: 'auto',   // 👈 left pane scrolls inside this column
+          // ⬇️ let the *parent* (left panel) control height & scrolling
+          // maxHeight: '100%',
+          // overflowY: 'auto',
         }}
       >
         <Typography
           variant="subtitle2"
           color="text.secondary"
-          sx={{ mb: 1, flexShrink: 0 }}
+          sx={{
+            mb: 1,
+            flexShrink: 0,
+            position: 'sticky',
+            top: 0,
+            zIndex: (theme) => theme.zIndex.appBar - 1,
+            bgcolor: 'background.paper',
+            pt: 1,
+          }}
         >
           Subjects &amp; Topics
         </Typography>

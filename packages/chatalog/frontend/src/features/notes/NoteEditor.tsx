@@ -1,4 +1,3 @@
-// frontend/src/features/notes/NoteEditor.tsx
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -37,8 +36,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import DoneIcon from '@mui/icons-material/Done';
 import DeleteIcon from '@mui/icons-material/Delete';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';     // ⬅️ NEW
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward'; // ⬅️ NEW
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -47,7 +46,12 @@ import remarkBreaks from 'remark-breaks';
 import 'highlight.js/styles/github.css';
 import '../../styles/markdown.css';
 
-import { useGetSubjectsQuery, useGetSubjectsWithTopicsQuery, useCreateSubjectMutation, useCreateTopicMutation } from '../subjects/subjectsApi';
+import {
+  useGetSubjectsQuery,
+  useGetSubjectsWithTopicsQuery,
+  useCreateSubjectMutation,
+  useCreateTopicMutation,
+} from '../subjects/subjectsApi';
 import Autocomplete from '@mui/material/Autocomplete';
 import { useGetAllTopicsQuery } from '../topics/topicsApi';
 
@@ -105,7 +109,9 @@ function normalizeTurns(md: string): string {
       console.log('[turns body head]', JSON.stringify(head));
       console.log(
         '[turns body codepoints]',
-        Array.from(head).map((c) => c.codePointAt(0)!.toString(16)).join(' '),
+        Array.from(head)
+          .map((c) => c.codePointAt(0)!.toString(16))
+          .join(' '),
       );
     }
 
@@ -228,7 +234,6 @@ function takeObjectId(s?: string) {
   return m ? m[0] : undefined;
 }
 
-// Slug helper for subject/topic links
 // ---------------- relations helpers ----------------
 
 const ALL_TARGET_TYPES: NoteRelationTargetType[] = ['note', 'topic', 'subject'];
@@ -300,7 +305,9 @@ export default function NoteEditor({
 
     const opts: TopicOption[] = (topics as Topic[]).map((t) => ({
       id: t.id,
-      label: `${subjectNameById.get(t.subjectId) ?? 'Unknown subject'} / ${t.name}`,
+      label: `${subjectNameById.get(t.subjectId) ?? 'Unknown subject'} / ${
+        t.name
+      }`,
       subjectId: t.subjectId,
       topicName: t.name,
     }));
@@ -324,9 +331,9 @@ export default function NoteEditor({
   const topicNotesArgs =
     note && (note as Note).subjectId && (note as Note).topicId
       ? {
-        subjectId: (note as Note).subjectId!, // non-null: guarded above
-        topicId: (note as Note).topicId!,     // non-null: guarded above
-      }
+          subjectId: (note as Note).subjectId!, // non-null: guarded above
+          topicId: (note as Note).topicId!, // non-null: guarded above
+        }
       : skipToken;
   const { data: topicNotes } = useGetTopicNotesWithRelationsQuery(topicNotesArgs);
 
@@ -335,7 +342,6 @@ export default function NoteEditor({
       return { prevNote: undefined, nextNote: undefined };
     }
 
-    // topicNotes is a TopicNotesWithRelations; use its notes array
     const list = topicNotes.notes ?? [];
     if (!Array.isArray(list) || list.length === 0) {
       return { prevNote: undefined, nextNote: undefined };
@@ -375,9 +381,7 @@ export default function NoteEditor({
     const list = topicNotes?.notes ?? [];
     const idx = list.findIndex((n) => n.id === noteIdToDelete);
     const fallback =
-      idx !== -1
-        ? list[idx + 1] || list[idx - 1] || undefined
-        : undefined;
+      idx !== -1 ? list[idx + 1] || list[idx - 1] || undefined : undefined;
 
     const confirmed = window.confirm('Delete this note? This cannot be undone.');
     if (!confirmed) return;
@@ -404,7 +408,7 @@ export default function NoteEditor({
   const [relations, setRelations] = useState<NoteRelation[] | undefined>(
     undefined,
   );
-  const [noteStatus, setNoteStatus] = useState('');
+  const [noteStatus, setNoteStatus] = useState(''); // kept for save logic, UI hidden
   const [subjectLabel, setSubjectLabel] = useState('');
   const [topicLabel, setTopicLabel] = useState('');
   const [dirty, setDirty] = useState(false);
@@ -470,9 +474,9 @@ export default function NoteEditor({
     const trimmedTopic = topicLabel.trim();
 
     if (trimmedSubject) {
-      const existingSubject = (subjectsWithTopics as (Subject & { topics?: Topic[] })[]).find(
-        (s) => s.name?.trim() === trimmedSubject,
-      );
+      const existingSubject = (
+        subjectsWithTopics as (Subject & { topics?: Topic[] })[]
+      ).find((s) => s.name?.trim() === trimmedSubject);
       if (existingSubject) {
         subjectId = existingSubject.id;
       } else {
@@ -482,14 +486,19 @@ export default function NoteEditor({
     }
 
     if (trimmedTopic && subjectId) {
-      const existingSubject = (subjectsWithTopics as (Subject & { topics?: Topic[] })[]).find(
-        (s) => s.id === subjectId,
+      const existingSubject = (
+        subjectsWithTopics as (Subject & { topics?: Topic[] })[]
+      ).find((s) => s.id === subjectId);
+      const existingTopic = existingSubject?.topics?.find(
+        (t) => t.name?.trim() === trimmedTopic,
       );
-      const existingTopic = existingSubject?.topics?.find((t) => t.name?.trim() === trimmedTopic);
       if (existingTopic) {
         topicId = existingTopic.id;
       } else {
-        const createdTopic = await createTopic({ subjectId, name: trimmedTopic }).unwrap();
+        const createdTopic = await createTopic({
+          subjectId,
+          name: trimmedTopic,
+        }).unwrap();
         topicId = createdTopic.id;
       }
     }
@@ -516,20 +525,20 @@ export default function NoteEditor({
   useEffect(() => {
     if (!note) return;
     if (!dirty) return;
-    if (!resolvedNoteId) return; // 👈 narrow here
+    if (!resolvedNoteId) return;
 
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       try {
         const trimmedStatus = noteStatus.trim();
-        const { subjectId: resolvedSubjectId, topicId: resolvedTopicId } = await resolveSubjectTopicIds();
+        const { subjectId: resolvedSubjectId, topicId: resolvedTopicId } =
+          await resolveSubjectTopicIds();
         await updateNote({
-          noteId: resolvedNoteId, // now typed as string
+          noteId: resolvedNoteId,
           patch: {
             title,
             markdown,
             relations,
-            // 🔹 NEW: send undefined when empty so it clears cleanly
             status: trimmedStatus || undefined,
             subjectId: resolvedSubjectId,
             topicId: resolvedTopicId,
@@ -545,7 +554,18 @@ export default function NoteEditor({
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [dirty, title, markdown, relations, resolvedNoteId, debounceMs, updateNote, note, noteStatus, resolveSubjectTopicIds]);
+  }, [
+    dirty,
+    title,
+    markdown,
+    relations,
+    resolvedNoteId,
+    debounceMs,
+    updateNote,
+    note,
+    noteStatus,
+    resolveSubjectTopicIds,
+  ]);
 
   // Cmd/Ctrl+S
   useEffect(() => {
@@ -553,18 +573,19 @@ export default function NoteEditor({
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
       if (isCmdOrCtrl && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
-        if (!note || !resolvedNoteId) return; // 👈 narrow here too
+        if (!note || !resolvedNoteId) return;
         if (saveTimer.current) clearTimeout(saveTimer.current);
         try {
           const trimmedStatus = noteStatus.trim();
-          const { subjectId: resolvedSubjectId, topicId: resolvedTopicId } = await resolveSubjectTopicIds();
+          const { subjectId: resolvedSubjectId, topicId: resolvedTopicId } =
+            await resolveSubjectTopicIds();
           await updateNote({
             noteId: resolvedNoteId,
             patch: {
               title,
               markdown,
               relations,
-              status: trimmedStatus || undefined, // 🔹 NEW
+              status: trimmedStatus || undefined,
               subjectId: resolvedSubjectId,
               topicId: resolvedTopicId,
             },
@@ -578,7 +599,16 @@ export default function NoteEditor({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [note, resolvedNoteId, title, markdown, relations, noteStatus, updateNote, resolveSubjectTopicIds]);
+  }, [
+    note,
+    resolvedNoteId,
+    title,
+    markdown,
+    relations,
+    noteStatus,
+    updateNote,
+    resolveSubjectTopicIds,
+  ]);
 
   // Before-unload dirty guard (optional)
   useEffect(() => {
@@ -628,13 +658,12 @@ export default function NoteEditor({
   // --- relations UI handlers ---
 
   const handleAddRelation = () => {
-    // Pick a default target type based on what's actually available
     const defaultTargetType: NoteRelationTargetType =
       topicOptions.length > 0
         ? 'topic'
         : subjectOptions.length > 0
-          ? 'subject'
-          : 'note';
+        ? 'subject'
+        : 'note';
 
     setRelations((prev) => {
       const next: NoteRelation[] = prev ? [...prev] : [];
@@ -645,7 +674,6 @@ export default function NoteEditor({
       });
       return next;
     });
-    // don't set dirty yet; wait until user actually edits a field
   };
 
   const handleChangeRelation = (
@@ -673,16 +701,18 @@ export default function NoteEditor({
   };
 
   const handleOpenRelationTarget = (rel: NoteRelation) => {
-
     if (!rel.targetId) return;
 
     if (rel.targetType === 'note') {
-      // Try to navigate via subject/topic context if we know it
       const target = noteOptions.find((n) => n.id === rel.targetId);
 
       if (target && target.subjectId && target.topicId) {
-        const subj = (subjects as Subject[]).find((s) => s.id === target.subjectId);
-        const topic = (topics as Topic[]).find((t) => t.id === target.topicId);
+        const subj = (subjects as Subject[]).find(
+          (s) => s.id === target.subjectId,
+        );
+        const topic = (topics as Topic[]).find(
+          (t) => t.id === target.topicId,
+        );
 
         if (subj && topic) {
           const subjSlug = slugifyStandard(subj.name);
@@ -696,7 +726,6 @@ export default function NoteEditor({
         }
       }
 
-      // Fallback: just use the bare note route
       navigate(`/n/${rel.targetId}`);
       return;
     }
@@ -735,24 +764,152 @@ export default function NoteEditor({
       return s ? `Subject: ${s.label}` : `Subject: ${rel.targetId}`;
     }
 
-    // topic
     const t = topicOptions.find((x) => x.id === rel.targetId);
     return t ? `Topic: ${t.label}` : `Topic: ${rel.targetId}`;
   };
+
+  // --- shared preview block (used for both modes) ---
+  const renderPreviewContent = () => (
+    <>
+      <Typography variant="h5" sx={{ mb: 0.5 }}>
+        {title || 'Untitled'}
+      </Typography>
+
+      {(noteSubject || noteTopic || (relations && relations.length > 0)) && (
+        <Box
+          sx={{
+            mb: 2,
+            p: 1,
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+            backgroundColor: 'background.paper',
+          }}
+        >
+          {noteSubject || noteTopic ? (
+            <Box sx={{ mb: relations && relations.length > 0 ? 1.5 : 0 }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
+              >
+                Context
+              </Typography>
+              <Stack
+                direction="row"
+                spacing={1}
+                sx={{ mt: 0.5, flexWrap: 'wrap' }}
+              >
+                {noteSubject && (
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={`Subject: ${noteSubject.name}`}
+                    onClick={() => {
+                      const slug = slugifyStandard(noteSubject.name);
+                      navigate(`/s/${noteSubject.id}-${slug}`);
+                    }}
+                  />
+                )}
+                {noteTopic && (
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={`Topic: ${noteTopic.name}`}
+                    onClick={() => {
+                      const subj = noteSubject;
+                      if (!subj) return;
+                      const subjSlug = slugifyStandard(subj.name);
+                      const topicSlug = slugifyStandard(noteTopic.name);
+                      navigate(
+                        `/s/${subj.id}-${subjSlug}/t/${noteTopic.id}-${topicSlug}`,
+                      );
+                    }}
+                  />
+                )}
+              </Stack>
+            </Box>
+          ) : null}
+
+          {relations && relations.length > 0 && (
+            <Box>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
+              >
+                Relations
+              </Typography>
+              <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+                {relations.map((rel, idx) => (
+                  <Stack
+                    key={idx}
+                    direction="row"
+                    spacing={1}
+                    alignItems="center"
+                  >
+                    <Typography variant="body2">
+                      {describeRelationTarget(rel)}{' '}
+                      <Typography
+                        component="span"
+                        variant="caption"
+                        color="text.secondary"
+                      >
+                        ({rel.kind})
+                      </Typography>
+                    </Typography>
+                    <Tooltip title="Open related item">
+                      <span>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleOpenRelationTarget(rel)}
+                          aria-label="Open related item"
+                          disabled={!rel.targetId}
+                        >
+                          <OpenInNewIcon fontSize="inherit" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </Stack>
+                ))}
+              </Stack>
+            </Box>
+          )}
+        </Box>
+      )}
+
+      <Box sx={{ mt: 1 }}>
+        <div className="markdown-body">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkBreaks]}
+            rehypePlugins={[rehypeHighlight]}
+          >
+            {previewBody}
+          </ReactMarkdown>
+        </div>
+      </Box>
+    </>
+  );
 
   return (
     <Box
       p={2}
       sx={{
         height: '100%',
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
         gap: 2,
         overflow: 'hidden',
       }}
     >
-      {/* Top bar: title (in preview) + status + Edit/Done + Prev/Next */}
-      <Stack direction="row" alignItems="center" justifyContent="space-between">
+      {/* Top bar: label + save status + Edit/Done + Prev/Next + Delete */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{ flexShrink: 0 }}
+      >
         <Typography variant="h6">
           {editing ? 'Edit Note' : 'Note'}
         </Typography>
@@ -806,10 +963,10 @@ export default function NoteEditor({
               status === 'Saved'
                 ? 'success'
                 : status === 'Saving...'
-                  ? 'warning'
-                  : dirty
-                    ? 'warning'
-                    : 'default'
+                ? 'warning'
+                : dirty
+                ? 'warning'
+                : 'default'
             }
             variant="outlined"
           />
@@ -844,20 +1001,97 @@ export default function NoteEditor({
         </Stack>
       </Stack>
 
-      {/* Editor (hidden when not editing) */}
+      {/* Meta row: Title (50%) / Subject (25%) / Topic (25%) */}
       {editing && (
-        <>
+        <Stack
+          direction="row"
+          spacing={2}
+          sx={{ flexShrink: 0, minWidth: 0 }}
+        >
+          <TextField
+            label="Title"
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              setDirty(true);
+            }}
+            size="small"
+            sx={{ flex: 2, minWidth: 0 }}
+          />
+
+          <Autocomplete
+            freeSolo
+            options={subjectLabelOptions}
+            value={subjectLabel}
+            sx={{ flex: 1, minWidth: 0 }}
+            onInputChange={(_e, v) => {
+              setSubjectLabel(v ?? '');
+              setTopicLabel('');
+              setDirty(true);
+            }}
+            onChange={(_e, v) => {
+              setSubjectLabel(v ?? '');
+              setTopicLabel('');
+              setDirty(true);
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Subject"
+                size="small"
+                fullWidth
+              />
+            )}
+          />
+
+          <Autocomplete
+            freeSolo
+            options={topicLabelOptions}
+            value={topicLabel}
+            sx={{ flex: 1, minWidth: 0 }}
+            onInputChange={(_e, v) => {
+              setTopicLabel(v ?? '');
+              setDirty(true);
+            }}
+            onChange={(_e, v) => {
+              setTopicLabel(v ?? '');
+              setDirty(true);
+            }}
+            disabled={!subjectLabel.trim()}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Topic"
+                size="small"
+                fullWidth
+              />
+            )}
+          />
+        </Stack>
+      )}
+
+      {/* Main body: edit mode vs preview-only mode */}
+      {editing ? (
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            mt: 1,
+          }}
+        >
           {/* Relations editor */}
-          <Box sx={{ mt: 2 }}>
+          <Box sx={{ mt: 1 }}>
             <Stack
               direction="row"
               alignItems="center"
               justifyContent="space-between"
               sx={{ mb: 1 }}
             >
-              <Typography variant="subtitle2">
-                Relations
-              </Typography>
+              <Typography variant="subtitle2">Relations</Typography>
               <Button
                 size="small"
                 variant="outlined"
@@ -873,12 +1107,14 @@ export default function NoteEditor({
                   const topicId = rel.targetType === 'topic' ? rel.targetId : '';
                   const knownTopic = topicOptions.find((t) => t.id === topicId);
 
-                  const subjectId = rel.targetType === 'subject' ? rel.targetId : '';
+                  const subjectId =
+                    rel.targetType === 'subject' ? rel.targetId : '';
                   const knownSubject = subjectOptions.find(
                     (s) => s.id === subjectId,
                   );
 
-                  const noteIdVal = rel.targetType === 'note' ? rel.targetId : '';
+                  const noteIdVal =
+                    rel.targetType === 'note' ? rel.targetId : '';
                   const knownNote = noteOptions.find(
                     (n) => n.id === noteIdVal,
                   );
@@ -930,7 +1166,11 @@ export default function NoteEditor({
                               label="Topic"
                               value={topicId}
                               onChange={(e) =>
-                                handleChangeRelation(idx, 'targetId', e.target.value)
+                                handleChangeRelation(
+                                  idx,
+                                  'targetId',
+                                  e.target.value,
+                                )
                               }
                               sx={{ flex: 1 }}
                             >
@@ -941,7 +1181,6 @@ export default function NoteEditor({
                               ))}
                             </TextField>
                           ) : topicId ? (
-                            // ID present but not known in options → show read-only
                             <TextField
                               size="small"
                               label="Topic"
@@ -951,14 +1190,17 @@ export default function NoteEditor({
                               sx={{ flex: 1 }}
                             />
                           ) : (
-                            // No target yet; allow picking from list
                             <TextField
                               select
                               size="small"
                               label="Topic"
                               value=""
                               onChange={(e) =>
-                                handleChangeRelation(idx, 'targetId', e.target.value)
+                                handleChangeRelation(
+                                  idx,
+                                  'targetId',
+                                  e.target.value,
+                                )
                               }
                               sx={{ flex: 1 }}
                             >
@@ -988,7 +1230,11 @@ export default function NoteEditor({
                               label="Subject"
                               value={subjectId}
                               onChange={(e) =>
-                                handleChangeRelation(idx, 'targetId', e.target.value)
+                                handleChangeRelation(
+                                  idx,
+                                  'targetId',
+                                  e.target.value,
+                                )
                               }
                               sx={{ flex: 1 }}
                             >
@@ -1014,7 +1260,11 @@ export default function NoteEditor({
                               label="Subject"
                               value=""
                               onChange={(e) =>
-                                handleChangeRelation(idx, 'targetId', e.target.value)
+                                handleChangeRelation(
+                                  idx,
+                                  'targetId',
+                                  e.target.value,
+                                )
                               }
                               sx={{ flex: 1 }}
                             >
@@ -1043,7 +1293,11 @@ export default function NoteEditor({
                             label="Note"
                             value={noteIdVal}
                             onChange={(e) =>
-                              handleChangeRelation(idx, 'targetId', e.target.value)
+                              handleChangeRelation(
+                                idx,
+                                'targetId',
+                                e.target.value,
+                              )
                             }
                             sx={{ flex: 1 }}
                           >
@@ -1069,7 +1323,11 @@ export default function NoteEditor({
                             label="Note"
                             value=""
                             onChange={(e) =>
-                              handleChangeRelation(idx, 'targetId', e.target.value)
+                              handleChangeRelation(
+                                idx,
+                                'targetId',
+                                e.target.value,
+                              )
                             }
                             sx={{ flex: 1 }}
                           >
@@ -1151,82 +1409,9 @@ export default function NoteEditor({
             )}
           </Box>
 
-          {/* Subject / Topic (editable) */}
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mt: 1 }}>
-            <Autocomplete
-              freeSolo
-              options={subjectLabelOptions}
-              value={subjectLabel}
-              sx={{ flex: 1, minWidth: { xs: '100%', sm: 240 } }}
-              onInputChange={(_e, v) => {
-                setSubjectLabel(v ?? '');
-                setTopicLabel('');
-                setDirty(true);
-              }}
-              onChange={(_e, v) => {
-                setSubjectLabel(v ?? '');
-                setTopicLabel('');
-                setDirty(true);
-              }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Subject"
-                  size="small"
-                  fullWidth
-                />
-              )}
-            />
-            <Autocomplete
-              freeSolo
-              options={topicLabelOptions}
-              value={topicLabel}
-              sx={{ flex: 1, minWidth: { xs: '100%', sm: 240 } }}
-              onInputChange={(_e, v) => {
-                setTopicLabel(v ?? '');
-                setDirty(true);
-              }}
-              onChange={(_e, v) => {
-                setTopicLabel(v ?? '');
-                setDirty(true);
-              }}
-              disabled={!subjectLabel.trim()}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Topic"
-                  size="small"
-                  fullWidth
-                />
-              )}
-            />
-          </Stack>
+          <Divider sx={{ my: 2 }} />
 
-          <TextField
-            label="Title"
-            value={title}
-            onChange={(e) => {
-              setTitle(e.target.value);
-              setDirty(true);
-            }}
-            size="small"
-            fullWidth
-          />
-
-          {/* 🔹 NEW: short freeform status/meta text */}
-          <TextField
-            label="Status (optional)"
-            value={noteStatus}
-            onChange={(e) => {
-              setNoteStatus(e.target.value);
-              setDirty(true);
-            }}
-            size="small"
-            fullWidth
-            margin="dense"
-            helperText="Short note about follow-ups or changes for this note."
-          />
-
+          {/* Markdown editor */}
           <TextField
             label="Markdown"
             value={markdown}
@@ -1238,148 +1423,32 @@ export default function NoteEditor({
             multiline
             minRows={10}
             placeholder="Write in Markdown…"
-            sx={{ flex: 1, overflow: 'auto' }}
           />
 
-          <Divider />
-        </>
-      )}
+          <Divider sx={{ my: 2 }} />
 
-      {/* Preview */}
-      {!editing && <Divider />}
-      <Typography variant="subtitle2" color="text.secondary">
-        Preview
-      </Typography>
-      <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
-        <Typography variant="h5" sx={{ mb: 0.5 }}>
-          {title || 'Untitled'}
-        </Typography>
-
-        {/* 🔹 NEW: show status if present */}
-        {noteStatus.trim() && (
-          <Chip
-            size="small"
-            variant="outlined"
-            color="info"
-            label={noteStatus}
-            sx={{
-              mb: 1,
-              maxWidth: '100%',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          />
-        )}
-
-        {/* Context & relations (read-only, always visible in preview) */}
-        {(noteSubject || noteTopic || (relations && relations.length > 0)) && (
-          <Box
-            sx={{
-              mb: 2,
-              p: 1,
-              borderRadius: 1,
-              border: '1px solid',
-              borderColor: 'divider',
-              backgroundColor: 'background.paper',
-            }}
-          >
-            {noteSubject || noteTopic ? (
-              <Box sx={{ mb: relations && relations.length > 0 ? 1.5 : 0 }}>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
-                >
-                  Context
-                </Typography>
-                <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap' }}>
-                  {noteSubject && (
-                    <Chip
-                      size="small"
-                      variant="outlined"
-                      label={`Subject: ${noteSubject.name}`}
-                      onClick={() => {
-                        const slug = slugifyStandard(noteSubject.name);
-                        navigate(`/s/${noteSubject.id}-${slug}`);
-                      }}
-                    />
-                  )}
-                  {noteTopic && (
-                    <Chip
-                      size="small"
-                      variant="outlined"
-                      label={`Topic: ${noteTopic.name}`}
-                      onClick={() => {
-                        const subj = noteSubject;
-                        if (!subj) return;
-                        const subjSlug = slugifyStandard(subj.name);
-                        const topicSlug = slugifyStandard(noteTopic.name);
-                        navigate(`/s/${subj.id}-${subjSlug}/t/${noteTopic.id}-${topicSlug}`);
-                      }}
-                    />
-                  )}
-                </Stack>
-              </Box>
-            ) : null}
-
-            {relations && relations.length > 0 && (
-              <Box>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
-                >
-                  Relations
-                </Typography>
-                <Stack spacing={0.5} sx={{ mt: 0.5 }}>
-                  {relations.map((rel, idx) => (
-                    <Stack
-                      key={idx}
-                      direction="row"
-                      spacing={1}
-                      alignItems="center"
-                    >
-                      <Typography variant="body2">
-                        {describeRelationTarget(rel)}{' '}
-                        <Typography
-                          component="span"
-                          variant="caption"
-                          color="text.secondary"
-                        >
-                          ({rel.kind})
-                        </Typography>
-                      </Typography>
-                      <Tooltip title="Open related item">
-                        <span>
-                          <IconButton
-                            size="small"
-                            onClick={() => handleOpenRelationTarget(rel)}
-                            aria-label="Open related item"
-                            disabled={!rel.targetId}
-                          >
-                            <OpenInNewIcon fontSize="inherit" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    </Stack>
-                  ))}
-                </Stack>
-              </Box>
-            )}
-          </Box>
-        )}
-
-        <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
-          <div className="markdown-body">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkBreaks]}
-              rehypePlugins={[rehypeHighlight]}
-            >
-              {previewBody}
-            </ReactMarkdown>
-          </div>
+          {/* Preview (within scrollable body) */}
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+            Preview
+          </Typography>
+          {renderPreviewContent()}
         </Box>
-      </Box>
+      ) : (
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            p: 1,
+          }}
+        >
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+            Preview
+          </Typography>
+          {renderPreviewContent()}
+        </Box>
+      )}
 
       <Snackbar
         open={snack.open}

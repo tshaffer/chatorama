@@ -208,7 +208,7 @@ export default function TopicNotesPage() {
       id="topic-notes-page"
       sx={{
         display: 'flex',
-        height: 'calc(100vh - 64px)',
+        height: '100%',   // ⬅️ let it fill the parent instead of using viewport math
         minHeight: 0,
         overflow: 'hidden',
       }}
@@ -224,8 +224,8 @@ export default function TopicNotesPage() {
           display: 'flex',
           flexDirection: 'column',
           minHeight: 0,
-          maxHeight: '100%',
-          overflowY: 'auto',
+          height: '100%',        // ⬅️ fill TopicNotesPage’s height
+          overflowY: 'auto',     // ⬅️ this panel owns the scroll
           gap: 2,
         }}
       >
@@ -256,6 +256,7 @@ export default function TopicNotesPage() {
           display: 'flex',
           flexDirection: 'column',
           minHeight: 0,
+          overflow: 'hidden',
         }}
       >
         {(!subjectId || !topicId) && !isBatchMode ? (
@@ -274,7 +275,14 @@ export default function TopicNotesPage() {
               direction="row"
               alignItems="center"
               justifyContent="space-between"
-              sx={{ mb: 1 }}
+              sx={{
+                mb: 1,
+                position: 'sticky',
+                top: 0,
+                zIndex: (theme) => theme.zIndex.appBar - 1,
+                bgcolor: 'background.paper',
+                py: 1,
+              }}
             >
               <Box>
                 <Typography variant="h6">
@@ -359,6 +367,7 @@ export default function TopicNotesPage() {
                 flex: 1,
                 minHeight: 0,
                 overflowY: 'auto',
+                overflowX: 'hidden',
               }}
             >
               {activeError ? (
@@ -383,7 +392,7 @@ export default function TopicNotesPage() {
                     notes={activeNotes}
                     selectedIds={selectedIds}
                     onToggleSelect={toggleSelect}
-                    onReordered={isBatchMode ? () => {} : onReordered}
+                    onReordered={isBatchMode ? () => { } : onReordered}
                     onOpenNote={onOpenNote}
                   />
 

@@ -66,9 +66,27 @@ export default function ManageSubjectsPage() {
   };
 
   return (
-    <Box sx={{ p: 2 }}>
+    <Box
+      sx={{
+        height: '100%',
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        p: 2,
+        boxSizing: 'border-box',
+      }}
+    >
       {/* Header */}
-      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1.5 }}>
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="flex-start"
+        sx={{
+          mb: 1.5,
+          py: 1,
+        }}
+      >
         <Box>
           <Typography variant="h4" gutterBottom>
             Manage Hierarchy
@@ -106,41 +124,50 @@ export default function ManageSubjectsPage() {
 
       <Divider sx={{ mb: 2 }} />
 
-      {/* Subject list */}
-      <Stack spacing={2}>
-        {isLoading && (
-          <>
-            <Skeleton variant="rounded" height={120} />
-            <Skeleton variant="rounded" height={120} />
-          </>
-        )}
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+        }}
+      >
+        {/* Subject list */}
+        <Stack spacing={2}>
+          {isLoading && (
+            <>
+              <Skeleton variant="rounded" height={120} />
+              <Skeleton variant="rounded" height={120} />
+            </>
+          )}
 
-        {!isLoading &&
-          subjects.map((s) => (
-            <SubjectCard
-              key={safeId(s)}
-              subjectId={safeId(s)}
-              subjectName={s.name}
-            />
-          ))}
+          {!isLoading &&
+            subjects.map((s) => (
+              <SubjectCard
+                key={safeId(s)}
+                subjectId={safeId(s)}
+                subjectName={s.name}
+              />
+            ))}
 
-        {!isLoading && subjects.length === 0 && (
-          <Typography color="text.secondary">No subjects yet.</Typography>
-        )}
-      </Stack>
+          {!isLoading && subjects.length === 0 && (
+            <Typography color="text.secondary">No subjects yet.</Typography>
+          )}
+        </Stack>
 
-      <ReorderSubjectsDialog
-        open={reorderSubjectsOpen}
-        onClose={() => setReorderSubjectsOpen(false)}
-        subjects={subjects.map(
-          (s): ReorderSubjectItem => ({
-            id: safeId(s),
-            name: s.name,
-          })
-        )}
-        onSave={handleSaveReorderSubjects}
-        loading={reorderingSubjects}
-      />
+        <ReorderSubjectsDialog
+          open={reorderSubjectsOpen}
+          onClose={() => setReorderSubjectsOpen(false)}
+          subjects={subjects.map(
+            (s): ReorderSubjectItem => ({
+              id: safeId(s),
+              name: s.name,
+            })
+          )}
+          onSave={handleSaveReorderSubjects}
+          loading={reorderingSubjects}
+        />
+      </Box>
     </Box>
   );
 }
