@@ -27,7 +27,17 @@ export default function Home() {
   const topSubjects = subjects.slice(0, 3);
 
   return (
-    <Box sx={{ py: 2 }}>
+    <Box
+      sx={{
+        height: '100%',
+        minHeight: 0,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        py: 2,
+        px: { xs: 2, sm: 3 },
+        boxSizing: 'border-box',
+      }}
+    >
       {/* Hero */}
       <Stack spacing={2} sx={{ mb: 3 }}>
         <Typography variant="h4" fontWeight={700}>

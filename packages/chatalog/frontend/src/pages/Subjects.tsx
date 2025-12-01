@@ -66,9 +66,29 @@ export default function ManageSubjectsPage() {
   };
 
   return (
-    <Box sx={{ p: 2 }}>
+    <Box
+      sx={{
+        height: '100%',
+        minHeight: 0,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        p: 2,
+      }}
+    >
       {/* Header */}
-      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1.5 }}>
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="flex-start"
+        sx={{
+          mb: 1.5,
+          position: 'sticky',
+          top: 0,
+          zIndex: (theme) => theme.zIndex.appBar - 1,
+          bgcolor: 'background.paper',
+          py: 1,
+        }}
+      >
         <Box>
           <Typography variant="h4" gutterBottom>
             Manage Hierarchy

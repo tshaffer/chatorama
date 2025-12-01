@@ -158,39 +158,47 @@ export default function RelationsPage() {
     return 'Unknown';
   };
 
-  if (loading && !notes.length) {
-    return (
-      <Box sx={{ p: { xs: 1, sm: 2 }, display: 'flex', justifyContent: 'center' }}>
-        <CircularProgress size={24} />
-      </Box>
-    );
-  }
+  const content = (() => {
+    if (loading && !notes.length) {
+      return (
+        <Box sx={{ p: { xs: 1, sm: 2 }, display: 'flex', justifyContent: 'center' }}>
+          <CircularProgress size={24} />
+        </Box>
+      );
+    }
 
-  if (notesError) {
-    return (
-      <Box sx={{ p: { xs: 1, sm: 2 } }}>
-        <Typography variant="h5" gutterBottom>
-          Relations
-        </Typography>
-        <Typography color="error" variant="body2">
-          Failed to load relations:{' '}
-          {String(
-            (notesErrorObj as any)?.data ??
-              (notesErrorObj as any)?.message ??
-              notesErrorObj,
-          )}
-        </Typography>
-      </Box>
-    );
-  }
+    if (notesError) {
+      return (
+        <Box sx={{ p: { xs: 1, sm: 2 } }}>
+          <Typography variant="h5" gutterBottom>
+            Relations
+          </Typography>
+          <Typography color="error" variant="body2">
+            Failed to load relations:{' '}
+            {String(
+              (notesErrorObj as any)?.data ??
+                (notesErrorObj as any)?.message ??
+                notesErrorObj,
+            )}
+          </Typography>
+        </Box>
+      );
+    }
 
-  return (
-    <Box sx={{ p: { xs: 1, sm: 2 }, overflow: 'auto' }}>
+    return (
+      <>
       <Stack
         direction="row"
         alignItems="center"
         justifyContent="space-between"
-        sx={{ mb: 2 }}
+        sx={{
+          mb: 2,
+          position: 'sticky',
+          top: 0,
+          zIndex: (theme) => theme.zIndex.appBar - 1,
+          bgcolor: 'background.paper',
+          py: 1,
+        }}
       >
         <Box>
           <Typography variant="h4" gutterBottom>
@@ -273,6 +281,21 @@ export default function RelationsPage() {
           </TableBody>
         </Table>
       )}
+      </>
+    );
+  })();
+
+  return (
+    <Box
+      sx={{
+        height: '100%',
+        minHeight: 0,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        p: { xs: 1, sm: 2 },
+      }}
+    >
+      {content}
     </Box>
   );
 }

@@ -110,10 +110,20 @@ export default function SubjectIndex() {
         gap: 2,
         height: '100%',
         boxSizing: 'border-box',
+        minHeight: 0,
+        overflow: 'hidden',
       }}
     >
       {/* Header */}
-      <Box>
+      <Box
+        sx={{
+          position: 'sticky',
+          top: 0,
+          zIndex: (theme) => theme.zIndex.appBar - 1,
+          bgcolor: 'background.paper',
+          pt: 1,
+        }}
+      >
         <Typography variant="h4" sx={{ mb: 0.5 }}>
           {subjectName}
         </Typography>
@@ -171,7 +181,7 @@ export default function SubjectIndex() {
                 No topics yet for this subject.
               </Typography>
             ) : (
-              <Box sx={{ flex: 1, overflow: 'auto', mt: 0.5 }}>
+              <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', mt: 0.5 }}>
                 <List dense>
                   {topics.map((t) => {
                     const topicId = t.id ?? (t as any)._id;

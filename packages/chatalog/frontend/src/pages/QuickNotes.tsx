@@ -21,12 +21,27 @@ export default function QuickNotesPage() {
   const { data: quickNotes = [], isLoading } = useGetQuickNotesQuery();
 
   return (
-    <Box sx={{ p: 2 }}>
+    <Box
+      sx={{
+        height: '100%',
+        minHeight: 0,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        p: 2,
+      }}
+    >
       <Stack
         direction="row"
         justifyContent="space-between"
         alignItems="center"
-        sx={{ mb: 1.5 }}
+        sx={{
+          mb: 1.5,
+          position: 'sticky',
+          top: 0,
+          zIndex: (theme) => theme.zIndex.appBar - 1,
+          bgcolor: 'background.paper',
+          py: 1,
+        }}
       >
         <Typography variant="h4">Quick Notes</Typography>
         <Typography variant="body2" color="text.secondary">
