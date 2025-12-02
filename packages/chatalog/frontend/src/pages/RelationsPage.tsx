@@ -158,59 +158,67 @@ export default function RelationsPage() {
     return 'Unknown';
   };
 
-  const content = (() => {
-    if (loading && !notes.length) {
-      return (
-        <Box sx={{ p: { xs: 1, sm: 2 }, display: 'flex', justifyContent: 'center' }}>
-          <CircularProgress size={24} />
-        </Box>
-      );
-    }
-
-    if (notesError) {
-      return (
-        <Box sx={{ p: { xs: 1, sm: 2 } }}>
-          <Typography variant="h5" gutterBottom>
+  return (
+    <Box
+      sx={{
+        height: '100%',
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        p: { xs: 1, sm: 2 },
+      }}
+    >
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{
+          mb: 2,
+          py: 1,
+        }}
+      >
+        <Box>
+          <Typography variant="h4" gutterBottom>
             Relations
           </Typography>
-          <Typography color="error" variant="body2">
-            Failed to load relations:{' '}
-            {String(
-              (notesErrorObj as any)?.data ??
-                (notesErrorObj as any)?.message ??
-                notesErrorObj,
-            )}
+          <Typography variant="body2" color="text.secondary">
+            This view shows all note relations across subjects, topics, and notes.
           </Typography>
         </Box>
-      );
-    }
+        <Chip
+          size="small"
+          label={`${edges.length} relation${edges.length === 1 ? '' : 's'}`}
+        />
+      </Stack>
 
-    return (
-      <>
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-          sx={{
-            mb: 2,
-            py: 1,
-          }}
-        >
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+        }}
+      >
+        {loading && !notes.length ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+            <CircularProgress size={24} />
+          </Box>
+        ) : notesError ? (
           <Box>
-            <Typography variant="h4" gutterBottom>
+            <Typography variant="h5" gutterBottom>
               Relations
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              This view shows all note relations across subjects, topics, and notes.
+            <Typography color="error" variant="body2">
+              Failed to load relations:{' '}
+              {String(
+                (notesErrorObj as any)?.data ??
+                  (notesErrorObj as any)?.message ??
+                  notesErrorObj,
+              )}
             </Typography>
           </Box>
-          <Chip
-            size="small"
-            label={`${edges.length} relation${edges.length === 1 ? '' : 's'}`}
-          />
-        </Stack>
-
-        {edges.length === 0 ? (
+        ) : edges.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
             No relations defined yet. Use the Relations panel in the note editor to
             link notes to subjects, topics, and other notes.
@@ -277,30 +285,6 @@ export default function RelationsPage() {
             </TableBody>
           </Table>
         )}
-      </>
-    );
-  })();
-
-  return (
-    <Box
-      sx={{
-        height: '100%',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        p: { xs: 1, sm: 2 },
-      }}
-    >
-      <Box
-        sx={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-        }}
-      >
-        {content}
       </Box>
     </Box>
   );
