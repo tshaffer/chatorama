@@ -224,8 +224,8 @@ export default function TopicNotesPage() {
           display: 'flex',
           flexDirection: 'column',
           minHeight: 0,
-          maxHeight: '100%',
-          overflowY: 'auto',
+          height: '100%',        // ⬅️ fill TopicNotesPage’s height
+          overflowY: 'auto',     // ⬅️ this panel owns the scroll
           gap: 2,
         }}
       >

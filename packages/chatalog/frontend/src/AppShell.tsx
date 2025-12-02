@@ -83,7 +83,14 @@ export default function AppShell() {
     (to === '/' && (pathname === '/' || pathname === '/home'));
 
   return (
-    <Box sx={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column' }}>
+    <Box
+      sx={{
+        height: '100dvh',            // ⬅️ fixed to viewport height
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',          // ⬅️ no document-level scrollbar
+      }}
+    >
       <AppBar position="sticky" color="primary" enableColorOnDark>
         <Toolbar disableGutters sx={{ px: { xs: 1, sm: 1.5 } }}>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
@@ -152,10 +159,15 @@ export default function AppShell() {
         component="main"
         sx={{
           flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,             // ⬅️ let children use full height
+          overflow: 'hidden',       // ⬅️ pages manage their own scroll
           width: '100%',
-          px: { xs: 1, sm: 1.5 },   // tiny margins (~8–12px each side)
+          px: { xs: 1, sm: 1.5 },
           py: 3,
-          minWidth: 0,              // prevents child overflow clipping
+          minWidth: 0,
+          boxSizing: 'border-box',
         }}
       >
         <Outlet />
