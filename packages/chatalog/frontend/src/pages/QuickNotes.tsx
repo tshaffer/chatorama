@@ -25,8 +25,9 @@ export default function QuickNotesPage() {
       sx={{
         height: '100%',
         minHeight: 0,
-        overflowY: 'auto',
-        overflowX: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
         p: 2,
       }}
     >
@@ -36,10 +37,6 @@ export default function QuickNotesPage() {
         alignItems="center"
         sx={{
           mb: 1.5,
-          position: 'sticky',
-          top: 0,
-          zIndex: (theme) => theme.zIndex.appBar - 1,
-          bgcolor: 'background.paper',
           py: 1,
         }}
       >
@@ -51,78 +48,87 @@ export default function QuickNotesPage() {
 
       <Divider sx={{ mb: 2 }} />
 
-      {isLoading && (
-        <Stack spacing={1}>
-          <Skeleton variant="rounded" height={56} />
-          <Skeleton variant="rounded" height={56} />
-          <Skeleton variant="rounded" height={56} />
-        </Stack>
-      )}
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+        }}
+      >
+        {isLoading && (
+          <Stack spacing={1}>
+            <Skeleton variant="rounded" height={56} />
+            <Skeleton variant="rounded" height={56} />
+            <Skeleton variant="rounded" height={56} />
+          </Stack>
+        )}
 
-      {!isLoading && quickNotes.length === 0 && (
-        <Typography color="text.secondary">
-          No quick notes yet. Use the <strong>Quick Capture</strong> button in the top bar to add one.
-        </Typography>
-      )}
+        {!isLoading && quickNotes.length === 0 && (
+          <Typography color="text.secondary">
+            No quick notes yet. Use the <strong>Quick Capture</strong> button in the top bar to add one.
+          </Typography>
+        )}
 
-      {!isLoading && quickNotes.length > 0 && (
-        <List sx={{ bgcolor: 'background.paper', borderRadius: 1 }}>
-          {quickNotes.map((qn: QuickNote) => {
-            const title =
-              qn.title?.trim() ||
-              (qn.markdown ? truncate(qn.markdown.split('\n')[0], 60) : '(untitled quick note)');
-            const preview =
-              qn.markdown ? truncate(qn.markdown.replace(/\s+/g, ' ').trim(), 180) : '';
+        {!isLoading && quickNotes.length > 0 && (
+          <List sx={{ bgcolor: 'background.paper', borderRadius: 1 }}>
+            {quickNotes.map((qn: QuickNote) => {
+              const title =
+                qn.title?.trim() ||
+                (qn.markdown ? truncate(qn.markdown.split('\n')[0], 60) : '(untitled quick note)');
+              const preview =
+                qn.markdown ? truncate(qn.markdown.replace(/\\s+/g, ' ').trim(), 180) : '';
 
-            return (
-              <ListItemButton
-                key={qn.id}
-                component={Link}
-                to={`/quick-notes/${qn.id}`}
-              >
-                <ListItemText
-                  disableTypography
-                  primary={
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Typography variant="subtitle1" noWrap>
-                        {title}
-                      </Typography>
-                      <Chip
-                        size="small"
-                        label="Quick"
-                        color="primary"
-                        variant="outlined"
-                      />
-                    </Stack>
-                  }
-                  secondary={
-                    <Box>
-                      {preview && (
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          sx={{ display: 'block' }}
-                        >
-                          {preview}
+              return (
+                <ListItemButton
+                  key={qn.id}
+                  component={Link}
+                  to={`/quick-notes/${qn.id}`}
+                >
+                  <ListItemText
+                    disableTypography
+                    primary={
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography variant="subtitle1" noWrap>
+                          {title}
                         </Typography>
-                      )}
-                      {qn.createdAt && (
-                        <Typography
-                          variant="caption"
-                          color="text.disabled"
-                          sx={{ display: 'block', mt: 0.5 }}
-                        >
-                          Created {new Date(qn.createdAt).toLocaleString()}
-                        </Typography>
-                      )}
-                    </Box>
-                  }
-                />
-              </ListItemButton>
-            );
-          })}
-        </List>
-      )}
+                        <Chip
+                          size="small"
+                          label="Quick"
+                          color="primary"
+                          variant="outlined"
+                        />
+                      </Stack>
+                    }
+                    secondary={
+                      <Box>
+                        {preview && (
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{ display: 'block' }}
+                          >
+                            {preview}
+                          </Typography>
+                        )}
+                        {qn.createdAt && (
+                          <Typography
+                            variant="caption"
+                            color="text.disabled"
+                            sx={{ display: 'block', mt: 0.5 }}
+                          >
+                            Created {new Date(qn.createdAt).toLocaleString()}
+                          </Typography>
+                        )}
+                      </Box>
+                    }
+                  />
+                </ListItemButton>
+              );
+            })}
+          </List>
+        )}
+      </Box>
     </Box>
   );
 }

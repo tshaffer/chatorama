@@ -187,100 +187,96 @@ export default function RelationsPage() {
 
     return (
       <>
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        sx={{
-          mb: 2,
-          position: 'sticky',
-          top: 0,
-          zIndex: (theme) => theme.zIndex.appBar - 1,
-          bgcolor: 'background.paper',
-          py: 1,
-        }}
-      >
-        <Box>
-          <Typography variant="h4" gutterBottom>
-            Relations
-          </Typography>
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          sx={{
+            mb: 2,
+            py: 1,
+          }}
+        >
+          <Box>
+            <Typography variant="h4" gutterBottom>
+              Relations
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              This view shows all note relations across subjects, topics, and notes.
+            </Typography>
+          </Box>
+          <Chip
+            size="small"
+            label={`${edges.length} relation${edges.length === 1 ? '' : 's'}`}
+          />
+        </Stack>
+
+        {edges.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
-            This view shows all note relations across subjects, topics, and notes.
+            No relations defined yet. Use the Relations panel in the note editor to
+            link notes to subjects, topics, and other notes.
           </Typography>
-        </Box>
-        <Chip
-          size="small"
-          label={`${edges.length} relation${edges.length === 1 ? '' : 's'}`}
-        />
-      </Stack>
+        ) : (
+          <Table size="small" sx={{ minWidth: 650 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>From note</TableCell>
+                <TableCell>Kind</TableCell>
+                <TableCell>Target</TableCell>
+                <TableCell>Target type</TableCell>
+                <TableCell align="right">Open</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {edges.map((edge, idx) => {
+                const { source, relation } = edge;
+                const targetLabel = renderTargetLabel(relation);
 
-      {edges.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
-          No relations defined yet. Use the Relations panel in the note editor to
-          link notes to subjects, topics, and other notes.
-        </Typography>
-      ) : (
-        <Table size="small" sx={{ minWidth: 650 }}>
-          <TableHead>
-            <TableRow>
-              <TableCell>From note</TableCell>
-              <TableCell>Kind</TableCell>
-              <TableCell>Target</TableCell>
-              <TableCell>Target type</TableCell>
-              <TableCell align="right">Open</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {edges.map((edge, idx) => {
-              const { source, relation } = edge;
-              const targetLabel = renderTargetLabel(relation);
-
-              return (
-                <TableRow key={`${source.id}-${idx}`}>
-                  <TableCell sx={{ maxWidth: 260 }}>
-                    <Typography variant="body2" noWrap>
-                      {source.title || 'Untitled'}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      size="small"
-                      label={relation.kind}
-                      variant="outlined"
-                    />
-                  </TableCell>
-                  <TableCell sx={{ maxWidth: 320 }}>
-                    <Typography variant="body2" noWrap>
-                      {targetLabel}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" color="text.secondary">
-                      {targetTypeLabel(relation.targetType)}
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Tooltip title="Open target">
-                      <span>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleOpenTarget(relation)}
-                          disabled={
-                            relation.targetType === 'topic' &&
-                            !topicsById.get(relation.targetId)
-                          }
-                        >
-                          <LaunchIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      )}
+                return (
+                  <TableRow key={`${source.id}-${idx}`}>
+                    <TableCell sx={{ maxWidth: 260 }}>
+                      <Typography variant="body2" noWrap>
+                        {source.title || 'Untitled'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        label={relation.kind}
+                        variant="outlined"
+                      />
+                    </TableCell>
+                    <TableCell sx={{ maxWidth: 320 }}>
+                      <Typography variant="body2" noWrap>
+                        {targetLabel}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">
+                        {targetTypeLabel(relation.targetType)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Tooltip title="Open target">
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleOpenTarget(relation)}
+                            disabled={
+                              relation.targetType === 'topic' &&
+                              !topicsById.get(relation.targetId)
+                            }
+                          >
+                            <LaunchIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
       </>
     );
   })();
@@ -290,12 +286,22 @@ export default function RelationsPage() {
       sx={{
         height: '100%',
         minHeight: 0,
-        overflowY: 'auto',
-        overflowX: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
         p: { xs: 1, sm: 2 },
       }}
     >
-      {content}
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+        }}
+      >
+        {content}
+      </Box>
     </Box>
   );
 }
