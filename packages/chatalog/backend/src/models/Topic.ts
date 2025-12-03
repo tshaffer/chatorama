@@ -28,10 +28,16 @@ const TopicSchema = new Schema<TopicDoc>(
 
 // Ensure a slug exists; regenerate on name change unless $locals.preserveSlug
 TopicSchema.pre('validate', function (next) {
-  if (!this.slug || this.slug.trim() === '') {
-    this.slug = slugifyStandard(this.name || '');
-  } else if (this.isModified('name') && !this.$locals?.preserveSlug) {
-    this.slug = slugifyStandard(this.name || '');
+  // New docs: respect provided slug (deduped upstream). If missing, generate.
+  if (this.isNew) {
+    if (!this.slug || this.slug.trim() === '') {
+      this.slug = slugifyStandard(this.name || '');
+    }
+  } else {
+    // Existing docs: update slug only when name changes and preserveSlug is not set
+    if (this.isModified('name') && !this.$locals?.preserveSlug) {
+      this.slug = slugifyStandard(this.name || '');
+    }
   }
   next();
 });

@@ -23,6 +23,7 @@ export type ImportedNoteSummary = {
 export type ImportResponse = {
   imported: number;
   results: ImportedNoteSummary[];
+  combinedNote?: ImportedNoteSummary;
 };
 
 export type ApplyImportedRow = {

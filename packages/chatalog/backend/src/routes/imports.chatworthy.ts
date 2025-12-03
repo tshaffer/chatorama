@@ -332,9 +332,18 @@ async function ensureSubjectTopic(
     let subj = await SubjectModel.findOne({ name }).exec();
     if (!subj) {
       const slug = await dedupeSubjectSlug(slugifyStandard(name));
-      subj = await SubjectModel.create({ name, slug });
+      try {
+        subj = await SubjectModel.create({ name, slug });
+      } catch (err: any) {
+        if (err?.code === 11000) {
+          // created concurrently; load existing
+          subj = (await SubjectModel.findOne({ name }).exec()) ?? null;
+        } else {
+          throw err;
+        }
+      }
     }
-    subjectId = subj.id;
+    subjectId = subj?.id;
   }
 
   if (topicName) {
@@ -343,9 +352,17 @@ async function ensureSubjectTopic(
     let topic = await TopicModel.findOne({ subjectId: sid, name }).exec();
     if (!topic) {
       const slug = await dedupeTopicSlug(sid, slugifyStandard(name));
-      topic = await TopicModel.create({ subjectId: sid, name, slug });
+      try {
+        topic = await TopicModel.create({ subjectId: sid, name, slug });
+      } catch (err: any) {
+        if (err?.code === 11000) {
+          topic = (await TopicModel.findOne({ subjectId: sid, name }).exec()) ?? null;
+        } else {
+          throw err;
+        }
+      }
     }
-    topicId = topic.id;
+    topicId = topic?.id;
   }
 
   return { subjectId, topicId };
@@ -398,7 +415,7 @@ type ApplyImportedNotePayload = {
 async function parseOneMarkdownForPreview(
   buf: Buffer,
   fileName: string
-): Promise<PreviewNoteInfo[]> {
+): Promise<{ results: PreviewNoteInfo[]; combined?: PreviewNoteInfo }> {
   const parsedNotes = parseChatworthyFile(buf, fileName);
   const previews: PreviewNoteInfo[] = [];
 
@@ -423,7 +440,47 @@ async function parseOneMarkdownForPreview(
     });
   });
 
-  return previews;
+  // Combined note using cleaned full markdown
+  let combined: PreviewNoteInfo | undefined;
+  if (parsedNotes.length > 0) {
+    const first = parsedNotes[0];
+
+    const raw = buf.toString('utf8');
+    const gm = matter(raw);
+    const fm = gm.data as Record<string, any>;
+
+    const fmTitle = typeof fm.title === 'string' ? fm.title.trim() : undefined;
+    const fmChatTitle = typeof fm.chatTitle === 'string' ? fm.chatTitle.trim() : undefined;
+    const subject = typeof fm.subject === 'string' ? fm.subject : undefined;
+    const topic = typeof fm.topic === 'string' ? fm.topic : undefined;
+
+    const combinedBody = stripForChatalog(gm.content, {
+      subject,
+      topic,
+      chatTitle: fmChatTitle,
+      fmTitle,
+    }).trim();
+
+    combined = {
+      file: fileName,
+      importKey: `${fileName}::combined`,
+      title: first.title || fileName,
+      subjectName: first.subjectName,
+      topicName: first.topicName,
+      body: combinedBody,
+      tags: first.tags,
+      summary: first.summary,
+      provenanceUrl: first.provenanceUrl,
+      chatworthyNoteId: first.chatworthyNoteId,
+      chatworthyChatId: first.chatworthyChatId,
+      chatworthyChatTitle: first.chatworthyChatTitle,
+      chatworthyFileName: first.chatworthyFileName ?? fileName,
+      chatworthyTurnIndex: undefined,
+      chatworthyTotalTurns: parsedNotes.length,
+    };
+  }
+
+  return { results: previews, combined };
 }
 
 // POST /api/v1/imports/chatworthy
@@ -433,6 +490,7 @@ router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
     const results: PreviewNoteInfo[] = [];
+    let combinedNote: PreviewNoteInfo | undefined;
 
     const lower = req.file.originalname.toLowerCase();
     if (lower.endsWith('.zip')) {
@@ -446,23 +504,25 @@ router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
           for await (const chunk of entry) chunks.push(chunk);
           const buf = Buffer.concat(chunks);
 
-          const notes = await parseOneMarkdownForPreview(buf, path);
-          results.push(...notes);
+          const parsed = await parseOneMarkdownForPreview(buf, path);
+          results.push(...parsed.results);
+          if (!combinedNote && parsed.combined) combinedNote = parsed.combined;
         } else {
           entry.autodrain();
         }
       }
     } else if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
-      const notes = await parseOneMarkdownForPreview(
+      const parsed = await parseOneMarkdownForPreview(
         req.file.buffer,
         req.file.originalname
       );
-      results.push(...notes);
+      results.push(...parsed.results);
+      combinedNote = parsed.combined;
     } else {
       return res.status(400).json({ message: 'Unsupported file type. Use .md or .zip.' });
     }
 
-    res.json({ imported: results.length, results });
+    res.json({ imported: results.length, results, combinedNote });
   } catch (err) {
     next(err);
   }

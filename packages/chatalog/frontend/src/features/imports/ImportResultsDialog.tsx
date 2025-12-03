@@ -17,6 +17,9 @@ import {
   Collapse,
   Box,
   Typography,
+  Stack,
+  Radio,
+  FormControlLabel,
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -40,6 +43,7 @@ type Props = {
   open: boolean;
   onClose: () => void;
   importedNotes: ImportedNoteSummary[];
+  combinedNote?: ImportedNoteSummary;
   subjects: SubjectWithTopics[];
   onApply: (rows: EditableImportedNoteRow[]) => void;
 };
@@ -48,13 +52,27 @@ export function ImportResultsDialog({
   open,
   onClose,
   importedNotes,
+  combinedNote,
   subjects,
   onApply,
 }: Props) {
+  const [importMode, setImportMode] = useState<'perTurn' | 'single'>('perTurn');
+
   const [defaultSubjectLabel, setDefaultSubjectLabel] = useState('');
   const [defaultTopicLabel, setDefaultTopicLabel] = useState('');
   const subjectBulkUpdateRef = React.useRef(false);
   const topicBulkUpdateRef = React.useRef(false);
+
+  const buildEditableRows = (notes: ImportedNoteSummary[]) =>
+    notes.map((n) => ({
+      ...n,
+      editedTitle: n.title,
+      subjectLabel: n.subjectName ?? '',
+      topicLabel: n.topicName ?? '',
+      showBody: false,
+      subjectTouched: false,
+      topicTouched: false,
+    }));
 
   const [rows, setRows] = useState<EditableImportedNoteRow[]>(() =>
     importedNotes.map((n) => ({
@@ -68,14 +86,24 @@ export function ImportResultsDialog({
     })),
   );
 
+  const [singleRows, setSingleRows] = useState<EditableImportedNoteRow[]>(() =>
+    combinedNote
+      ? buildEditableRows([combinedNote])
+      : [],
+  );
+
   // Initialize defaults + rows whenever a new import result comes in
   React.useEffect(() => {
     if (!importedNotes.length) return;
 
     const firstSubject =
-      importedNotes.find((n) => n.subjectName)?.subjectName ?? '';
+      importedNotes.find((n) => n.subjectName)?.subjectName ??
+      combinedNote?.subjectName ??
+      '';
     const firstTopic =
-      importedNotes.find((n) => n.topicName)?.topicName ?? '';
+      importedNotes.find((n) => n.topicName)?.topicName ??
+      combinedNote?.topicName ??
+      '';
 
     setDefaultSubjectLabel(firstSubject);
     setDefaultTopicLabel(firstTopic);
@@ -92,13 +120,34 @@ export function ImportResultsDialog({
         topicTouched: false,
       })),
     );
-  }, [importedNotes]);
+
+    setSingleRows(
+      combinedNote
+        ? [
+          {
+            ...combinedNote,
+            editedTitle: combinedNote.title,
+            subjectLabel: combinedNote.subjectName ?? firstSubject ?? '',
+            topicLabel: combinedNote.topicName ?? firstTopic ?? '',
+            showBody: false,
+            subjectTouched: false,
+            topicTouched: false,
+          },
+        ]
+        : [],
+    );
+  }, [importedNotes, combinedNote]);
 
   // NEW: clear bulk flags after rows change
   React.useEffect(() => {
     subjectBulkUpdateRef.current = false;
     topicBulkUpdateRef.current = false;
-  }, [rows]);
+  }, [rows, singleRows]);
+
+  const activeRows = useMemo(
+    () => (importMode === 'perTurn' ? rows : singleRows),
+    [importMode, rows, singleRows],
+  );
 
   const subjectOptions = useMemo(() => {
     const set = new Set<string>();
@@ -110,7 +159,7 @@ export function ImportResultsDialog({
       .filter(Boolean)
       .forEach((name) => set.add(name as string));
 
-    rows
+    activeRows
       .map((r) => r.subjectLabel?.trim())
       .filter(Boolean)
       .forEach((name) => set.add(name as string));
@@ -121,7 +170,7 @@ export function ImportResultsDialog({
       .forEach((name) => set.add(name as string));
 
     return Array.from(set);
-  }, [defaultSubjectLabel, importedNotes, rows, subjects]);
+  }, [defaultSubjectLabel, importedNotes, activeRows, subjects]);
 
   const topicOptionsForSubject = (
     subjectLabel: string,
@@ -150,7 +199,8 @@ export function ImportResultsDialog({
     importKey: string,
     patch: Partial<EditableImportedNoteRow>,
   ) => {
-    setRows((prev) =>
+    const setter = importMode === 'perTurn' ? setRows : setSingleRows;
+    setter((prev) =>
       prev.map((r) => (r.importKey === importKey ? { ...r, ...patch } : r)),
     );
   };
@@ -158,7 +208,8 @@ export function ImportResultsDialog({
   const updateDefaultSubject = (next: string) => {
     setDefaultSubjectLabel(next);
     subjectBulkUpdateRef.current = true;
-    setRows((prevRows) =>
+    const setter = importMode === 'perTurn' ? setRows : setSingleRows;
+    setter((prevRows) =>
       prevRows.map((r) =>
         r.subjectTouched
           ? r
@@ -173,7 +224,8 @@ export function ImportResultsDialog({
   const updateDefaultTopic = (next: string) => {
     setDefaultTopicLabel(next);
     topicBulkUpdateRef.current = true;
-    setRows((prevRows) =>
+    const setter = importMode === 'perTurn' ? setRows : setSingleRows;
+    setter((prevRows) =>
       prevRows.map((r) =>
         r.topicTouched
           ? r
@@ -185,13 +237,41 @@ export function ImportResultsDialog({
     );
   };
   const handleApply = () => {
-    onApply(rows);
+    const payload = importMode === 'perTurn' ? rows : singleRows.length ? singleRows : rows;
+    onApply(payload);
   };
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="lg">
       <DialogTitle>Review Imported Notes</DialogTitle>
       <DialogContent dividers>
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="body2" sx={{ mb: 0.5 }}>
+            How would you like to import this file?
+          </Typography>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
+            <FormControlLabel
+              control={
+                <Radio
+                  checked={importMode === 'perTurn'}
+                  onChange={() => setImportMode('perTurn')}
+                />
+              }
+              label="One note per turn"
+            />
+            <FormControlLabel
+              control={
+                <Radio
+                  checked={importMode === 'single'}
+                  onChange={() => setImportMode('single')}
+                  disabled={!combinedNote}
+                />
+              }
+              label="Single note for entire conversation"
+            />
+          </Stack>
+        </Box>
+
         <Typography variant="body2" sx={{ mb: 2 }}>
           Set default Subject/Topic labels below, then tweak each note as needed.
           You can either pick from the list or type new labels. Changing a
@@ -249,7 +329,7 @@ export function ImportResultsDialog({
             </TableRow>
           </TableHead>
           <TableBody>
-            {rows.map((row) => (
+            {(activeRows.length ? activeRows : rows).map((row) => (
               <React.Fragment key={row.importKey}>
                 <TableRow hover>
                   <TableCell padding="checkbox">

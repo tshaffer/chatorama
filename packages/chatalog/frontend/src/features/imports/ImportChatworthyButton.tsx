@@ -172,6 +172,7 @@ export default function ImportChatworthyButton({
         open={reviewOpen}
         onClose={handleCloseReview}
         importedNotes={lastImport.results}
+        combinedNote={lastImport.combinedNote}
         subjects={subjects}
         onApply={handleApplyEdits}
       />
