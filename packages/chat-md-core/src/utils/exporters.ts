@@ -1,12 +1,11 @@
-import type { ExportNoteMetadata, ExportTurn } from '../types';
-
-// If you bundle with esbuild/webpack, install these deps:
-//   npm i turndown turndown-plugin-gfm
+// packages/chat-md-core/src/utils/exporters.ts
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
+import type { ExportNoteMetadata, ExportTurn } from '../types';
 
-// ---------------- Shared helpers ----------------
-
+/* -------------------------------------------------------------
+ * Utility: Determine role label (Prompt / Response / System)
+ * ------------------------------------------------------------- */
 function roleLabel(role: ExportTurn['role']): 'Prompt' | 'Response' | 'System' | 'Tool' {
   if (role === 'user') return 'Prompt';
   if (role === 'assistant') return 'Response';
@@ -14,6 +13,9 @@ function roleLabel(role: ExportTurn['role']): 'Prompt' | 'Response' | 'System' |
   return 'Tool';
 }
 
+/* -------------------------------------------------------------
+ * YAML Front Matter Renderer
+ * ------------------------------------------------------------- */
 function renderFrontMatter(meta: ExportNoteMetadata): string {
   const kv: Record<string, any> = {
     noteId: meta.noteId,
@@ -28,6 +30,7 @@ function renderFrontMatter(meta: ExportNoteMetadata): string {
     summary: (meta as any).summary,
     tags: (meta as any).tags,
   };
+
   const lines = ['---'];
   for (const [k, v] of Object.entries(kv)) {
     if (v === undefined || v === null || v === '') continue;
@@ -37,6 +40,9 @@ function renderFrontMatter(meta: ExportNoteMetadata): string {
   return lines.join('\n');
 }
 
+/* -------------------------------------------------------------
+ * Helper: First non-empty line as title
+ * ------------------------------------------------------------- */
 function firstLineTitle(s: string | undefined, fallback: string) {
   const line = (s || '')
     .split('\n')
@@ -44,14 +50,16 @@ function firstLineTitle(s: string | undefined, fallback: string) {
   return line.length > 220 ? line.slice(0, 217) + '…' : line;
 }
 
+/* -------------------------------------------------------------
+ * Table of Contents builder
+ * ------------------------------------------------------------- */
 function buildToc(prompts: { idx: number; title: string; anchor: string }[]): string[] {
   if (!prompts.length) return [];
   const out: string[] = [];
-  out.push('## Table of Contents', ''); // blank line for proper MD rendering
+  out.push('## Table of Contents', '');
 
   for (const p of prompts) {
     const safeTitle = p.title.replace(/\n+/g, ' ').trim();
-    // Ordered-list item (no bullets): "1. [Title](#anchor)"
     out.push(`${p.idx}. [${safeTitle}](#${p.anchor})`);
   }
 
@@ -59,11 +67,9 @@ function buildToc(prompts: { idx: number; title: string; anchor: string }[]): st
   return out;
 }
 
-// --- Chatalog meta helper -----------------
-
-// This is an internal shape for the JSON we embed in the HTML comment.
-// It’s intentionally derived from ExportNoteMetadata so we don’t need
-// any changes to external types.
+/* -------------------------------------------------------------
+ * Chatalog metadata (hidden HTML comment)
+ * ------------------------------------------------------------- */
 type ChatalogMetaV1 = {
   schemaVersion: 1;
   noteId: string;
@@ -92,15 +98,13 @@ function renderChatalogMetaComment(meta: ExportNoteMetadata): string {
   };
 
   const json = JSON.stringify(chatalogMeta);
-  // Single-line HTML comment so Chatalog can regex it easily.
-  // Markdown renderers / Chrome ignore this visually.
   return `<!-- chatalog-meta ${json} -->`;
 }
 
-// --- Rendering helpers (Prompt/Response formatting) -----------------
-
+/* -------------------------------------------------------------
+ * Prompt / Response Markdown Renderers
+ * ------------------------------------------------------------- */
 function renderPromptBlockquote(md: string): string {
-  // Render the Prompt label, then quote the entire prompt so it inherits body text styles
   const text = (md || '').trimEnd();
   const quoted = text
     .split('\n')
@@ -115,16 +119,9 @@ function renderPromptBlockquoteWithAnchor(md: string, anchorId: string): string 
 }
 
 function normalizeSuggestionsSection(md: string): string {
-  // 1) Remove HRs which VS Code renders with big margins
   let out = md.replace(/\n-{3,}\n+/g, '\n\n');
-
-  // 2) Normalize common “Suggestions” headings to a consistent H4
   out = out.replace(/\n(?:\*\*)?\s*suggestions\s*:?(?:\*\*)?\s*\n/gi, '\n\n#### Suggestions\n');
-
-  // 3) Convert trailing lines that look like chips into bullets (very light-touch)
-  // e.g., lines starting with •, ◦, → become "- "
   out = out.replace(/^[ \t]*[•◦→]\s+/gm, '- ');
-
   return out;
 }
 
@@ -133,8 +130,9 @@ function renderResponseSection(md: string): string {
   return `**Response**\n\n${normalizeSuggestionsSection(body)}`;
 }
 
-// ---------------- Turndown (HTML → Markdown) ----------------
-
+/* -------------------------------------------------------------
+ * Turndown instance (HTML → Markdown)
+ * ------------------------------------------------------------- */
 const td = new TurndownService({
   headingStyle: 'atx',
   codeBlockStyle: 'fenced',
@@ -145,7 +143,19 @@ const td = new TurndownService({
 });
 td.use(gfm);
 
-// Preserve fenced code blocks with language
+/* -------------------------------------------------------------
+ * ⭐ NEW RULE: Preserve <br> as real newline
+ * Fixes newline stripping in ChatGPT prompts
+ * ------------------------------------------------------------- */
+td.addRule('preserveBreaks', {
+  filter: 'br',
+  replacement: () => '\n'
+});
+
+/* -------------------------------------------------------------
+ * Additional Turndown rules (unchanged from your version)
+ * ------------------------------------------------------------- */
+
 td.addRule('fencedCodeWithLang', {
   filter: (node: any) =>
     node.nodeName === 'PRE' &&
@@ -160,7 +170,6 @@ td.addRule('fencedCodeWithLang', {
   }
 });
 
-// Inline code (avoid wrapping PRE > CODE)
 td.addRule('inlineCode', {
   filter: (node: any) =>
     node.nodeName === 'CODE' &&
@@ -168,7 +177,6 @@ td.addRule('inlineCode', {
   replacement: (content: string) => '`' + content + '`'
 });
 
-// KaTeX math → Markdown math
 td.addRule('katexMath', {
   filter: (node: any) => {
     if ((node as any).nodeType !== 1) return false;
@@ -184,7 +192,6 @@ td.addRule('katexMath', {
   }
 });
 
-// Images
 td.addRule('images', {
   filter: 'img',
   replacement: (_content: string, node: any) => {
@@ -196,14 +203,12 @@ td.addRule('images', {
   }
 });
 
-// Tighter blockquotes (avoid extra blank lines)
 td.addRule('blockquoteTight', {
   filter: 'blockquote',
   replacement: (content: string) =>
     '\n' + content.split('\n').map((l: string) => (l ? '> ' + l : '>')).join('\n') + '\n'
 });
 
-// Cleanup
 function tidyMarkdown(md: string) {
   return md
     .replace(/\n{3,}/g, '\n\n')
@@ -211,37 +216,34 @@ function tidyMarkdown(md: string) {
 }
 
 function htmlToMarkdown(html: string): string {
-  // Work on a detached element so we can strip UI chrome if we want
   const container = document.createElement('div');
   container.innerHTML = html;
-
-  // Strip common chrome
   container.querySelectorAll('button,svg,nav,[data-testid="toolbar"]').forEach(n => n.remove());
-
   const md = td.turndown(container.innerHTML);
   return tidyMarkdown(md);
 }
 
-// ---------------- Pure Markdown (uses HTML bodies) ----------------
-
+/* -------------------------------------------------------------
+ * Pure Markdown builder using HTML bodies
+ * ------------------------------------------------------------- */
 function toPureMarkdownChatStyleFromHtml(
   meta: ExportNoteMetadata,
   turns: ExportTurn[],
-  htmlBodies: string[], // 1:1 with turns
+  htmlBodies: string[],
   opts?: {
     title?: string;
     includeFrontMatter?: boolean;
     includeMetaRow?: boolean;
     hrBetween?: boolean;
     freeformNotes?: string;
-    includeToc?: boolean; // NEW: default true
+    includeToc?: boolean;
   }
 ): string {
   const {
     title = meta.chatTitle || 'Chat Export',
     includeFrontMatter = true,
     includeMetaRow = true,
-    hrBetween = false, // ← default OFF (no ---)
+    hrBetween = false,
     freeformNotes,
     includeToc = true,
   } = opts || {};
@@ -250,7 +252,6 @@ function toPureMarkdownChatStyleFromHtml(
 
   if (includeFrontMatter) {
     out.push(renderFrontMatter(meta));
-    // Embed invisible chatalog metadata comment right after front matter
     out.push(renderChatalogMetaComment(meta), '');
   }
 
@@ -262,14 +263,17 @@ function toPureMarkdownChatStyleFromHtml(
     out.push('');
   }
 
-  // Precompute prompt titles/anchors for ToC
   const promptInfos: { idx: number; title: string; anchor: string; turnIndex: number }[] = [];
   let promptCounter = 0;
+
   turns.forEach((t, i) => {
     if (t.role === 'user') {
       promptCounter += 1;
-      const md = htmlToMarkdown(htmlBodies[i] || '');
-      const titleText = firstLineTitle(md, `Prompt ${promptCounter}`);
+
+      // Use the raw text for prompts, so we preserve their original line structure.
+      const sourceText = (t.text ?? '').replace(/\r\n/g, '\n');
+      const titleText = firstLineTitle(sourceText, `Prompt ${promptCounter}`);
+
       promptInfos.push({
         idx: promptCounter,
         title: titleText,
@@ -283,20 +287,33 @@ function toPureMarkdownChatStyleFromHtml(
     out.push(...buildToc(promptInfos.map(p => ({ idx: p.idx, title: p.title, anchor: p.anchor }))));
   }
 
-  const sep = hrBetween ? '\n\n' : '\n\n'; // keep double newlines either way
+  const sep = '\n\n';
 
   let currentPromptNumber = 0;
   const blocks = turns.map((t, i) => {
-    const bodyMd = htmlToMarkdown(htmlBodies[i] || '').replace(/\r\n/g, '\n').trimEnd();
     if (t.role === 'user') {
       currentPromptNumber += 1;
       const anchorId = `p-${currentPromptNumber}`;
-      return renderPromptBlockquoteWithAnchor(bodyMd, anchorId);
+
+      // 🔑 For Prompts, use the raw text from the DOM (textContent),
+      // not the Turndown-processed HTML. This preserves any newline
+      // characters that come from ChatGPT's "pre-wrap" styling or
+      // Shift+Enter line breaks.
+      const bodyText = (t.text ?? '').replace(/\r\n/g, '\n').trimEnd();
+
+      return renderPromptBlockquoteWithAnchor(bodyText, anchorId);
     }
+
+    // For non-user turns (assistant/system/tool), we still go through
+    // HTML → Markdown, since we want full formatting.
+    const bodyMd = htmlToMarkdown(htmlBodies[i] || '')
+      .replace(/\r\n/g, '\n')
+      .trimEnd();
+
     if (t.role === 'assistant') {
       return renderResponseSection(bodyMd);
     }
-    // system / tool (rare) — keep simple but styled
+
     const label = t.role === 'system' ? 'System' : 'Tool';
     return `**${label}**\n\n${bodyMd}`;
   });
@@ -311,13 +328,9 @@ function toPureMarkdownChatStyleFromHtml(
   return out.join('\n');
 }
 
-// ---------------- Format-aware builder ----------------
-
-/**
- * Chooses between:
- * - 'markdown_pure'  => ChatGPT Exporter–style Markdown using per-turn HTML bodies (now with ToC + anchors)
- * - 'markdown_html'  => your existing YAML + transcript block (legacy)
- */
+/* -------------------------------------------------------------
+ * Main builder (automatic fallback)
+ * ------------------------------------------------------------- */
 export function buildMarkdownExport(
   meta: ExportNoteMetadata,
   turns: ExportTurn[],
@@ -326,10 +339,13 @@ export function buildMarkdownExport(
     freeformNotes?: string;
     includeFrontMatter?: boolean;
     includeMetaRow?: boolean;
-    htmlBodies?: string[]; // required for Pure MD
-    includeToc?: boolean;  // NEW: default true for Pure MD
+    htmlBodies?: string[];
+    includeToc?: boolean;
   }
 ): string {
+
+  console.log('buildMarkdownExport invoked');
+
   const metaWithTitle: ExportNoteMetadata = opts?.title
     ? { ...meta, chatTitle: opts.title }
     : meta;
@@ -337,7 +353,6 @@ export function buildMarkdownExport(
   const htmlBodies = opts?.htmlBodies ?? [];
   const includeToc = opts?.includeToc ?? true;
 
-  // Fallback: if not provided, degrade to text-only, but still add ToC + anchors
   if (!htmlBodies.length || htmlBodies.length !== turns.length) {
     const includeFrontMatter = opts?.includeFrontMatter ?? true;
 
@@ -357,7 +372,6 @@ export function buildMarkdownExport(
       ''
     ].filter(Boolean).join('\n');
 
-    // Build prompt list for ToC from plain text
     const prompts: { idx: number; title: string; anchor: string }[] = [];
     let pc = 0;
     for (const t of turns) {
@@ -373,7 +387,6 @@ export function buildMarkdownExport(
 
     const toc = includeToc ? buildToc(prompts) : [];
 
-    // Render body with anchors
     let currentPrompt = 0;
     const blocks = turns.map((t) => {
       const body = (t.text || '').replace(/\r\n/g, '\n').trimEnd();

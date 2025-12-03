@@ -71,8 +71,8 @@ function startRepairLoop() {
     const t = getMessageTuples();
     const users = t.filter(x => x.role === 'user').length;
     const asst = t.filter(x => x.role === 'assistant').length;
-    console.log(`[chatworthy] tuples: ${t.length} (user=${users}, assistant=${asst})`);
-    console.log(t.map((x, i) => ({ i, role: x.role, text: (x.el.textContent || '').trim().slice(0, 60) })));
+    // console.log(`[chatworthy] tuples: ${t.length} (user=${users}, assistant=${asst})`);
+    // console.log(t.map((x, i) => ({ i, role: x.role, text: (x.el.textContent || '').trim().slice(0, 60) })));
   };
 
   if (window.top !== window) return;
@@ -300,9 +300,9 @@ function getSubjectTopicAndChatTitle() {
   const subject = (projectName || (chatTitle?.split(/ - |:|–|—/)[0]?.trim() ?? '')).trim() || '';
   const topic = normalizeTopic(chatTitle, subject) || 'Untitled Conversation';
 
-  console.log('subject', subject);
-  console.log('topic', topic);
-  console.log('chatTitle', chatTitle);
+  // console.log('subject', subject);
+  // console.log('topic', topic);
+  // console.log('chatTitle', chatTitle);
 
   return {
     subject,
@@ -353,11 +353,11 @@ function buildExportFromTurns(
     }
   );
 
-  console.log('Inputs to buildMarkdownExport:');
-  console.log('meta:', meta);
-  console.log('turns:', turns);
-  console.log('htmlBodies:', htmlBodies);
-  console.log('Generated Markdown:\n', markdownExport);
+  // console.log('Inputs to buildMarkdownExport:');
+  // console.log('meta:', meta);
+  // console.log('turns:', turns);
+  // console.log('htmlBodies:', htmlBodies);
+  // console.log('Generated Markdown:\n', markdownExport);
   
   return markdownExport;
 }
