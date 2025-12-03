@@ -340,8 +340,8 @@ export async function deleteNote(req: Request, res: Response) {
 
   if (doc.importBatchId) {
     await ImportBatchModel.updateOne(
-      { _id: doc.importBatchId },
-      { $inc: { remainingCount: -1 }, $max: { remainingCount: 0 } },
+      { _id: doc.importBatchId, remainingCount: { $gt: 0 } },
+      { $inc: { remainingCount: -1 } },
     ).exec();
   }
 
