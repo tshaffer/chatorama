@@ -1,6 +1,7 @@
 // frontend/src/features/imports/ImportResultsDialog.tsx
 import React, { useMemo, useState } from 'react';
-import type { Subject, Topic } from '@chatorama/chatalog-shared';
+import { skipToken } from '@reduxjs/toolkit/query';
+import type { Note, Subject, Topic } from '@chatorama/chatalog-shared';
 import {
   Dialog,
   DialogTitle,
@@ -20,12 +21,20 @@ import {
   Stack,
   Radio,
   FormControlLabel,
+  LinearProgress,
+  Tooltip,
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
+import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
+import { TreeItem } from '@mui/x-tree-view/TreeItem';
 import type { ImportedNoteSummary } from '../imports/importsApi';
+import { subjectsApi, useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
+import { useGetNoteQuery } from '../notes/notesApi';
 
 export type EditableImportedNoteRow = ImportedNoteSummary & {
   editedTitle: string;
@@ -57,11 +66,15 @@ export function ImportResultsDialog({
   onApply,
 }: Props) {
   const [importMode, setImportMode] = useState<'perTurn' | 'single'>('perTurn');
+  const [selectedImportKey, setSelectedImportKey] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState<'imported' | 'existing'>('imported');
+  const [selectedExistingNoteId, setSelectedExistingNoteId] = useState<string | null>(null);
 
   const [defaultSubjectLabel, setDefaultSubjectLabel] = useState('');
   const [defaultTopicLabel, setDefaultTopicLabel] = useState('');
   const subjectBulkUpdateRef = React.useRef(false);
   const topicBulkUpdateRef = React.useRef(false);
+  const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
   const buildEditableRows = (notes: ImportedNoteSummary[]) =>
     notes.map((n) => ({
@@ -148,6 +161,16 @@ export function ImportResultsDialog({
     () => (importMode === 'perTurn' ? rows : singleRows),
     [importMode, rows, singleRows],
   );
+
+  React.useEffect(() => {
+    const candidate = (activeRows.length ? activeRows : rows)[0];
+    if (candidate) {
+      setSelectedImportKey(candidate.importKey);
+    } else {
+      setSelectedImportKey(null);
+    }
+    setPreviewMode('imported');
+  }, [activeRows, rows]);
 
   const subjectOptions = useMemo(() => {
     const set = new Set<string>();
@@ -241,226 +264,442 @@ export function ImportResultsDialog({
     onApply(payload);
   };
 
+  const { data: subjectsWithTopics = [], isLoading: isLoadingSubjects } =
+    useGetSubjectsWithTopicsQuery();
+
+  const [topicNotesMap, setTopicNotesMap] = useState<Record<string, Note[]>>({});
+  const [loadingTopicNotes, setLoadingTopicNotes] = useState<Record<string, boolean>>({});
+  const [topicErrors, setTopicErrors] = useState<Record<string, string>>({});
+  const [fetchTopicNotes] = subjectsApi.useLazyGetNotePreviewsForTopicQuery();
+
+  const ensureTopicNotes = React.useCallback(
+    async (subjectId: string, topicId: string) => {
+      if (topicNotesMap[topicId] || loadingTopicNotes[topicId]) return;
+      setLoadingTopicNotes((prev) => ({ ...prev, [topicId]: true }));
+      try {
+        const data = await fetchTopicNotes({ subjectId, topicId }).unwrap();
+        setTopicNotesMap((prev) => ({ ...prev, [topicId]: data ?? [] }));
+      } catch (err) {
+        setTopicErrors((prev) => ({ ...prev, [topicId]: 'Failed to load notes' }));
+      } finally {
+        setLoadingTopicNotes((prev) => ({ ...prev, [topicId]: false }));
+      }
+    },
+    [fetchTopicNotes, loadingTopicNotes, topicNotesMap],
+  );
+
+  const { data: existingNote, isFetching: isFetchingExistingNote } = useGetNoteQuery(
+    previewMode === 'existing' && selectedExistingNoteId ? selectedExistingNoteId : skipToken,
+  );
+
+  const selectedRow =
+    (activeRows.length ? activeRows : rows).find((r) => r.importKey === selectedImportKey) ?? null;
+
+  const panelHeight = '70vh';
+  const panelSx = {
+    maxHeight: panelHeight,
+    minHeight: 0,
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+  } as const;
+
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="lg">
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xl">
       <DialogTitle>Review Imported Notes</DialogTitle>
-      <DialogContent dividers>
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="body2" sx={{ mb: 0.5 }}>
-            How would you like to import this file?
-          </Typography>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
-            <FormControlLabel
-              control={
-                <Radio
-                  checked={importMode === 'perTurn'}
-                  onChange={() => setImportMode('perTurn')}
+      <DialogContent dividers sx={{ p: 2 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 2,
+            alignItems: 'stretch',
+            minHeight: 0,
+          }}
+        >
+          {/* Left: existing import UI */}
+          <Box sx={{ flex: 2, ...panelSx }}>
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" sx={{ mb: 0.5 }}>
+                How would you like to import this file?
+              </Typography>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
+                <FormControlLabel
+                  control={
+                    <Radio
+                      checked={importMode === 'perTurn'}
+                      onChange={() => setImportMode('perTurn')}
+                    />
+                  }
+                  label="One note per turn"
                 />
-              }
-              label="One note per turn"
-            />
-            <FormControlLabel
-              control={
-                <Radio
-                  checked={importMode === 'single'}
-                  onChange={() => setImportMode('single')}
-                  disabled={!combinedNote}
+                <FormControlLabel
+                  control={
+                    <Radio
+                      checked={importMode === 'single'}
+                      onChange={() => setImportMode('single')}
+                      disabled={!combinedNote}
+                    />
+                  }
+                  label="Single note for entire conversation"
                 />
-              }
-              label="Single note for entire conversation"
-            />
-          </Stack>
-        </Box>
+              </Stack>
+            </Box>
 
-        <Typography variant="body2" sx={{ mb: 2 }}>
-          Set default Subject/Topic labels below, then tweak each note as needed.
-          You can either pick from the list or type new labels. Changing a
-          default updates any rows whose Subject/Topic you haven&apos;t manually
-          edited yet. Use the arrow icon on the left to expand and see the note
-          body rendered as markdown.
-        </Typography>
+            <Typography variant="body2" sx={{ mb: 2 }}>
+              Set default Subject/Topic labels below, then tweak each note as needed.
+              You can either pick from the list or type new labels. Changing a
+              default updates any rows whose Subject/Topic you haven&apos;t manually
+              edited yet. Use the arrow icon on the left to expand and see the note
+              body rendered as markdown.
+            </Typography>
 
-        <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
-          <Autocomplete
-            freeSolo
-            options={subjectOptions}
-            value={defaultSubjectLabel}
-            onInputChange={(_e, newInputValue) =>
-              updateDefaultSubject(newInputValue ?? '')
-            }
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Default Subject label"
-                size="small"
-                sx={{ minWidth: 220 }}
+            <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+              <Autocomplete
+                freeSolo
+                options={subjectOptions}
+                value={defaultSubjectLabel}
+                onInputChange={(_e, newInputValue) =>
+                  updateDefaultSubject(newInputValue ?? '')
+                }
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Default Subject label"
+                    size="small"
+                    sx={{ minWidth: 220 }}
+                  />
+                )}
               />
-            )}
-          />
 
-          <Autocomplete
-            freeSolo
-            options={topicOptionsForSubject(
-              defaultSubjectLabel,
-              defaultTopicLabel,
-            )}
-            value={defaultTopicLabel}
-            onInputChange={(_e, newInputValue) =>
-              updateDefaultTopic(newInputValue ?? '')
-            }
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Default Topic label"
-                size="small"
-                sx={{ minWidth: 220 }}
+              <Autocomplete
+                freeSolo
+                options={topicOptionsForSubject(
+                  defaultSubjectLabel,
+                  defaultTopicLabel,
+                )}
+                value={defaultTopicLabel}
+                onInputChange={(_e, newInputValue) =>
+                  updateDefaultTopic(newInputValue ?? '')
+                }
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Default Topic label"
+                    size="small"
+                    sx={{ minWidth: 220 }}
+                  />
+                )}
               />
-            )}
-          />
-        </Box>
+            </Box>
 
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell />
-              <TableCell>Title</TableCell>
-              <TableCell>Subject</TableCell>
-              <TableCell>Topic</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {(activeRows.length ? activeRows : rows).map((row) => (
-              <React.Fragment key={row.importKey}>
-                <TableRow hover>
-                  <TableCell padding="checkbox">
-                    <IconButton
-                      size="small"
-                      onClick={() =>
-                        handleRowChange(row.importKey, {
-                          showBody: !row.showBody,
-                        })
-                      }
-                      aria-label={
-                        row.showBody ? 'Hide note body' : 'Show note body'
-                      }
-                    >
-                      {row.showBody ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                    </IconButton>
-                  </TableCell>
-                  <TableCell sx={{ minWidth: 240 }}>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      value={row.editedTitle}
-                      onChange={(e) =>
-                        handleRowChange(row.importKey, {
-                          editedTitle: e.target.value,
-                        })
-                      }
-                    />
-                  </TableCell>
-                  <TableCell sx={{ minWidth: 220 }}>
-                    <Autocomplete
-                      freeSolo
-                      options={subjectOptions}
-                      value={row.subjectLabel}
-                      onChange={(_e, newValue) => {
-                        if (subjectBulkUpdateRef.current) return;
-                        handleRowChange(row.importKey, {
-                          subjectLabel: newValue ?? '',
-                          subjectTouched: true,
-                        });
-                      }}
-                      onInputChange={(_e, newInputValue) => {
-                        if (subjectBulkUpdateRef.current) return;
-                        handleRowChange(row.importKey, {
-                          subjectLabel: newInputValue ?? '',
-                          subjectTouched: true,
-                        });
-                      }}
-                      renderInput={(params) => (
-                        <TextField
-                          {...params}
-                          label="Subject"
-                          size="small"
-                        />
-                      )}
-                    />
-                  </TableCell>
-                  <TableCell sx={{ minWidth: 220 }}>
-                  <Autocomplete
-                    freeSolo
-                    options={topicOptionsForSubject(
-                      row.subjectLabel,
-                      row.topicLabel,
-                    )}
-                    value={row.topicLabel}
-                      onChange={(_e, newValue) => {
-                        if (topicBulkUpdateRef.current) return;
-                        handleRowChange(row.importKey, {
-                          topicLabel: newValue ?? '',
-                          topicTouched: true,
-                        });
-                      }}
-                      onInputChange={(_e, newInputValue) => {
-                        if (topicBulkUpdateRef.current) return;
-                        handleRowChange(row.importKey, {
-                          topicLabel: newInputValue ?? '',
-                          topicTouched: true,
-                        });
-                      }}
-                      renderInput={(params) => (
-                        <TextField
-                          {...params}
-                          label="Topic"
-                          size="small"
-                        />
-                      )}
-                    />
-                  </TableCell>
-                </TableRow>
-
+            <Table size="small" stickyHeader>
+              <TableHead>
                 <TableRow>
-                  <TableCell
-                    style={{ paddingBottom: 0, paddingTop: 0 }}
-                    colSpan={4}
-                  >
-                    <Collapse in={row.showBody} timeout="auto" unmountOnExit>
-                      <Box
-                        sx={{
-                          p: 2,
-                          borderTop: '1px solid',
-                          borderColor: 'divider',
-                        }}
-                      >
-                        <Typography variant="subtitle2" gutterBottom>
-                          Note body
-                        </Typography>
-                        <Box
-                          sx={{
-                            '& p': { mb: 1 },
-                            '& pre': {
-                              p: 1,
-                              borderRadius: 1,
-                              bgcolor: 'action.hover',
-                              overflowX: 'auto',
-                            },
-                            '& code': {
-                              fontFamily:
-                                'Monaco, Menlo, Consolas, "Courier New", monospace',
-                            },
-                          }}
-                        >
-                          <ReactMarkdown>{row.body}</ReactMarkdown>
-                        </Box>
-                      </Box>
-                    </Collapse>
-                  </TableCell>
+                  <TableCell />
+                  <TableCell>Title</TableCell>
+                  <TableCell>Subject</TableCell>
+                  <TableCell>Topic</TableCell>
                 </TableRow>
-              </React.Fragment>
-            ))}
-          </TableBody>
-        </Table>
+              </TableHead>
+              <TableBody>
+                {(activeRows.length ? activeRows : rows).map((row) => (
+                  <React.Fragment key={row.importKey}>
+                    <TableRow
+                      hover
+                      selected={selectedImportKey === row.importKey}
+                      onClick={() => {
+                        setSelectedImportKey(row.importKey);
+                        setPreviewMode('imported');
+                      }}
+                      sx={{
+                        cursor: 'pointer',
+                        '&.Mui-selected': { backgroundColor: 'action.hover' },
+                      }}
+                    >
+                      <TableCell padding="checkbox">
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRowChange(row.importKey, {
+                              showBody: !row.showBody,
+                            });
+                          }}
+                          aria-label={
+                            row.showBody ? 'Hide note body' : 'Show note body'
+                          }
+                        >
+                          {row.showBody ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                        </IconButton>
+                      </TableCell>
+                      <TableCell sx={{ minWidth: 240 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          value={row.editedTitle}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) =>
+                            handleRowChange(row.importKey, {
+                              editedTitle: e.target.value,
+                            })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell sx={{ minWidth: 220 }}>
+                        <Autocomplete
+                          freeSolo
+                          options={subjectOptions}
+                          value={row.subjectLabel}
+                          onChange={(_e, newValue) => {
+                            if (subjectBulkUpdateRef.current) return;
+                            handleRowChange(row.importKey, {
+                              subjectLabel: newValue ?? '',
+                              subjectTouched: true,
+                            });
+                          }}
+                          onInputChange={(_e, newInputValue) => {
+                            if (subjectBulkUpdateRef.current) return;
+                            handleRowChange(row.importKey, {
+                              subjectLabel: newInputValue ?? '',
+                              subjectTouched: true,
+                            });
+                          }}
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              label="Subject"
+                              size="small"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          )}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ minWidth: 220 }}>
+                        <Autocomplete
+                          freeSolo
+                          options={topicOptionsForSubject(
+                            row.subjectLabel,
+                            row.topicLabel,
+                          )}
+                          value={row.topicLabel}
+                          onChange={(_e, newValue) => {
+                            if (topicBulkUpdateRef.current) return;
+                            handleRowChange(row.importKey, {
+                              topicLabel: newValue ?? '',
+                              topicTouched: true,
+                            });
+                          }}
+                          onInputChange={(_e, newInputValue) => {
+                            if (topicBulkUpdateRef.current) return;
+                            handleRowChange(row.importKey, {
+                              topicLabel: newInputValue ?? '',
+                              topicTouched: true,
+                            });
+                          }}
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              label="Topic"
+                              size="small"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          )}
+                        />
+                      </TableCell>
+                    </TableRow>
+
+                    <TableRow>
+                      <TableCell
+                        style={{ paddingBottom: 0, paddingTop: 0 }}
+                        colSpan={4}
+                      >
+                        <Collapse in={row.showBody} timeout="auto" unmountOnExit>
+                          <Box
+                            sx={{
+                              p: 2,
+                              borderTop: '1px solid',
+                              borderColor: 'divider',
+                            }}
+                          >
+                            <Typography variant="subtitle2" gutterBottom>
+                              Note body
+                            </Typography>
+                            <Box
+                              sx={{
+                                '& p': { mb: 1 },
+                                '& pre': {
+                                  p: 1,
+                                  borderRadius: 1,
+                                  bgcolor: 'action.hover',
+                                  overflowX: 'auto',
+                                },
+                                '& code': {
+                                  fontFamily:
+                                    'Monaco, Menlo, Consolas, "Courier New", monospace',
+                                },
+                              }}
+                            >
+                              <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                                {row.body}
+                              </ReactMarkdown>
+                            </Box>
+                          </Box>
+                        </Collapse>
+                      </TableCell>
+                    </TableRow>
+                  </React.Fragment>
+                ))}
+              </TableBody>
+            </Table>
+          </Box>
+
+          {/* Middle: preview */}
+          <Box sx={{ flex: 1.8, ...panelSx }}>
+            {previewMode === 'existing' && selectedExistingNoteId ? (
+              <>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    mb: 2,
+                  }}
+                >
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Viewing existing note
+                  </Typography>
+                  <Button
+                    size="small"
+                    onClick={() => setPreviewMode('imported')}
+                  >
+                    Return to imported note preview
+                  </Button>
+                </Box>
+                {isFetchingExistingNote && (
+                  <Typography variant="body2" color="text.secondary">
+                    Loading note…
+                  </Typography>
+                )}
+                {existingNote && (
+                  <>
+                    <Typography variant="h6">
+                      {existingNote.title || 'Untitled note'}
+                    </Typography>
+                    <Box sx={{ mt: 2 }}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                        {existingNote.markdown}
+                      </ReactMarkdown>
+                    </Box>
+                  </>
+                )}
+              </>
+            ) : selectedRow ? (
+              <>
+                <Typography variant="h6">
+                  {selectedRow.title || 'Untitled imported note'}
+                </Typography>
+                <Box sx={{ mt: 2 }}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                    {selectedRow.body}
+                  </ReactMarkdown>
+                </Box>
+              </>
+            ) : (
+              <>
+                <Typography variant="subtitle1">Preview</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Select an imported row to see its content here.
+                </Typography>
+              </>
+            )}
+          </Box>
+
+          {/* Right: hierarchy */}
+          <Box sx={{ flex: 1.4, ...panelSx }}>
+            <Typography variant="subtitle1" sx={{ mb: 1 }}>
+              Existing Hierarchy
+            </Typography>
+            {isLoadingSubjects ? (
+              <LinearProgress />
+            ) : subjectsWithTopics.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No subjects yet.
+              </Typography>
+            ) : (
+              <SimpleTreeView
+                expandedItems={expandedItems}
+                onExpandedItemsChange={(_event, itemIds) => {
+                  setExpandedItems(itemIds);
+                  itemIds.forEach((id) => {
+                    if (id.startsWith('topic:')) {
+                      const topicId = id.replace('topic:', '');
+                      const subject = subjectsWithTopics.find((s) =>
+                        s.topics?.some((t) => t.id === topicId),
+                      );
+                      const topic = subject?.topics?.find((t) => t.id === topicId);
+                      if (subject && topic) {
+                        void ensureTopicNotes(subject.id, topic.id);
+                      }
+                    }
+                  });
+                }}
+                onItemClick={(_event, itemId) => {
+                  if (itemId.startsWith('note:')) {
+                    const noteId = itemId.replace('note:', '');
+                    setSelectedExistingNoteId(noteId);
+                    setPreviewMode('existing');
+                  }
+                }}
+              >
+                {subjectsWithTopics.map((s) => (
+                  <TreeItem key={s.id} itemId={`subject:${s.id}`} label={s.name}>
+                    {(s.topics ?? []).map((t) => {
+                      const notes = topicNotesMap[t.id] || [];
+                      const isLoading = loadingTopicNotes[t.id];
+                      const topicError = topicErrors[t.id];
+                      return (
+                        <TreeItem
+                          key={t.id}
+                          itemId={`topic:${t.id}`}
+                          label={t.name}
+                        >
+                          {isLoading && (
+                            <TreeItem
+                              itemId={`topic-loading:${t.id}`}
+                              label="Loading notes…"
+                            />
+                          )}
+                          {topicError && (
+                            <TreeItem
+                              itemId={`topic-error:${t.id}`}
+                              label={`Error: ${topicError}`}
+                            />
+                          )}
+                          {notes.map((n) => (
+                            <TreeItem
+                              key={n.id}
+                              itemId={`note:${n.id}`}
+                              label={
+                                <Tooltip
+                                  title={n.summary ? n.summary.slice(0, 160) : ''}
+                                  arrow
+                                  placement="right"
+                                >
+                                  <span>{n.title || 'Untitled note'}</span>
+                                </Tooltip>
+                              }
+                            />
+                          ))}
+                        </TreeItem>
+                      );
+                    })}
+                  </TreeItem>
+                ))}
+              </SimpleTreeView>
+            )}
+          </Box>
+        </Box>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
