@@ -273,11 +273,24 @@ export function ImportResultsDialog({
   const ensureTopicNotes = React.useCallback(
     async (subjectId: string, topicId: string) => {
       if (topicNotesMap[topicId] || loadingTopicNotes[topicId]) return;
+
+      // DEBUG
+      // eslint-disable-next-line no-console
+      console.log('ensureTopicNotes called', { subjectId, topicId });
+
       setLoadingTopicNotes((prev) => ({ ...prev, [topicId]: true }));
       try {
         const data = await fetchTopicNotes({ subjectId, topicId }).unwrap();
+
+        // DEBUG
+        // eslint-disable-next-line no-console
+        console.log('ensureTopicNotes data', { topicId, count: data?.length, data });
+
         setTopicNotesMap((prev) => ({ ...prev, [topicId]: data ?? [] }));
       } catch (err) {
+        // DEBUG
+        // eslint-disable-next-line no-console
+        console.error('ensureTopicNotes error', { topicId, err });
         setTopicErrors((prev) => ({ ...prev, [topicId]: 'Failed to load notes' }));
       } finally {
         setLoadingTopicNotes((prev) => ({ ...prev, [topicId]: false }));
@@ -606,11 +619,23 @@ export function ImportResultsDialog({
                       const notes = topicNotesMap[t.id] || [];
                       const isLoading = loadingTopicNotes[t.id];
                       const topicError = topicErrors[t.id];
+
                       return (
                         <TreeItem
                           key={t.id}
                           itemId={`topic:${t.id}`}
-                          label={t.name}
+                          label={
+                            <span>
+                              {t.name}{' '}
+                              <Typography
+                                component="span"
+                                variant="caption"
+                                color="text.secondary"
+                              >
+                                ({notes.length} notes)
+                              </Typography>
+                            </span>
+                          }
                         >
                           {isLoading && (
                             <TreeItem
