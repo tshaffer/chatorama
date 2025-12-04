@@ -25,8 +25,6 @@ import {
   Tooltip,
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -350,8 +348,7 @@ export function ImportResultsDialog({
               Set default Subject/Topic labels below, then tweak each note as needed.
               You can either pick from the list or type new labels. Changing a
               default updates any rows whose Subject/Topic you haven&apos;t manually
-              edited yet. Use the arrow icon on the left to expand and see the note
-              body rendered as markdown.
+              edited yet. Select a row to see the full note body in the preview panel.
             </Typography>
 
             <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
@@ -396,7 +393,6 @@ export function ImportResultsDialog({
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
-                  <TableCell />
                   <TableCell>Title</TableCell>
                   <TableCell>Subject</TableCell>
                   <TableCell>Topic</TableCell>
@@ -404,151 +400,94 @@ export function ImportResultsDialog({
               </TableHead>
               <TableBody>
                 {(activeRows.length ? activeRows : rows).map((row) => (
-                  <React.Fragment key={row.importKey}>
-                    <TableRow
-                      hover
-                      selected={selectedImportKey === row.importKey}
-                      onClick={() => {
-                        setSelectedImportKey(row.importKey);
-                        setPreviewMode('imported');
-                      }}
-                      sx={{
-                        cursor: 'pointer',
-                        '&.Mui-selected': { backgroundColor: 'action.hover' },
-                      }}
-                    >
-                      <TableCell padding="checkbox">
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRowChange(row.importKey, {
-                              showBody: !row.showBody,
-                            });
-                          }}
-                          aria-label={
-                            row.showBody ? 'Hide note body' : 'Show note body'
-                          }
-                        >
-                          {row.showBody ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                        </IconButton>
-                      </TableCell>
-                      <TableCell sx={{ minWidth: 240 }}>
-                        <TextField
-                          fullWidth
-                          size="small"
-                          value={row.editedTitle}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) =>
-                            handleRowChange(row.importKey, {
-                              editedTitle: e.target.value,
-                            })
-                          }
-                        />
-                      </TableCell>
-                      <TableCell sx={{ minWidth: 220 }}>
-                        <Autocomplete
-                          freeSolo
-                          options={subjectOptions}
-                          value={row.subjectLabel}
-                          onChange={(_e, newValue) => {
-                            if (subjectBulkUpdateRef.current) return;
-                            handleRowChange(row.importKey, {
-                              subjectLabel: newValue ?? '',
-                              subjectTouched: true,
-                            });
-                          }}
-                          onInputChange={(_e, newInputValue) => {
-                            if (subjectBulkUpdateRef.current) return;
-                            handleRowChange(row.importKey, {
-                              subjectLabel: newInputValue ?? '',
-                              subjectTouched: true,
-                            });
-                          }}
-                          renderInput={(params) => (
-                            <TextField
-                              {...params}
-                              label="Subject"
-                              size="small"
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          )}
-                        />
-                      </TableCell>
-                      <TableCell sx={{ minWidth: 220 }}>
-                        <Autocomplete
-                          freeSolo
-                          options={topicOptionsForSubject(
-                            row.subjectLabel,
-                            row.topicLabel,
-                          )}
-                          value={row.topicLabel}
-                          onChange={(_e, newValue) => {
-                            if (topicBulkUpdateRef.current) return;
-                            handleRowChange(row.importKey, {
-                              topicLabel: newValue ?? '',
-                              topicTouched: true,
-                            });
-                          }}
-                          onInputChange={(_e, newInputValue) => {
-                            if (topicBulkUpdateRef.current) return;
-                            handleRowChange(row.importKey, {
-                              topicLabel: newInputValue ?? '',
-                              topicTouched: true,
-                            });
-                          }}
-                          renderInput={(params) => (
-                            <TextField
-                              {...params}
-                              label="Topic"
-                              size="small"
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          )}
-                        />
-                      </TableCell>
-                    </TableRow>
-
-                    <TableRow>
-                      <TableCell
-                        style={{ paddingBottom: 0, paddingTop: 0 }}
-                        colSpan={4}
-                      >
-                        <Collapse in={row.showBody} timeout="auto" unmountOnExit>
-                          <Box
-                            sx={{
-                              p: 2,
-                              borderTop: '1px solid',
-                              borderColor: 'divider',
-                            }}
-                          >
-                            <Typography variant="subtitle2" gutterBottom>
-                              Note body
-                            </Typography>
-                            <Box
-                              sx={{
-                                '& p': { mb: 1 },
-                                '& pre': {
-                                  p: 1,
-                                  borderRadius: 1,
-                                  bgcolor: 'action.hover',
-                                  overflowX: 'auto',
-                                },
-                                '& code': {
-                                  fontFamily:
-                                    'Monaco, Menlo, Consolas, "Courier New", monospace',
-                                },
-                              }}
-                            >
-                              <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                                {row.body}
-                              </ReactMarkdown>
-                            </Box>
-                          </Box>
-                        </Collapse>
-                      </TableCell>
-                    </TableRow>
-                  </React.Fragment>
+                  <TableRow
+                    key={row.importKey}
+                    hover
+                    selected={selectedImportKey === row.importKey}
+                    onClick={() => {
+                      setSelectedImportKey(row.importKey);
+                      setPreviewMode('imported');
+                    }}
+                    sx={{
+                      cursor: 'pointer',
+                      '&.Mui-selected': { backgroundColor: 'action.hover' },
+                    }}
+                  >
+                    <TableCell sx={{ minWidth: 240 }}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        value={row.editedTitle}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) =>
+                          handleRowChange(row.importKey, {
+                            editedTitle: e.target.value,
+                          })
+                        }
+                      />
+                    </TableCell>
+                    <TableCell sx={{ minWidth: 220 }}>
+                      <Autocomplete
+                        freeSolo
+                        options={subjectOptions}
+                        value={row.subjectLabel}
+                        onChange={(_e, newValue) => {
+                          if (subjectBulkUpdateRef.current) return;
+                          handleRowChange(row.importKey, {
+                            subjectLabel: newValue ?? '',
+                            subjectTouched: true,
+                          });
+                        }}
+                        onInputChange={(_e, newInputValue) => {
+                          if (subjectBulkUpdateRef.current) return;
+                          handleRowChange(row.importKey, {
+                            subjectLabel: newInputValue ?? '',
+                            subjectTouched: true,
+                          });
+                        }}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            label="Subject"
+                            size="small"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        )}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ minWidth: 220 }}>
+                      <Autocomplete
+                        freeSolo
+                        options={topicOptionsForSubject(
+                          row.subjectLabel,
+                          row.topicLabel,
+                        )}
+                        value={row.topicLabel}
+                        onChange={(_e, newValue) => {
+                          if (topicBulkUpdateRef.current) return;
+                          handleRowChange(row.importKey, {
+                            topicLabel: newValue ?? '',
+                            topicTouched: true,
+                          });
+                        }}
+                        onInputChange={(_e, newInputValue) => {
+                          if (topicBulkUpdateRef.current) return;
+                          handleRowChange(row.importKey, {
+                            topicLabel: newInputValue ?? '',
+                            topicTouched: true,
+                          });
+                        }}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            label="Topic"
+                            size="small"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        )}
+                      />
+                    </TableCell>
+                  </TableRow>
                 ))}
               </TableBody>
             </Table>
@@ -629,6 +568,7 @@ export function ImportResultsDialog({
             ) : (
               <SimpleTreeView
                 expandedItems={expandedItems}
+                expansionTrigger="iconContainer"
                 onExpandedItemsChange={(_event, itemIds) => {
                   setExpandedItems(itemIds);
                   itemIds.forEach((id) => {
@@ -676,21 +616,40 @@ export function ImportResultsDialog({
                               label={`Error: ${topicError}`}
                             />
                           )}
-                          {notes.map((n) => (
-                            <TreeItem
-                              key={n.id}
-                              itemId={`note:${n.id}`}
-                              label={
-                                <Tooltip
-                                  title={n.summary ? n.summary.slice(0, 160) : ''}
-                                  arrow
-                                  placement="right"
-                                >
-                                  <span>{n.title || 'Untitled note'}</span>
-                                </Tooltip>
-                              }
-                            />
-                          ))}
+                          {notes.map((n) => {
+                            const rawSummary = (n as any).summary as string | undefined;
+                            const rawMarkdown = (n as any).markdown as string | undefined;
+                            const baseText =
+                              rawSummary && rawSummary.trim().length > 0
+                                ? rawSummary
+                                : rawMarkdown || '';
+                            const snippet =
+                              baseText.length > 0 ? baseText.slice(0, 160) : '';
+
+                            const labelContent = (
+                              <span>{n.title || 'Untitled note'}</span>
+                            );
+
+                            return (
+                              <TreeItem
+                                key={n.id}
+                                itemId={`note:${n.id}`}
+                                label={
+                                  snippet ? (
+                                    <Tooltip
+                                      title={snippet}
+                                      arrow
+                                      placement="right"
+                                    >
+                                      {labelContent}
+                                    </Tooltip>
+                                  ) : (
+                                    labelContent
+                                  )
+                                }
+                              />
+                            );
+                          })}
                         </TreeItem>
                       );
                     })}
