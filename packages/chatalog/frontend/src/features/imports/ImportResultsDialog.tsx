@@ -625,28 +625,47 @@ export function ImportResultsDialog({
                             />
                           )}
                           {notes.map((n) => {
+                            // Prefer summary, fall back to markdown if present
+                            const rawSummary = (n as any).summary as string | undefined;
+                            const rawMarkdown = (n as any).markdown as string | undefined;
+                            const baseText =
+                              rawSummary && rawSummary.trim().length > 0
+                                ? rawSummary
+                                : rawMarkdown || '';
+
+                            const snippet =
+                              baseText.length > 0
+                                ? baseText.slice(0, 160)
+                                : 'Click to preview this note';
+
+                            const handleNoteClick: React.MouseEventHandler<HTMLSpanElement> = (event) => {
+                              event.stopPropagation(); // don't toggle expansion
+
+                              // SUPER DEBUG: make it obvious this fired
+                              // eslint-disable-next-line no-alert
+                              alert(`Clicked note ${n.id}`);
+
+                              setSelectedExistingNoteId(n.id);
+                              setPreviewMode('existing');
+                            };
+
                             return (
                               <TreeItem
                                 key={n.id}
                                 itemId={`note:${n.id}`}
                                 label={
-                                  <span
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      // DEBUG: quick sanity check
-                                      // eslint-disable-next-line no-alert
-                                      alert(`Clicked note ${n.id}`);
-                                      setSelectedExistingNoteId(n.id);
-                                      setPreviewMode('existing');
-                                    }}
-                                    style={{
-                                      cursor: 'pointer',
-                                      border: '1px solid red',
-                                      padding: '2px 4px',
-                                    }}
-                                  >
-                                    {n.title || 'Untitled note'}
-                                  </span>
+                                  <Tooltip title={snippet} arrow placement="right">
+                                    <span
+                                      onClick={handleNoteClick}
+                                      style={{
+                                        cursor: 'pointer',
+                                        border: '1px solid red',
+                                        padding: '2px 4px',
+                                      }}
+                                    >
+                                      {n.title || 'Untitled note'}
+                                    </span>
+                                  </Tooltip>
                                 }
                               />
                             );
