@@ -273,24 +273,11 @@ export function ImportResultsDialog({
   const ensureTopicNotes = React.useCallback(
     async (subjectId: string, topicId: string) => {
       if (topicNotesMap[topicId] || loadingTopicNotes[topicId]) return;
-
-      // DEBUG
-      // eslint-disable-next-line no-console
-      console.log('ensureTopicNotes called', { subjectId, topicId });
-
       setLoadingTopicNotes((prev) => ({ ...prev, [topicId]: true }));
       try {
         const data = await fetchTopicNotes({ subjectId, topicId }).unwrap();
-
-        // DEBUG
-        // eslint-disable-next-line no-console
-        console.log('ensureTopicNotes data', { topicId, count: data?.length, data });
-
         setTopicNotesMap((prev) => ({ ...prev, [topicId]: data ?? [] }));
       } catch (err) {
-        // DEBUG
-        // eslint-disable-next-line no-console
-        console.error('ensureTopicNotes error', { topicId, err });
         setTopicErrors((prev) => ({ ...prev, [topicId]: 'Failed to load notes' }));
       } finally {
         setLoadingTopicNotes((prev) => ({ ...prev, [topicId]: false }));
@@ -298,6 +285,17 @@ export function ImportResultsDialog({
     },
     [fetchTopicNotes, loadingTopicNotes, topicNotesMap],
   );
+
+  // NEW: eagerly load notes for all topics when subjectsWithTopics changes
+  React.useEffect(() => {
+    if (!subjectsWithTopics.length) return;
+
+    subjectsWithTopics.forEach((subject) => {
+      (subject.topics ?? []).forEach((topic) => {
+        void ensureTopicNotes(subject.id, topic.id);
+      });
+    });
+  }, [subjectsWithTopics, ensureTopicNotes]);
 
   const { data: existingNote, isFetching: isFetchingExistingNote } = useGetNoteQuery(
     previewMode === 'existing' && selectedExistingNoteId ? selectedExistingNoteId : skipToken,
