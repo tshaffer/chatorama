@@ -619,15 +619,33 @@ export function ImportResultsDialog({
                           {notes.map((n) => {
                             const rawSummary = (n as any).summary as string | undefined;
                             const rawMarkdown = (n as any).markdown as string | undefined;
+
+                            // Prefer summary, fall back to markdown if present
                             const baseText =
                               rawSummary && rawSummary.trim().length > 0
                                 ? rawSummary
                                 : rawMarkdown || '';
+
+                            // If we still don't have anything, use a generic hint
                             const snippet =
-                              baseText.length > 0 ? baseText.slice(0, 160) : '';
+                              baseText.length > 0
+                                ? baseText.slice(0, 160)
+                                : 'Click to preview this note';
+
+                            // Clicking the label should switch the middle panel to existing-note preview
+                            const handleNoteClick: React.MouseEventHandler<HTMLSpanElement> = (event) => {
+                              event.stopPropagation(); // don't toggle expansion
+                              setSelectedExistingNoteId(n.id);
+                              setPreviewMode('existing');
+                            };
 
                             const labelContent = (
-                              <span>{n.title || 'Untitled note'}</span>
+                              <span
+                                onClick={handleNoteClick}
+                                style={{ cursor: 'pointer' }}
+                              >
+                                {n.title || 'Untitled note'}
+                              </span>
                             );
 
                             return (
@@ -635,17 +653,13 @@ export function ImportResultsDialog({
                                 key={n.id}
                                 itemId={`note:${n.id}`}
                                 label={
-                                  snippet ? (
-                                    <Tooltip
-                                      title={snippet}
-                                      arrow
-                                      placement="right"
-                                    >
-                                      {labelContent}
-                                    </Tooltip>
-                                  ) : (
-                                    labelContent
-                                  )
+                                  <Tooltip
+                                    title={snippet}
+                                    arrow
+                                    placement="right"
+                                  >
+                                    {labelContent}
+                                  </Tooltip>
                                 }
                               />
                             );
