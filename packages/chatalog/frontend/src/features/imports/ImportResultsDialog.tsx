@@ -495,6 +495,14 @@ export function ImportResultsDialog({
 
           {/* Middle: preview */}
           <Box sx={{ flex: 1.8, ...panelSx }}>
+            {/* DEBUG: show current preview state */}
+            <Box sx={{ mb: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                debug – previewMode: {previewMode}, selectedExistingNoteId:{' '}
+                {selectedExistingNoteId ?? 'null'}
+              </Typography>
+            </Box>
+
             {previewMode === 'existing' && selectedExistingNoteId ? (
               <>
                 <Box
@@ -617,49 +625,28 @@ export function ImportResultsDialog({
                             />
                           )}
                           {notes.map((n) => {
-                            const rawSummary = (n as any).summary as string | undefined;
-                            const rawMarkdown = (n as any).markdown as string | undefined;
-
-                            // Prefer summary, fall back to markdown if present
-                            const baseText =
-                              rawSummary && rawSummary.trim().length > 0
-                                ? rawSummary
-                                : rawMarkdown || '';
-
-                            // If we still don't have anything, use a generic hint
-                            const snippet =
-                              baseText.length > 0
-                                ? baseText.slice(0, 160)
-                                : 'Click to preview this note';
-
-                            // Clicking the label should switch the middle panel to existing-note preview
-                            const handleNoteClick: React.MouseEventHandler<HTMLSpanElement> = (event) => {
-                              event.stopPropagation(); // don't toggle expansion
-                              setSelectedExistingNoteId(n.id);
-                              setPreviewMode('existing');
-                            };
-
-                            const labelContent = (
-                              <span
-                                onClick={handleNoteClick}
-                                style={{ cursor: 'pointer' }}
-                              >
-                                {n.title || 'Untitled note'}
-                              </span>
-                            );
-
                             return (
                               <TreeItem
                                 key={n.id}
                                 itemId={`note:${n.id}`}
                                 label={
-                                  <Tooltip
-                                    title={snippet}
-                                    arrow
-                                    placement="right"
+                                  <span
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      // DEBUG: quick sanity check
+                                      // eslint-disable-next-line no-alert
+                                      alert(`Clicked note ${n.id}`);
+                                      setSelectedExistingNoteId(n.id);
+                                      setPreviewMode('existing');
+                                    }}
+                                    style={{
+                                      cursor: 'pointer',
+                                      border: '1px solid red',
+                                      padding: '2px 4px',
+                                    }}
                                   >
-                                    {labelContent}
-                                  </Tooltip>
+                                    {n.title || 'Untitled note'}
+                                  </span>
                                 }
                               />
                             );
