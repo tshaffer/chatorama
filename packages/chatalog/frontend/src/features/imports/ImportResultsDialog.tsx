@@ -21,6 +21,7 @@ import {
   FormControlLabel,
   LinearProgress,
   Tooltip,
+  Checkbox,
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
 import ReactMarkdown from 'react-markdown';
@@ -40,6 +41,8 @@ export type EditableImportedNoteRow = ImportedNoteSummary & {
   // track whether user has manually changed subject/topic for this row
   subjectTouched: boolean;
   topicTouched: boolean;
+  // whether this row should be imported when Apply is clicked
+  selected: boolean;
 };
 
 type SubjectWithTopics = Subject & { topics?: Topic[] };
@@ -87,18 +90,11 @@ export function ImportResultsDialog({
       showBody: false,
       subjectTouched: false,
       topicTouched: false,
+      selected: true, // default: include all notes initially
     }));
 
   const [rows, setRows] = useState<EditableImportedNoteRow[]>(() =>
-    importedNotes.map((n) => ({
-      ...n,
-      editedTitle: n.title,
-      subjectLabel: n.subjectName ?? '',
-      topicLabel: n.topicName ?? '',
-      showBody: false,
-      subjectTouched: false,
-      topicTouched: false,
-    })),
+    buildEditableRows(importedNotes),
   );
 
   const [singleRows, setSingleRows] = useState<EditableImportedNoteRow[]>(() =>
@@ -131,22 +127,24 @@ export function ImportResultsDialog({
         showBody: false,
         subjectTouched: false,
         topicTouched: false,
+        selected: true,
       })),
     );
 
     setSingleRows(
       combinedNote
         ? [
-            {
-              ...combinedNote,
-              editedTitle: combinedNote.title,
-              subjectLabel: combinedNote.subjectName ?? firstSubject ?? '',
-              topicLabel: combinedNote.topicName ?? firstTopic ?? '',
-              showBody: false,
-              subjectTouched: false,
-              topicTouched: false,
-            },
-          ]
+          {
+            ...combinedNote,
+            editedTitle: combinedNote.title,
+            subjectLabel: combinedNote.subjectName ?? firstSubject ?? '',
+            topicLabel: combinedNote.topicName ?? firstTopic ?? '',
+            showBody: false,
+            subjectTouched: false,
+            topicTouched: false,
+            selected: true,
+          },
+        ]
         : [],
     );
   }, [importedNotes, combinedNote]);
@@ -288,7 +286,8 @@ export function ImportResultsDialog({
   };
 
   const handleApply = () => {
-    const payload = importMode === 'perTurn' ? rows : singleRows.length ? singleRows : rows;
+    const base = importMode === 'perTurn' ? rows : singleRows.length ? singleRows : rows;
+    const payload = base.filter((r) => r.selected);
     onApply(payload);
   };
 
@@ -541,6 +540,7 @@ export function ImportResultsDialog({
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
+                  <TableCell padding="checkbox" />
                   <TableCell>Title</TableCell>
                   <TableCell>Subject</TableCell>
                   <TableCell>Topic</TableCell>
@@ -561,6 +561,16 @@ export function ImportResultsDialog({
                       '&.Mui-selected': { backgroundColor: 'action.hover' },
                     }}
                   >
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        checked={row.selected}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) =>
+                          handleRowChange(row.importKey, { selected: e.target.checked })
+                        }
+                        size="small"
+                      />
+                    </TableCell>
                     <TableCell sx={{ minWidth: 240 }}>
                       <TextField
                         fullWidth
