@@ -664,94 +664,13 @@ export function ImportResultsDialog({
             }}
           />
 
-          {/* Middle: preview */}
+          {/* Middle: hierarchy */}
           <Box
             sx={{
               ...panelSx,
               flex: '0 0 auto',
               flexBasis: `${panelWidths[1] * 100}%`,
               px: 1,
-            }}
-          >
-            {previewMode === 'existing' && selectedExistingNoteId ? (
-              <>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    mb: 2,
-                  }}
-                >
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Viewing existing note
-                  </Typography>
-                  <Button size="small" onClick={() => setPreviewMode('imported')}>
-                    Return to imported note preview
-                  </Button>
-                </Box>
-                {isFetchingExistingNote && (
-                  <Typography variant="body2" color="text.secondary">
-                    Loading note…
-                  </Typography>
-                )}
-                {existingNote && (
-                  <>
-                    <Typography variant="h6">
-                      {existingNote.title || 'Untitled note'}
-                    </Typography>
-                    <Box sx={{ mt: 2 }}>
-                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                        {existingNote.markdown}
-                      </ReactMarkdown>
-                    </Box>
-                  </>
-                )}
-              </>
-            ) : selectedRow ? (
-              <>
-                <Typography variant="h6">
-                  {selectedRow.title || 'Untitled imported note'}
-                </Typography>
-                <Box sx={{ mt: 2 }}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                    {selectedRow.body}
-                  </ReactMarkdown>
-                </Box>
-              </>
-            ) : (
-              <>
-                <Typography variant="subtitle1">Preview</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Select an imported row to see its content here.
-                </Typography>
-              </>
-            )}
-          </Box>
-
-          {/* Divider between middle and right */}
-          <Box
-            onMouseDown={(e) => handleDividerMouseDown(e, 1)}
-            sx={{
-              width: 10,
-              cursor: 'col-resize',
-              flexShrink: 0,
-              alignSelf: 'stretch',
-              bgcolor: 'divider',
-              opacity: 0.6,
-              transition: 'opacity 120ms ease',
-              '&:hover': { opacity: 1 },
-              '&:active': { opacity: 1 },
-            }}
-          />
-
-          {/* Right: hierarchy */}
-          <Box
-            sx={{
-              ...panelSx,
-              flex: '0 0 auto',
-              flexBasis: `${panelWidths[2] * 100}%`,
-              pl: 1,
             }}
           >
             <Typography variant="subtitle1" sx={{ mb: 1 }}>
@@ -836,14 +755,23 @@ export function ImportResultsDialog({
                                 key={n.id}
                                 itemId={`note:${n.id}`}
                                 label={
-                                  <Tooltip title={snippet} arrow placement="right">
+                                  snippet ? (
+                                    <Tooltip title={snippet} arrow placement="right">
+                                      <span
+                                        onClick={handleNoteClick}
+                                        style={{ cursor: 'pointer' }}
+                                      >
+                                        {n.title || 'Untitled note'}
+                                      </span>
+                                    </Tooltip>
+                                  ) : (
                                     <span
                                       onClick={handleNoteClick}
                                       style={{ cursor: 'pointer' }}
                                     >
                                       {n.title || 'Untitled note'}
                                     </span>
-                                  </Tooltip>
+                                  )
                                 }
                               />
                             );
@@ -854,6 +782,87 @@ export function ImportResultsDialog({
                   </TreeItem>
                 ))}
               </SimpleTreeView>
+            )}
+          </Box>
+
+          {/* Divider between middle and right */}
+          <Box
+            onMouseDown={(e) => handleDividerMouseDown(e, 1)}
+            sx={{
+              width: 10,
+              cursor: 'col-resize',
+              flexShrink: 0,
+              alignSelf: 'stretch',
+              bgcolor: 'divider',
+              opacity: 0.6,
+              transition: 'opacity 120ms ease',
+              '&:hover': { opacity: 1 },
+              '&:active': { opacity: 1 },
+            }}
+          />
+
+          {/* Right: preview */}
+          <Box
+            sx={{
+              ...panelSx,
+              flex: '0 0 auto',
+              flexBasis: `${panelWidths[2] * 100}%`,
+              pl: 1,
+            }}
+          >
+            {previewMode === 'existing' && selectedExistingNoteId ? (
+              <>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    mb: 2,
+                  }}
+                >
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Viewing existing note
+                  </Typography>
+                  <Button size="small" onClick={() => setPreviewMode('imported')}>
+                    Return to imported note preview
+                  </Button>
+                </Box>
+                {isFetchingExistingNote && (
+                  <Typography variant="body2" color="text.secondary">
+                    Loading note…
+                  </Typography>
+                )}
+                {existingNote && (
+                  <>
+                    <Typography variant="h6">
+                      {existingNote.title || 'Untitled note'}
+                    </Typography>
+                    <Box sx={{ mt: 2 }}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                        {existingNote.markdown}
+                      </ReactMarkdown>
+                    </Box>
+                  </>
+                )}
+              </>
+            ) : selectedRow ? (
+              <>
+                <Typography variant="h6">
+                  {selectedRow.title || 'Untitled imported note'}
+                </Typography>
+                <Box sx={{ mt: 2 }}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                    {selectedRow.body}
+                  </ReactMarkdown>
+                </Box>
+              </>
+            ) : (
+              <>
+                <Typography variant="subtitle1">Preview</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Select an imported row to see its content here.
+                </Typography>
+              </>
             )}
           </Box>
         </Box>
