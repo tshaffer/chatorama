@@ -22,6 +22,8 @@ import {
   LinearProgress,
   Tooltip,
   Checkbox,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
 import ReactMarkdown from 'react-markdown';
@@ -64,6 +66,8 @@ export function ImportResultsDialog({
   subjects,
   onApply,
 }: Props) {
+  type ViewMode = 'simple' | 'markdown' | 'full';
+  const VIEW_MODE_STORAGE_KEY = 'chatalog.importResults.viewMode';
   const [importMode, setImportMode] = useState<'perTurn' | 'single'>('perTurn');
   const [selectedImportKey, setSelectedImportKey] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<'imported' | 'existing'>('imported');
@@ -74,6 +78,7 @@ export function ImportResultsDialog({
     DEFAULT_PANEL_WIDTHS,
   );
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const [viewMode, setViewMode] = React.useState<ViewMode>('full');
 
   const [defaultSubjectLabel, setDefaultSubjectLabel] = useState('');
   const [defaultTopicLabel, setDefaultTopicLabel] = useState('');
@@ -433,6 +438,36 @@ export function ImportResultsDialog({
     };
   }, [dragState.active, handleWindowMouseMove, handleWindowMouseUp]);
 
+  const handleViewModeChange = (
+    _event: React.MouseEvent<HTMLElement>,
+    next: ViewMode | null,
+  ) => {
+    if (!next) return;
+    setViewMode(next);
+  };
+
+  React.useEffect(() => {
+    if (!open) return;
+    try {
+      const stored = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY) as ViewMode | null;
+      if (stored === 'simple' || stored === 'markdown' || stored === 'full') {
+        setViewMode(stored);
+      } else {
+        setViewMode('full');
+      }
+    } catch {
+      setViewMode('full');
+    }
+  }, [open, VIEW_MODE_STORAGE_KEY]);
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+    } catch {
+      // ignore storage failures
+    }
+  }, [viewMode, VIEW_MODE_STORAGE_KEY]);
+
   return (
     <Dialog
       open={open}
@@ -449,6 +484,29 @@ export function ImportResultsDialog({
       <DialogTitle>Review Imported Notes</DialogTitle>
       <DialogContent dividers sx={{ p: 2 }}>
         <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            mb: 1.5,
+          }}
+        >
+          <Typography variant="body2" color="text.secondary">
+            Layout:
+          </Typography>
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={viewMode}
+            onChange={handleViewModeChange}
+          >
+            <ToggleButton value="simple">Simple</ToggleButton>
+            <ToggleButton value="markdown">Markdown</ToggleButton>
+            <ToggleButton value="full">Full</ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
+
+        <Box
           ref={containerRef}
           sx={{
             display: 'flex',
@@ -462,9 +520,16 @@ export function ImportResultsDialog({
           <Box
             sx={{
               ...panelSx,
-              flex: '0 0 auto',
-              flexBasis: `${panelWidths[0] * 100}%`,
-              pr: 1,
+              ...(viewMode === 'full'
+                ? {
+                    flex: '0 0 auto',
+                    flexBasis: `${panelWidths[0] * 100}%`,
+                    pr: 1,
+                  }
+                : {
+                    flex: 1,
+                    pr: viewMode === 'markdown' ? 1 : 0,
+                  }),
             }}
           >
             <Box sx={{ mb: 2 }}>
@@ -648,29 +713,37 @@ export function ImportResultsDialog({
             </Table>
           </Box>
 
-          {/* Divider between left and middle */}
-          <Box
-            onMouseDown={(e) => handleDividerMouseDown(e, 0)}
-            sx={{
-              width: 10,
-              cursor: 'col-resize',
-              flexShrink: 0,
-              alignSelf: 'stretch',
-              bgcolor: 'divider',
-              opacity: 0.6,
-              transition: 'opacity 120ms ease',
-              '&:hover': { opacity: 1 },
-              '&:active': { opacity: 1 },
-            }}
-          />
+          {/* Divider between left and middle – only in Full mode */}
+          {viewMode === 'full' && (
+            <Box
+              onMouseDown={(e) => handleDividerMouseDown(e, 0)}
+              sx={{
+                width: 10,
+                cursor: 'col-resize',
+                flexShrink: 0,
+                alignSelf: 'stretch',
+                bgcolor: 'divider',
+                opacity: 0.6,
+                transition: 'opacity 120ms ease',
+                '&:hover': { opacity: 1 },
+                '&:active': { opacity: 1 },
+              }}
+            />
+          )}
 
           {/* Middle: hierarchy */}
           <Box
             sx={{
               ...panelSx,
-              flex: '0 0 auto',
-              flexBasis: `${panelWidths[1] * 100}%`,
-              px: 1,
+              ...(viewMode === 'full'
+                ? {
+                    flex: '0 0 auto',
+                    flexBasis: `${panelWidths[1] * 100}%`,
+                    px: 1,
+                  }
+                : {
+                    display: 'none',
+                  }),
             }}
           >
             <Typography variant="subtitle1" sx={{ mb: 1 }}>
@@ -785,29 +858,42 @@ export function ImportResultsDialog({
             )}
           </Box>
 
-          {/* Divider between middle and right */}
-          <Box
-            onMouseDown={(e) => handleDividerMouseDown(e, 1)}
-            sx={{
-              width: 10,
-              cursor: 'col-resize',
-              flexShrink: 0,
-              alignSelf: 'stretch',
-              bgcolor: 'divider',
-              opacity: 0.6,
-              transition: 'opacity 120ms ease',
-              '&:hover': { opacity: 1 },
-              '&:active': { opacity: 1 },
-            }}
-          />
+          {/* Divider between middle and right – only in Full mode */}
+          {viewMode === 'full' && (
+            <Box
+              onMouseDown={(e) => handleDividerMouseDown(e, 1)}
+              sx={{
+                width: 10,
+                cursor: 'col-resize',
+                flexShrink: 0,
+                alignSelf: 'stretch',
+                bgcolor: 'divider',
+                opacity: 0.6,
+                transition: 'opacity 120ms ease',
+                '&:hover': { opacity: 1 },
+                '&:active': { opacity: 1 },
+              }}
+            />
+          )}
 
           {/* Right: preview */}
           <Box
             sx={{
               ...panelSx,
-              flex: '0 0 auto',
-              flexBasis: `${panelWidths[2] * 100}%`,
-              pl: 1,
+              ...(viewMode === 'full'
+                ? {
+                    flex: '0 0 auto',
+                    flexBasis: `${panelWidths[2] * 100}%`,
+                    pl: 1,
+                  }
+                : viewMode === 'markdown'
+                ? {
+                    flex: 1,
+                    pl: 1,
+                  }
+                : {
+                    display: 'none',
+                  }),
             }}
           >
             {previewMode === 'existing' && selectedExistingNoteId ? (
