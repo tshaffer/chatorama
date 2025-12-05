@@ -14,8 +14,6 @@ import {
   TableHead,
   TableRow,
   TextField,
-  IconButton,
-  Collapse,
   Box,
   Typography,
   Stack,
@@ -98,9 +96,7 @@ export function ImportResultsDialog({
   );
 
   const [singleRows, setSingleRows] = useState<EditableImportedNoteRow[]>(() =>
-    combinedNote
-      ? buildEditableRows([combinedNote])
-      : [],
+    combinedNote ? buildEditableRows([combinedNote]) : [],
   );
 
   // Initialize defaults + rows whenever a new import result comes in
@@ -135,21 +131,21 @@ export function ImportResultsDialog({
     setSingleRows(
       combinedNote
         ? [
-          {
-            ...combinedNote,
-            editedTitle: combinedNote.title,
-            subjectLabel: combinedNote.subjectName ?? firstSubject ?? '',
-            topicLabel: combinedNote.topicName ?? firstTopic ?? '',
-            showBody: false,
-            subjectTouched: false,
-            topicTouched: false,
-          },
-        ]
+            {
+              ...combinedNote,
+              editedTitle: combinedNote.title,
+              subjectLabel: combinedNote.subjectName ?? firstSubject ?? '',
+              topicLabel: combinedNote.topicName ?? firstTopic ?? '',
+              showBody: false,
+              subjectTouched: false,
+              topicTouched: false,
+            },
+          ]
         : [],
     );
   }, [importedNotes, combinedNote]);
 
-  // NEW: clear bulk flags after rows change
+  // clear bulk flags after rows change
   React.useEffect(() => {
     subjectBulkUpdateRef.current = false;
     topicBulkUpdateRef.current = false;
@@ -193,10 +189,7 @@ export function ImportResultsDialog({
     return Array.from(set);
   }, [defaultSubjectLabel, importedNotes, activeRows, subjects]);
 
-  const topicOptionsForSubject = (
-    subjectLabel: string,
-    currentTopicLabel: string,
-  ) => {
+  const topicOptionsForSubject = (subjectLabel: string, currentTopicLabel: string) => {
     const trimmedSubject = subjectLabel.trim();
     const trimmedTopic = currentTopicLabel.trim();
 
@@ -221,9 +214,7 @@ export function ImportResultsDialog({
     patch: Partial<EditableImportedNoteRow>,
   ) => {
     const setter = importMode === 'perTurn' ? setRows : setSingleRows;
-    setter((prev) =>
-      prev.map((r) => (r.importKey === importKey ? { ...r, ...patch } : r)),
-    );
+    setter((prev) => prev.map((r) => (r.importKey === importKey ? { ...r, ...patch } : r)));
   };
 
   const updateDefaultSubject = (next: string) => {
@@ -235,9 +226,9 @@ export function ImportResultsDialog({
         r.subjectTouched
           ? r
           : {
-            ...r,
-            subjectLabel: next ?? '',
-          },
+              ...r,
+              subjectLabel: next ?? '',
+            },
       ),
     );
   };
@@ -251,12 +242,13 @@ export function ImportResultsDialog({
         r.topicTouched
           ? r
           : {
-            ...r,
-            topicLabel: next ?? '',
-          },
+              ...r,
+              topicLabel: next ?? '',
+            },
       ),
     );
   };
+
   const handleApply = () => {
     const payload = importMode === 'perTurn' ? rows : singleRows.length ? singleRows : rows;
     onApply(payload);
@@ -286,7 +278,7 @@ export function ImportResultsDialog({
     [fetchTopicNotes, loadingTopicNotes, topicNotesMap],
   );
 
-  // NEW: eagerly load notes for all topics when subjectsWithTopics changes
+  // Eagerly load notes for all topics when subjectsWithTopics changes
   React.useEffect(() => {
     if (!subjectsWithTopics.length) return;
 
@@ -382,10 +374,7 @@ export function ImportResultsDialog({
 
               <Autocomplete
                 freeSolo
-                options={topicOptionsForSubject(
-                  defaultSubjectLabel,
-                  defaultTopicLabel,
-                )}
+                options={topicOptionsForSubject(defaultSubjectLabel, defaultTopicLabel)}
                 value={defaultTopicLabel}
                 onInputChange={(_e, newInputValue) =>
                   updateDefaultTopic(newInputValue ?? '')
@@ -469,10 +458,7 @@ export function ImportResultsDialog({
                     <TableCell sx={{ minWidth: 220 }}>
                       <Autocomplete
                         freeSolo
-                        options={topicOptionsForSubject(
-                          row.subjectLabel,
-                          row.topicLabel,
-                        )}
+                        options={topicOptionsForSubject(row.subjectLabel, row.topicLabel)}
                         value={row.topicLabel}
                         onChange={(_e, newValue) => {
                           if (topicBulkUpdateRef.current) return;
@@ -506,14 +492,6 @@ export function ImportResultsDialog({
 
           {/* Middle: preview */}
           <Box sx={{ flex: 1.8, ...panelSx }}>
-            {/* DEBUG: show current preview state */}
-            <Box sx={{ mb: 1 }}>
-              <Typography variant="caption" color="text.secondary">
-                debug – previewMode: {previewMode}, selectedExistingNoteId:{' '}
-                {selectedExistingNoteId ?? 'null'}
-              </Typography>
-            </Box>
-
             {previewMode === 'existing' && selectedExistingNoteId ? (
               <>
                 <Box
@@ -527,10 +505,7 @@ export function ImportResultsDialog({
                   <Typography variant="subtitle2" color="text.secondary">
                     Viewing existing note
                   </Typography>
-                  <Button
-                    size="small"
-                    onClick={() => setPreviewMode('imported')}
-                  >
+                  <Button size="small" onClick={() => setPreviewMode('imported')}>
                     Return to imported note preview
                   </Button>
                 </Box>
@@ -590,18 +565,6 @@ export function ImportResultsDialog({
                 expansionTrigger="iconContainer"
                 onExpandedItemsChange={(_event, itemIds) => {
                   setExpandedItems(itemIds);
-                  itemIds.forEach((id) => {
-                    if (id.startsWith('topic:')) {
-                      const topicId = id.replace('topic:', '');
-                      const subject = subjectsWithTopics.find((s) =>
-                        s.topics?.some((t) => t.id === topicId),
-                      );
-                      const topic = subject?.topics?.find((t) => t.id === topicId);
-                      if (subject && topic) {
-                        void ensureTopicNotes(subject.id, topic.id);
-                      }
-                    }
-                  });
                 }}
                 onItemClick={(_event, itemId) => {
                   if (itemId.startsWith('note:')) {
@@ -619,22 +582,7 @@ export function ImportResultsDialog({
                       const topicError = topicErrors[t.id];
 
                       return (
-                        <TreeItem
-                          key={t.id}
-                          itemId={`topic:${t.id}`}
-                          label={
-                            <span>
-                              {t.name}{' '}
-                              <Typography
-                                component="span"
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                ({notes.length} notes)
-                              </Typography>
-                            </span>
-                          }
-                        >
+                        <TreeItem key={t.id} itemId={`topic:${t.id}`} label={t.name}>
                           {isLoading && (
                             <TreeItem
                               itemId={`topic-loading:${t.id}`}
@@ -661,13 +609,10 @@ export function ImportResultsDialog({
                                 ? baseText.slice(0, 160)
                                 : 'Click to preview this note';
 
-                            const handleNoteClick: React.MouseEventHandler<HTMLSpanElement> = (event) => {
-                              event.stopPropagation(); // don't toggle expansion
-
-                              // SUPER DEBUG: make it obvious this fired
-                              // eslint-disable-next-line no-alert
-                              alert(`Clicked note ${n.id}`);
-
+                            const handleNoteClick: React.MouseEventHandler<HTMLSpanElement> = (
+                              event,
+                            ) => {
+                              event.stopPropagation();
                               setSelectedExistingNoteId(n.id);
                               setPreviewMode('existing');
                             };
@@ -680,11 +625,7 @@ export function ImportResultsDialog({
                                   <Tooltip title={snippet} arrow placement="right">
                                     <span
                                       onClick={handleNoteClick}
-                                      style={{
-                                        cursor: 'pointer',
-                                        border: '1px solid red',
-                                        padding: '2px 4px',
-                                      }}
+                                      style={{ cursor: 'pointer' }}
                                     >
                                       {n.title || 'Untitled note'}
                                     </span>
