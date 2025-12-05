@@ -65,6 +65,12 @@ export function ImportResultsDialog({
   const [selectedImportKey, setSelectedImportKey] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<'imported' | 'existing'>('imported');
   const [selectedExistingNoteId, setSelectedExistingNoteId] = useState<string | null>(null);
+  const PANEL_WIDTHS_STORAGE_KEY = 'chatalog.importResults.panelWidths';
+  const DEFAULT_PANEL_WIDTHS: [number, number, number] = [0.45, 0.3, 0.25];
+  const [panelWidths, setPanelWidths] = React.useState<[number, number, number]>(
+    DEFAULT_PANEL_WIDTHS,
+  );
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
 
   const [defaultSubjectLabel, setDefaultSubjectLabel] = useState('');
   const [defaultTopicLabel, setDefaultTopicLabel] = useState('');
@@ -150,6 +156,38 @@ export function ImportResultsDialog({
     subjectBulkUpdateRef.current = false;
     topicBulkUpdateRef.current = false;
   }, [rows, singleRows]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    try {
+      const raw = window.localStorage.getItem(PANEL_WIDTHS_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as [number, number, number];
+      if (
+        Array.isArray(parsed) &&
+        parsed.length === 3 &&
+        parsed.every((v) => typeof v === 'number' && v > 0 && v < 1)
+      ) {
+        const sum = parsed[0] + parsed[1] + parsed[2];
+        if (sum > 0.99 && sum < 1.01) {
+          setPanelWidths(parsed);
+        }
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }, [open, PANEL_WIDTHS_STORAGE_KEY]);
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        PANEL_WIDTHS_STORAGE_KEY,
+        JSON.stringify(panelWidths),
+      );
+    } catch {
+      // ignore storage failures
+    }
+  }, [panelWidths, PANEL_WIDTHS_STORAGE_KEY]);
 
   const activeRows = useMemo(
     () => (importMode === 'perTurn' ? rows : singleRows),
@@ -306,20 +344,130 @@ export function ImportResultsDialog({
     flexDirection: 'column',
   } as const;
 
+  type DividerIndex = 0 | 1;
+  const MIN_PANEL_FRACTION = 0.15;
+
+  const [dragState, setDragState] = React.useState<{
+    active: boolean;
+    dividerIndex: DividerIndex | null;
+    startX: number;
+    startWidths: [number, number, number];
+  }>({
+    active: false,
+    dividerIndex: null,
+    startX: 0,
+    startWidths: DEFAULT_PANEL_WIDTHS,
+  });
+
+  const handleDividerMouseDown = (
+    event: React.MouseEvent<HTMLDivElement>,
+    dividerIndex: DividerIndex,
+  ) => {
+    if (!containerRef.current) return;
+    event.preventDefault();
+    setDragState({
+      active: true,
+      dividerIndex,
+      startX: event.clientX,
+      startWidths: panelWidths,
+    });
+  };
+
+  const handleWindowMouseMove = React.useCallback(
+    (event: MouseEvent) => {
+      if (!dragState.active || dragState.dividerIndex === null || !containerRef.current) {
+        return;
+      }
+
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const totalWidth = containerRect.width || 1;
+      const deltaX = event.clientX - dragState.startX;
+      const deltaFraction = deltaX / totalWidth;
+
+      const [w0, w1, w2] = dragState.startWidths;
+      let newWidths: [number, number, number] = [w0, w1, w2];
+
+      if (dragState.dividerIndex === 0) {
+        let left = w0 + deltaFraction;
+        let middle = w1 - deltaFraction;
+
+        left = Math.max(MIN_PANEL_FRACTION, Math.min(left, 1 - MIN_PANEL_FRACTION * 2));
+        middle = Math.max(MIN_PANEL_FRACTION, Math.min(middle, 1 - MIN_PANEL_FRACTION * 2));
+
+        const right = 1 - left - middle;
+        if (right >= MIN_PANEL_FRACTION) {
+          newWidths = [left, middle, right];
+        }
+      } else if (dragState.dividerIndex === 1) {
+        let middle = w1 + deltaFraction;
+        let right = w2 - deltaFraction;
+
+        middle = Math.max(MIN_PANEL_FRACTION, Math.min(middle, 1 - MIN_PANEL_FRACTION * 2));
+        right = Math.max(MIN_PANEL_FRACTION, Math.min(right, 1 - MIN_PANEL_FRACTION * 2));
+
+        const left = 1 - middle - right;
+        if (left >= MIN_PANEL_FRACTION) {
+          newWidths = [left, middle, right];
+        }
+      }
+
+      setPanelWidths(newWidths);
+    },
+    [dragState, setPanelWidths],
+  );
+
+  const handleWindowMouseUp = React.useCallback(() => {
+    if (dragState.active) {
+      setDragState((prev) => ({ ...prev, active: false, dividerIndex: null }));
+    }
+  }, [dragState.active]);
+
+  React.useEffect(() => {
+    if (!dragState.active) return;
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  }, [dragState.active, handleWindowMouseMove, handleWindowMouseUp]);
+
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xl">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth={false}
+      PaperProps={{
+        sx: {
+          width: '95vw',
+          maxWidth: 1700,
+        },
+      }}
+    >
       <DialogTitle>Review Imported Notes</DialogTitle>
       <DialogContent dividers sx={{ p: 2 }}>
         <Box
+          ref={containerRef}
           sx={{
             display: 'flex',
-            gap: 2,
+            gap: 0,
             alignItems: 'stretch',
             minHeight: 0,
+            width: '100%',
           }}
         >
           {/* Left: existing import UI */}
-          <Box sx={{ flex: 2, ...panelSx }}>
+          <Box
+            sx={{
+              ...panelSx,
+              flex: '0 0 auto',
+              flexBasis: `${panelWidths[0] * 100}%`,
+              pr: 1,
+            }}
+          >
             <Box sx={{ mb: 2 }}>
               <Typography variant="body2" sx={{ mb: 0.5 }}>
                 How would you like to import this file?
@@ -490,8 +638,31 @@ export function ImportResultsDialog({
             </Table>
           </Box>
 
+          {/* Divider between left and middle */}
+          <Box
+            onMouseDown={(e) => handleDividerMouseDown(e, 0)}
+            sx={{
+              width: 10,
+              cursor: 'col-resize',
+              flexShrink: 0,
+              alignSelf: 'stretch',
+              bgcolor: 'divider',
+              opacity: 0.6,
+              transition: 'opacity 120ms ease',
+              '&:hover': { opacity: 1 },
+              '&:active': { opacity: 1 },
+            }}
+          />
+
           {/* Middle: preview */}
-          <Box sx={{ flex: 1.8, ...panelSx }}>
+          <Box
+            sx={{
+              ...panelSx,
+              flex: '0 0 auto',
+              flexBasis: `${panelWidths[1] * 100}%`,
+              px: 1,
+            }}
+          >
             {previewMode === 'existing' && selectedExistingNoteId ? (
               <>
                 <Box
@@ -548,8 +719,31 @@ export function ImportResultsDialog({
             )}
           </Box>
 
+          {/* Divider between middle and right */}
+          <Box
+            onMouseDown={(e) => handleDividerMouseDown(e, 1)}
+            sx={{
+              width: 10,
+              cursor: 'col-resize',
+              flexShrink: 0,
+              alignSelf: 'stretch',
+              bgcolor: 'divider',
+              opacity: 0.6,
+              transition: 'opacity 120ms ease',
+              '&:hover': { opacity: 1 },
+              '&:active': { opacity: 1 },
+            }}
+          />
+
           {/* Right: hierarchy */}
-          <Box sx={{ flex: 1.4, ...panelSx }}>
+          <Box
+            sx={{
+              ...panelSx,
+              flex: '0 0 auto',
+              flexBasis: `${panelWidths[2] * 100}%`,
+              pl: 1,
+            }}
+          >
             <Typography variant="subtitle1" sx={{ mb: 1 }}>
               Existing Hierarchy
             </Typography>
@@ -565,6 +759,18 @@ export function ImportResultsDialog({
                 expansionTrigger="iconContainer"
                 onExpandedItemsChange={(_event, itemIds) => {
                   setExpandedItems(itemIds);
+                  itemIds.forEach((id) => {
+                    if (id.startsWith('topic:')) {
+                      const topicId = id.replace('topic:', '');
+                      const subject = subjectsWithTopics.find((s) =>
+                        s.topics?.some((t) => t.id === topicId),
+                      );
+                      const topic = subject?.topics?.find((t) => t.id === topicId);
+                      if (subject && topic) {
+                        void ensureTopicNotes(subject.id, topic.id);
+                      }
+                    }
+                  });
                 }}
                 onItemClick={(_event, itemId) => {
                   if (itemId.startsWith('note:')) {
@@ -605,9 +811,7 @@ export function ImportResultsDialog({
                                 : rawMarkdown || '';
 
                             const snippet =
-                              baseText.length > 0
-                                ? baseText.slice(0, 160)
-                                : 'Click to preview this note';
+                              baseText.length > 0 ? baseText.slice(0, 160) : '';
 
                             const handleNoteClick: React.MouseEventHandler<HTMLSpanElement> = (
                               event,
