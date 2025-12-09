@@ -35,6 +35,11 @@ export default function QuickCaptureDialog({
 
   const [addQuickNote, { isLoading, error, data }] = useAddQuickNoteMutation();
   const { data: subjects = [] } = useGetSubjectsWithTopicsQuery();
+  const markdownInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [linkText, setLinkText] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [selectionRange, setSelectionRange] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
 
   const derivedTitle = useMemo(() => title.trim() ? '' : deriveTitle(markdown), [title, markdown]);
 
@@ -67,6 +72,44 @@ export default function QuickCaptureDialog({
     }
   };
 
+  const openInsertLinkDialog = () => {
+    const textarea = markdownInputRef.current;
+    const value = markdown ?? '';
+    if (textarea) {
+      const start = textarea.selectionStart ?? value.length;
+      const end = textarea.selectionEnd ?? start;
+      setSelectionRange({ start, end });
+      const selectedText = value.slice(start, end);
+      setLinkText(selectedText);
+    } else {
+      setSelectionRange({ start: value.length, end: value.length });
+      setLinkText('');
+    }
+    setLinkUrl('');
+    setLinkDialogOpen(true);
+  };
+
+  const handleInsertLink = () => {
+    const url = linkUrl.trim();
+    if (!url) return;
+    const text = linkText.trim() || url;
+    const { start, end } = selectionRange;
+    const safeStart = Math.max(0, Math.min(start, markdown.length));
+    const safeEnd = Math.max(safeStart, Math.min(end, markdown.length));
+    const mdLink = `[${text}](${url})`;
+    const next =
+      markdown.slice(0, safeStart) + mdLink + markdown.slice(safeEnd);
+    setMarkdown(next);
+    setLinkDialogOpen(false);
+    requestAnimationFrame(() => {
+      if (markdownInputRef.current) {
+        const pos = safeStart + mdLink.length;
+        markdownInputRef.current.focus();
+        markdownInputRef.current.setSelectionRange(pos, pos);
+      }
+    });
+  };
+
   // simple subject→topic select data
   const selectedSubject = subjects.find(s => s.id === subjectId) as (Subject & { topics?: Topic[] }) | undefined;
   const topics = selectedSubject?.topics ?? [];
@@ -93,7 +136,13 @@ export default function QuickCaptureDialog({
             fullWidth
             multiline
             minRows={6}
+            inputRef={markdownInputRef}
           />
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Button size="small" onClick={openInsertLinkDialog}>
+              Insert link
+            </Button>
+          </Box>
           <Stack direction="row" spacing={2}>
             <FormControl fullWidth>
               <InputLabel id="qc-subject-label">Subject (optional)</InputLabel>
@@ -148,6 +197,37 @@ export default function QuickCaptureDialog({
           {isLoading ? 'Saving…' : 'Save'}
         </Button>
       </DialogActions>
+
+      <Dialog open={linkDialogOpen} onClose={() => setLinkDialogOpen(false)}>
+        <DialogTitle>Insert link</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+          <TextField
+            label="Link text"
+            value={linkText}
+            onChange={(e) => setLinkText(e.target.value)}
+            autoFocus
+          />
+          <TextField
+            label="URL"
+            value={linkUrl}
+            onChange={(e) => setLinkUrl(e.target.value)}
+            placeholder="https://example.com"
+          />
+          <Typography variant="caption" color="text.secondary">
+            Links open in a new tab. Use http(s), mailto:, or tel: URLs.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLinkDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleInsertLink}
+            disabled={!linkUrl.trim()}
+          >
+            Insert
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 }

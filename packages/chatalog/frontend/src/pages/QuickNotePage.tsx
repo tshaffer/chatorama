@@ -1,5 +1,5 @@
 // chatalog/frontend/src/pages/QuickNotePage.tsx
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import {
   useParams,
   Link as RouterLink,
@@ -23,11 +23,7 @@ import {
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
 
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
-import rehypeHighlight from 'rehype-highlight';
-import 'highlight.js/styles/github.css';
+import MarkdownBody from '../components/MarkdownBody';
 import '../styles/markdown.css';
 
 import {
@@ -66,6 +62,11 @@ export default function QuickNotePage() {
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [subjectLabel, setSubjectLabel] = useState('');
   const [topicLabel, setTopicLabel] = useState('');
+  const markdownInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [linkText, setLinkText] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [selectionRange, setSelectionRange] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
 
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
@@ -206,6 +207,44 @@ export default function QuickNotePage() {
         severity: 'error',
       });
     }
+  };
+
+  const openInsertLinkDialog = () => {
+    const textarea = markdownInputRef.current;
+    const value = editMarkdown ?? '';
+    if (textarea) {
+      const start = textarea.selectionStart ?? value.length;
+      const end = textarea.selectionEnd ?? start;
+      setSelectionRange({ start, end });
+      const selectedText = value.slice(start, end);
+      setLinkText(selectedText);
+    } else {
+      setSelectionRange({ start: value.length, end: value.length });
+      setLinkText('');
+    }
+    setLinkUrl('');
+    setLinkDialogOpen(true);
+  };
+
+  const handleInsertLink = () => {
+    const url = linkUrl.trim();
+    if (!url) return;
+    const text = linkText.trim() || url;
+    const { start, end } = selectionRange;
+    const safeStart = Math.max(0, Math.min(start, editMarkdown.length));
+    const safeEnd = Math.max(safeStart, Math.min(end, editMarkdown.length));
+    const mdLink = `[${text}](${url})`;
+    const next =
+      editMarkdown.slice(0, safeStart) + mdLink + editMarkdown.slice(safeEnd);
+    setEditMarkdown(next);
+    setLinkDialogOpen(false);
+    requestAnimationFrame(() => {
+      if (markdownInputRef.current) {
+        const pos = safeStart + mdLink.length;
+        markdownInputRef.current.focus();
+        markdownInputRef.current.setSelectionRange(pos, pos);
+      }
+    });
   };
 
   // ---------- Delete handlers ----------
@@ -383,25 +422,55 @@ export default function QuickNotePage() {
         }}
       >
         {isEditing ? (
-          <TextField
-            label="Body (Markdown)"
-            value={editMarkdown}
-            onChange={e => setEditMarkdown(e.target.value)}
-            fullWidth
-            multiline
-            minRows={10}
-          />
+          <Stack spacing={1} alignItems="flex-end">
+            <TextField
+              label="Body (Markdown)"
+              value={editMarkdown}
+              onChange={e => setEditMarkdown(e.target.value)}
+              fullWidth
+              multiline
+              minRows={10}
+              inputRef={markdownInputRef}
+            />
+            <Button size="small" onClick={openInsertLinkDialog}>
+              Insert link
+            </Button>
+          </Stack>
         ) : (
-          <Box className="markdown-body">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkBreaks] as any}
-              rehypePlugins={[rehypeHighlight] as any}
-            >
-              {note.markdown ?? ''}
-            </ReactMarkdown>
-          </Box>
+          <MarkdownBody markdown={note.markdown ?? ''} />
         )}
       </Box>
+
+      <Dialog open={linkDialogOpen} onClose={() => setLinkDialogOpen(false)}>
+        <DialogTitle>Insert link</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+          <TextField
+            label="Link text"
+            value={linkText}
+            onChange={(e) => setLinkText(e.target.value)}
+            autoFocus
+          />
+          <TextField
+            label="URL"
+            value={linkUrl}
+            onChange={(e) => setLinkUrl(e.target.value)}
+            placeholder="https://example.com"
+          />
+          <Typography variant="caption" color="text.secondary">
+            Links open in a new tab. Use http(s), mailto:, or tel: URLs.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLinkDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleInsertLink}
+            disabled={!linkUrl.trim()}
+          >
+            Insert
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Delete confirmation dialog */}
       <Dialog

@@ -39,11 +39,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeHighlight from 'rehype-highlight';
-import remarkBreaks from 'remark-breaks';
-import 'highlight.js/styles/github.css';
+import MarkdownBody from '../../components/MarkdownBody';
 import '../../styles/markdown.css';
 
 import {
@@ -879,14 +875,7 @@ export default function NoteEditor({
       )}
 
       <Box sx={{ mt: 1 }}>
-        <div className="markdown-body">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkBreaks]}
-            rehypePlugins={[rehypeHighlight]}
-          >
-            {previewBody}
-          </ReactMarkdown>
-        </div>
+        <MarkdownBody markdown={previewBody} />
       </Box>
     </>
   );
