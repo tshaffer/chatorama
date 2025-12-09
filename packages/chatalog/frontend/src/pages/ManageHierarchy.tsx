@@ -41,7 +41,7 @@ const slugify = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 const safeId = (o: { id?: string } | undefined) => o?.id ?? '';
 
-export default function ManageSubjectsPage() {
+export default function ManageHierarchyPage() {
   const { data: subjects = [], isLoading } = useGetSubjectsQuery();
   const [newSubjectName, setNewSubjectName] = useState('');
   const [createSubject, { isLoading: creatingSubject }] = useCreateSubjectMutation();

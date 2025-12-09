@@ -2,7 +2,7 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import AppShell from './AppShell';
 import Home from './pages/Home';
-import SubjectsPage from './pages/Subjects';
+import ManageHierarchyPage from './pages/ManageHierarchy';
 import TopicNotesPage from './pages/TopicNotesPage';
 import NotePage from './pages/NotePage';
 import SubjectIndex from './pages/SubjectIndex';
@@ -37,8 +37,8 @@ export const router = createBrowserRouter([
       // Redirect old /subjects to the new manage route
       { path: 'subjects', element: <Navigate to="/subjects/manage" replace /> },
 
-      // Manage Subjects (reuses existing SubjectsPage for now)
-      { path: 'subjects/manage', element: <SubjectsPage /> },
+      // Manage Subjects (reuses existing ManageHierarchyPage for now)
+      { path: 'subjects/manage', element: <ManageHierarchyPage /> },
 
       // Relations stub
       { path: 'relations', element: <RelationsPage /> },
