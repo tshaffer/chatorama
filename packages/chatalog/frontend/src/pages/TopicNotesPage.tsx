@@ -18,6 +18,7 @@ import {
   DialogActions,
 } from '@mui/material';
 import { skipToken } from '@reduxjs/toolkit/query';
+import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import { useSelector } from 'react-redux';
 
 import {
@@ -28,6 +29,7 @@ import {
 import {
   useGetImportBatchesQuery,
   useGetImportBatchNotesQuery,
+  useDeleteImportBatchMutation,
 } from '../features/imports/importsApi';
 import { useGetTopicRelationsSummaryQuery } from '../features/subjects/subjectsApi';
 import ReorderableNotesList from '../features/notes/ReorderableNotesList';
@@ -37,6 +39,8 @@ import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
 import LinkNoteToTargetDialog from '../features/relations/LinkNoteToTargetDialog';
 import { NoteStatusIndicator } from '../features/notes/NoteStatusIndicator';
 import { selectNoteStatusVisibility } from '../features/settings/settingsSlice';
+import ConfirmIconButton from '../components/ConfirmIconButton';
+import DeleteIcon from '@mui/icons-material/Delete';
 
 // Extract leading ObjectId from "<id>" or "<id>-<slug>"
 const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
@@ -243,6 +247,12 @@ export default function TopicNotesPage() {
             setSelectedBatchId(id);
             clearSelection();
           }}
+          onDeletedBatch={(deletedId) => {
+            if (selectedBatchId === deletedId) {
+              setSelectedBatchId(null);
+              clearSelection();
+            }
+          }}
         />
       </Box>
 
@@ -371,18 +381,28 @@ export default function TopicNotesPage() {
               }}
             >
               {activeError ? (
-                <Box>
-                  <Typography color="error" sx={{ mb: 1 }}>
-                    Failed to load notes.
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {String(
-                      (activeErrorObj as any)?.data ??
-                      (activeErrorObj as any)?.message ??
-                      activeErrorObj,
-                    )}
-                  </Typography>
-                </Box>
+                (() => {
+                  const status = (activeErrorObj as FetchBaseQueryError)?.status;
+                  if (isBatchMode && status === 404) {
+                    return (
+                      <Box>
+                        <Typography variant="h6" sx={{ mb: 1 }}>
+                          No import selected
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Choose an import from the history list to see its notes.
+                        </Typography>
+                      </Box>
+                    );
+                  }
+                  return (
+                    <Box>
+                      <Typography color="error" sx={{ mb: 1 }}>
+                        Failed to load notes.
+                      </Typography>
+                    </Box>
+                  );
+                })()
               ) : activeLoading ? (
                 <LinearProgress />
               ) : activeNotes.length ? (
@@ -643,9 +663,11 @@ type ImportHistoryProps = {
   batches: { id: string; createdAt: string; importedCount: number; remainingCount: number }[];
   selectedBatchId: string | null;
   onSelectBatch: (id: string) => void;
+  onDeletedBatch?: (id: string) => void;
 };
 
-function ImportHistorySection({ batches, selectedBatchId, onSelectBatch }: ImportHistoryProps) {
+function ImportHistorySection({ batches, selectedBatchId, onSelectBatch, onDeletedBatch }: ImportHistoryProps) {
+  const [deleteImportBatch, { isLoading: deletingBatch }] = useDeleteImportBatchMutation();
   const items = useMemo(
     () => [...batches].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
     [batches],
@@ -697,6 +719,20 @@ function ImportHistorySection({ batches, selectedBatchId, onSelectBatch }: Impor
                 <Typography variant="body2" color="text.secondary">
                   {b.importedCount} imported, {b.remainingCount} remaining
                 </Typography>
+                <Box sx={{ mt: 0.5, display: 'flex', justifyContent: 'flex-end' }}>
+                  <ConfirmIconButton
+                    title="Remove this import from history?"
+                    message="This will delete this import record from Import History. Notes created by this import will NOT be deleted."
+                    tooltip="Delete from history"
+                    icon={<DeleteIcon fontSize="small" />}
+                    size="small"
+                    disabled={deletingBatch}
+                    onConfirm={async () => {
+                      await deleteImportBatch({ batchId: b.id }).unwrap();
+                      onDeletedBatch?.(b.id);
+                    }}
+                  />
+                </Box>
               </Box>
             );
           })}

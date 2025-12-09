@@ -62,4 +62,21 @@ router.get('/:batchId/notes', async (req, res, next) => {
   }
 });
 
+// DELETE /api/v1/import-batches/:batchId
+router.delete('/:batchId', async (req, res, next) => {
+  try {
+    const { batchId } = req.params;
+
+    const doc = await ImportBatchModel.findByIdAndDelete(batchId).exec();
+    if (!doc) {
+      return res.status(404).json({ message: 'Import batch not found' });
+    }
+
+    // Notes created by this batch remain; we only remove the history entry.
+    return res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

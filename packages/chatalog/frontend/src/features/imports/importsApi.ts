@@ -87,6 +87,13 @@ export const importsApi = baseApi.injectEndpoints({
 
     getImportBatches: build.query<ImportBatch[], void>({
       query: () => ({ url: 'import-batches' }),
+      providesTags: (res) =>
+        res
+          ? [
+            { type: 'ImportBatch' as const, id: 'LIST' },
+            ...res.map((b) => ({ type: 'ImportBatch' as const, id: (b as any).id ?? (b as any)._id })),
+          ]
+          : [{ type: 'ImportBatch' as const, id: 'LIST' }],
     }),
 
     getImportBatchNotes: build.query<NotePreview[], string>({
@@ -99,6 +106,17 @@ export const importsApi = baseApi.injectEndpoints({
           ]
           : [{ type: 'ImportBatch' as const, id: batchId }],
     }),
+
+    deleteImportBatch: build.mutation<void, { batchId: string }>({
+      query: ({ batchId }) => ({
+        url: `import-batches/${batchId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: (_res, _err, { batchId }) => [
+        { type: 'ImportBatch' as const, id: 'LIST' },
+        { type: 'ImportBatch' as const, id: batchId },
+      ],
+    }),
   }),
   overrideExisting: true,
 });
@@ -109,4 +127,5 @@ export const {
   useApplyChatworthyImportMutation,
   useGetImportBatchesQuery,
   useGetImportBatchNotesQuery,
+  useDeleteImportBatchMutation,
 } = importsApi;

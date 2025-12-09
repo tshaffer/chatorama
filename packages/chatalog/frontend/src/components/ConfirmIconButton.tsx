@@ -9,14 +9,16 @@ type Props = {
   size?: 'small' | 'medium' | 'large';
   tooltip?: string;
   stopPropagation?: boolean;
+  disabled?: boolean;
 };
 
 export default function ConfirmIconButton({
-  title, message, onConfirm, icon, size = 'small', tooltip, stopPropagation = true
+  title, message, onConfirm, icon, size = 'small', tooltip, stopPropagation = true, disabled = false,
 }: Props) {
   const [open, setOpen] = useState(false);
 
   const handleOpen = (e: React.MouseEvent) => {
+    if (disabled) return;
     if (stopPropagation) e.stopPropagation();
     setOpen(true);
   };
@@ -27,7 +29,7 @@ export default function ConfirmIconButton({
   };
 
   const btn = (
-    <IconButton size={size} onClick={handleOpen}>
+    <IconButton size={size} onClick={handleOpen} disabled={disabled}>
       {icon}
     </IconButton>
   );
