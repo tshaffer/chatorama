@@ -1,4 +1,4 @@
-// src/pages/Subjects.tsx
+// src/pages/ManageHierarchy.tsx
 import { memo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -12,6 +12,7 @@ import {
   Divider,
   TextField,
   Button,
+  Tooltip,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -93,6 +94,11 @@ export default function ManageHierarchyPage() {
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Create, rename, and delete subjects and topics. Changes here update the Notes hierarchy.
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            • Double-click a subject title to rename it.
+            <br />
+            • Click a topic chip to open it; double-click to rename it.
           </Typography>
         </Box>
 
@@ -257,18 +263,20 @@ const SubjectCard = memo(function SubjectCard(props: {
           sx={{ mb: 1 }}
         >
           {/* Subject title: double-click to rename */}
-          <Box sx={{ fontWeight: 600 }}>
-            <InlineEditableName
-              value={props.subjectName}
-              startEditingOn="doubleClick"
-              onSave={async (name) => {
-                await renameSubject({
-                  subjectId: props.subjectId,
-                  name,
-                }).unwrap();
-              }}
-            />
-          </Box>
+          <Tooltip title="Double-click to rename subject">
+            <Box sx={{ fontWeight: 600, cursor: 'text' }}>
+              <InlineEditableName
+                value={props.subjectName}
+                startEditingOn="doubleClick"
+                onSave={async (name) => {
+                  await renameSubject({
+                    subjectId: props.subjectId,
+                    name,
+                  }).unwrap();
+                }}
+              />
+            </Box>
+          </Tooltip>
 
           <ConfirmIconButton
             title="Delete subject?"
@@ -339,46 +347,50 @@ const SubjectCard = memo(function SubjectCard(props: {
             }
 
             return (
-              <Chip
+              <Tooltip
                 key={tid || t.name}
-                size="small"
-                label={t.name}
-                clickable
-                onClick={(e) => {
-                  e.stopPropagation();
-                  // arm a per-chip nav timer
-                  const prev = chipTimersRef.current[tid];
-                  if (prev) clearTimeout(prev);
-                  chipTimersRef.current[tid] = window.setTimeout(() => {
-                    chipTimersRef.current[tid] = null;
-                    navigate(topicHref);
-                  }, 250);
-                }}
-                onDoubleClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  // cancel the armed single-click nav for this chip
-                  const timer = chipTimersRef.current[tid];
-                  if (timer) {
-                    clearTimeout(timer);
-                    chipTimersRef.current[tid] = null;
-                  }
-                  beginEditTopic(t);
-                }}
-                onDelete={async (e) => {
-                  (e as any)?.stopPropagation?.();
-                  (e as any)?.preventDefault?.();
-                  const timer = chipTimersRef.current[tid];
-                  if (timer) {
-                    clearTimeout(timer);
-                    chipTimersRef.current[tid] = null;
-                  }
-                  if (confirm(`Delete topic “${t.name}”?`)) {
-                    await deleteTopic({ subjectId: props.subjectId, topicId: tid }).unwrap();
-                  }
-                }}
-                sx={{ mr: 0.5, mb: 0.5 }}
-              />
+                title="Click to open; double-click to rename"
+              >
+                <Chip
+                  size="small"
+                  label={t.name}
+                  clickable
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // arm a per-chip nav timer
+                    const prev = chipTimersRef.current[tid];
+                    if (prev) clearTimeout(prev);
+                    chipTimersRef.current[tid] = window.setTimeout(() => {
+                      chipTimersRef.current[tid] = null;
+                      navigate(topicHref);
+                    }, 250);
+                  }}
+                  onDoubleClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // cancel the armed single-click nav for this chip
+                    const timer = chipTimersRef.current[tid];
+                    if (timer) {
+                      clearTimeout(timer);
+                      chipTimersRef.current[tid] = null;
+                    }
+                    beginEditTopic(t);
+                  }}
+                  onDelete={async (e) => {
+                    (e as any)?.stopPropagation?.();
+                    (e as any)?.preventDefault?.();
+                    const timer = chipTimersRef.current[tid];
+                    if (timer) {
+                      clearTimeout(timer);
+                      chipTimersRef.current[tid] = null;
+                    }
+                    if (confirm(`Delete topic “${t.name}”?`)) {
+                      await deleteTopic({ subjectId: props.subjectId, topicId: tid }).unwrap();
+                    }
+                  }}
+                  sx={{ mr: 0.5, mb: 0.5 }}
+                />
+              </Tooltip>
             );
           })}
         </Stack>
