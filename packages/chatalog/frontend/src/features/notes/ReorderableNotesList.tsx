@@ -142,7 +142,11 @@ function SortableNoteRow({
     >
       <ListItemButton
         selected={selected}
-        onClick={onOpen}
+        onClick={(e) => {
+          const target = e.target as HTMLElement;
+          if (target.closest('a')) return;
+          onOpen?.();
+        }}
       >
         <ListItemIcon sx={{ minWidth: 36 }}>
           <Checkbox

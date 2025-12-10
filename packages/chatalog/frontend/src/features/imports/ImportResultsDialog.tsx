@@ -26,14 +26,12 @@ import {
   ToggleButtonGroup,
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
 import { TreeItem } from '@mui/x-tree-view/TreeItem';
 import type { ImportedNoteSummary } from '../imports/importsApi';
 import { subjectsApi, useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
 import { useGetNoteQuery } from '../notes/notesApi';
+import MarkdownBody from '../../components/MarkdownBody';
 
 export type EditableImportedNoteRow = ImportedNoteSummary & {
   editedTitle: string;
@@ -924,9 +922,7 @@ export function ImportResultsDialog({
                       {existingNote.title || 'Untitled note'}
                     </Typography>
                     <Box sx={{ mt: 2 }}>
-                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                        {existingNote.markdown}
-                      </ReactMarkdown>
+                      <MarkdownBody markdown={existingNote.markdown} />
                     </Box>
                   </>
                 )}
@@ -937,9 +933,7 @@ export function ImportResultsDialog({
                   {selectedRow.title || 'Untitled imported note'}
                 </Typography>
                 <Box sx={{ mt: 2 }}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                    {selectedRow.body}
-                  </ReactMarkdown>
+                  <MarkdownBody markdown={selectedRow.body} />
                 </Box>
               </>
             ) : (

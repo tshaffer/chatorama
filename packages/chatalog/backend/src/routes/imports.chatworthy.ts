@@ -12,6 +12,8 @@ import { TopicModel } from '../models/Topic';
 import type { NoteDoc } from '../models/Note';
 import { slugifyStandard } from '@chatorama/chatalog-shared';
 import { ImportBatchModel } from '../models/ImportBatch';
+import { normalizeText, hashPromptResponsePair, extractPromptResponseTurns } from '../utils/textHash';
+import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -538,6 +540,7 @@ router.post('/chatworthy/apply', async (req, res, next) => {
     }
 
     const createdNotes: NoteDoc[] = [];
+    const fingerprints: any[] = [];
 
     for (const row of rows) {
       const subjectName = row.subjectLabel?.trim() || undefined;
@@ -569,9 +572,26 @@ router.post('/chatworthy/apply', async (req, res, next) => {
         chatworthyFileName: row.chatworthyFileName,
         chatworthyTurnIndex: row.chatworthyTurnIndex,
         chatworthyTotalTurns: row.chatworthyTotalTurns,
+
+        // source metadata
+        sourceType: 'chatworthy',
+        sourceChatId: row.chatworthyChatId,
       });
 
       createdNotes.push(doc);
+
+      const turns = extractPromptResponseTurns(row.body);
+      turns.forEach((turn) => {
+        const pairHash = hashPromptResponsePair(turn.prompt, turn.response);
+        fingerprints.push({
+          sourceType: 'chatworthy',
+          pairHash,
+          noteId: doc._id,
+          chatId: row.chatworthyChatId,
+          turnIndex: turn.turnIndex,
+          createdAt: new Date(),
+        });
+      });
     }
 
     let batchId: string | undefined;
@@ -588,6 +608,10 @@ router.post('/chatworthy/apply', async (req, res, next) => {
         { _id: { $in: createdNotes.map((n) => n._id) } },
         { $set: { importBatchId: batchId } },
       );
+    }
+
+    if (fingerprints.length) {
+      await TurnFingerprintModel.insertMany(fingerprints, { ordered: false });
     }
 
     res.json({
