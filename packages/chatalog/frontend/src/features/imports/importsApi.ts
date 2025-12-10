@@ -1,6 +1,13 @@
 // frontend/src/features/imports/importsApi.ts
 import { chatalogApi as baseApi } from '../api/chatalogApi';
-import type { ImportBatch, NotePreview } from '@chatorama/chatalog-shared';
+import type {
+  ImportBatch,
+  NotePreview,
+  DuplicateStatus,
+  TurnConflict,
+  ApplyNoteImportCommand,
+  ApplyImportResponse,
+} from '@chatorama/chatalog-shared';
 
 export type ImportedNoteSummary = {
   file: string;
@@ -18,12 +25,17 @@ export type ImportedNoteSummary = {
   chatworthyFileName?: string;
   chatworthyTurnIndex?: number;
   chatworthyTotalTurns?: number;
+  duplicateStatus: DuplicateStatus;
+  duplicateCount: number;
+  conflicts: TurnConflict[];
 };
 
 export type ImportResponse = {
   imported: number;
   results: ImportedNoteSummary[];
   combinedNote?: ImportedNoteSummary;
+  hasDuplicateTurns: boolean;
+  duplicateTurnCount: number;
 };
 
 export type ApplyImportedRow = {
@@ -43,6 +55,11 @@ export type ApplyImportedRow = {
   chatworthyTotalTurns?: number;
 };
 
+export type ApplyImportRequestPayload = {
+  rows: ApplyImportedRow[];
+  notes: ApplyNoteImportCommand[];
+};
+
 export const importsApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
     // PREVIEW import (no DB writes) - Chatworthy markdown/zip
@@ -56,6 +73,11 @@ export const importsApi = baseApi.injectEndpoints({
           body,
         };
       },
+      transformResponse: (res: ImportResponse) => ({
+        ...res,
+        hasDuplicateTurns: res.hasDuplicateTurns ?? false,
+        duplicateTurnCount: res.duplicateTurnCount ?? 0,
+      }),
       // No invalidatesTags here; preview only.
     }),
 
@@ -68,11 +90,16 @@ export const importsApi = baseApi.injectEndpoints({
         url: 'imports/ai-classification/preview',
         method: 'POST',
       }),
+      transformResponse: (res: ImportResponse) => ({
+        ...res,
+        hasDuplicateTurns: res.hasDuplicateTurns ?? false,
+        duplicateTurnCount: res.duplicateTurnCount ?? 0,
+      }),
       // Preview only, no invalidations.
     }),
 
     // APPLY import: actually create Subjects/Topics/Notes
-    applyChatworthyImport: build.mutation<{ created: number; noteIds: string[] }, { rows: ApplyImportedRow[] }>({
+    applyChatworthyImport: build.mutation<ApplyImportResponse, ApplyImportRequestPayload>({
       query: (payload) => ({
         url: 'imports/chatworthy/apply',
         method: 'POST',
@@ -117,6 +144,14 @@ export const importsApi = baseApi.injectEndpoints({
         { type: 'ImportBatch' as const, id: batchId },
       ],
     }),
+
+    deleteAllImportBatches: build.mutation<void, void>({
+      query: () => ({
+        url: 'import-batches',
+        method: 'DELETE',
+      }),
+      invalidatesTags: [{ type: 'ImportBatch' as const, id: 'LIST' }],
+    }),
   }),
   overrideExisting: true,
 });
@@ -128,4 +163,5 @@ export const {
   useGetImportBatchesQuery,
   useGetImportBatchNotesQuery,
   useDeleteImportBatchMutation,
+  useDeleteAllImportBatchesMutation,
 } = importsApi;

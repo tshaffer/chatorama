@@ -10,8 +10,10 @@ import { NoteModel } from '../models/Note';
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
 import type { NoteDoc } from '../models/Note';
-import { slugifyStandard } from '@chatorama/chatalog-shared';
+import { slugifyStandard, type ApplyImportRequest, type ApplyNoteImportCommand, type ApplyImportResponse, type CleanupNeededItem } from '@chatorama/chatalog-shared';
 import { ImportBatchModel } from '../models/ImportBatch';
+import { normalizeText, hashPromptResponsePair, extractPromptResponseTurns } from '../utils/textHash';
+import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -409,6 +411,160 @@ type ApplyImportedNotePayload = {
   chatworthyTotalTurns?: number;
 };
 
+function getDuplicateTurnCountFromFingerprints(
+  fps: Array<{ noteId?: any; turnIndex?: number; sourceNoteId?: any; sourceTurnIndex?: number }>,
+): number {
+  const keys = new Set<string>();
+  fps.forEach((fp) => {
+    const noteKey = fp.noteId ? String(fp.noteId) : fp.sourceNoteId ? String(fp.sourceNoteId) : 'unknown-note';
+    const idx =
+      typeof fp.turnIndex === 'number'
+        ? String(fp.turnIndex)
+        : typeof fp.sourceTurnIndex === 'number'
+          ? String(fp.sourceTurnIndex)
+          : 'unknown-index';
+    keys.add(`${noteKey}:${idx}`);
+  });
+  return keys.size;
+}
+
+async function summarizeDuplicateTurns(previews: PreviewNoteInfo[], combinedNote?: PreviewNoteInfo) {
+  const allPreviews = combinedNote ? [...previews, combinedNote] : previews;
+  const turnFingerprints = allPreviews.flatMap((preview) => {
+    const turns = extractPromptResponseTurns(preview.body || '');
+    return turns.map((turn) => ({
+      pairHash: hashPromptResponsePair(turn.prompt, turn.response),
+    }));
+  });
+
+  const pairHashes = Array.from(new Set(turnFingerprints.map((t) => t.pairHash)));
+
+  if (!pairHashes.length) {
+    return { hasDuplicateTurns: false, duplicateTurnCount: 0 };
+  }
+
+  const existingFingerprints = await TurnFingerprintModel.find(
+    { pairHash: { $in: pairHashes } },
+    { _id: 1, pairHash: 1, noteId: 1, turnIndex: 1 },
+  )
+    .lean()
+    .exec();
+
+  const existingByHash = new Map<string, number>();
+  existingFingerprints.forEach((fp) => {
+    existingByHash.set(fp.pairHash, (existingByHash.get(fp.pairHash) ?? 0) + 1);
+  });
+
+  let duplicateTurnCount = 0;
+  for (const t of turnFingerprints) {
+    const count = existingByHash.get(t.pairHash) ?? 0;
+    if (count > 0) duplicateTurnCount += 1;
+  }
+
+  const uniqueExistingTurns = getDuplicateTurnCountFromFingerprints(existingFingerprints);
+
+  // Prefer unique turn count from existing fingerprints; fall back to per-import count.
+  const finalDuplicateCount = uniqueExistingTurns || duplicateTurnCount;
+
+  return { hasDuplicateTurns: finalDuplicateCount > 0, duplicateTurnCount: finalDuplicateCount };
+}
+
+async function attachTurnConflicts(previews: PreviewNoteInfo[], combinedNote?: PreviewNoteInfo) {
+  const allPreviews = combinedNote ? [...previews, combinedNote] : previews;
+  const perPreview = allPreviews.map((preview) => {
+    const turns = extractPromptResponseTurns(preview.body || '');
+    const hashes = turns.map((turn) => ({
+      turnIndex: turn.turnIndex,
+      pairHash: hashPromptResponsePair(turn.prompt, turn.response),
+    }));
+    return { preview, turns, hashes };
+  });
+
+  const allHashes = Array.from(new Set(perPreview.flatMap((p) => p.hashes.map((h) => h.pairHash))));
+  if (!allHashes.length) {
+    return allPreviews.map((p) => ({
+      ...p,
+      duplicateStatus: 'none' as const,
+      duplicateCount: 0,
+      conflicts: [],
+    }));
+  }
+
+  const existingFingerprints = await TurnFingerprintModel.find(
+    { pairHash: { $in: allHashes } },
+    { _id: 1, pairHash: 1, noteId: 1, turnIndex: 1 },
+  )
+    .lean()
+    .exec();
+
+  const noteIds = Array.from(new Set(existingFingerprints.map((f) => String(f.noteId))));
+  const notes = await NoteModel.find(
+    { _id: { $in: noteIds } },
+    { _id: 1, subjectId: 1, topicId: 1, title: 1 },
+  )
+    .lean()
+    .exec();
+
+  const subjectIds = Array.from(new Set(notes.map((n) => n.subjectId).filter(Boolean) as string[]));
+  const topicIds = Array.from(new Set(notes.map((n) => n.topicId).filter(Boolean) as string[]));
+
+  const subjects = subjectIds.length
+    ? await SubjectModel.find({ _id: { $in: subjectIds } }, { _id: 1, name: 1 }).lean().exec()
+    : [];
+  const topics = topicIds.length
+    ? await TopicModel.find({ _id: { $in: topicIds } }, { _id: 1, name: 1 }).lean().exec()
+    : [];
+
+  const noteById = new Map<string, any>();
+  notes.forEach((n) => noteById.set(String(n._id), n));
+
+  const subjectById = new Map<string, any>();
+  subjects.forEach((s) => subjectById.set(String(s._id), s));
+  const topicById = new Map<string, any>();
+  topics.forEach((t) => topicById.set(String(t._id), t));
+
+  const fingerprintsByHash = new Map<string, any[]>();
+  existingFingerprints.forEach((f) => {
+    const list = fingerprintsByHash.get(f.pairHash) || [];
+    list.push(f);
+    fingerprintsByHash.set(f.pairHash, list);
+  });
+
+  return perPreview.map(({ preview, turns, hashes }) => {
+    const conflicts: any[] = [];
+    hashes.forEach((h) => {
+      const fps = fingerprintsByHash.get(h.pairHash) || [];
+      fps.forEach((fp) => {
+        const existing = noteById.get(String(fp.noteId));
+        if (!existing) return;
+        const subj = existing.subjectId ? subjectById.get(String(existing.subjectId)) : null;
+        const topic = existing.topicId ? topicById.get(String(existing.topicId)) : null;
+        conflicts.push({
+          turnIndex: h.turnIndex,
+          fingerprintId: String(fp._id),
+          existingNoteId: String(fp.noteId),
+          existingSubjectId: existing.subjectId ? String(existing.subjectId) : undefined,
+          existingTopicId: existing.topicId ? String(existing.topicId) : undefined,
+          existingSubjectName: subj?.name,
+          existingTopicName: topic?.name,
+          existingNoteTitle: existing.title,
+        });
+      });
+    });
+
+    const duplicateCount = conflicts.length;
+    const duplicateStatus =
+      duplicateCount === 0 ? 'none' : duplicateCount === turns.length ? 'full' : 'partial';
+
+    return {
+      ...preview,
+      duplicateStatus,
+      duplicateCount,
+      conflicts,
+    };
+  });
+}
+
 // ---------------- main importers ----------------
 
 // NOTE: This is now *preview-only*. No DB writes here.
@@ -522,7 +678,24 @@ router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
       return res.status(400).json({ message: 'Unsupported file type. Use .md or .zip.' });
     }
 
-    res.json({ imported: results.length, results, combinedNote });
+    const { hasDuplicateTurns, duplicateTurnCount } = await summarizeDuplicateTurns(
+      results,
+      combinedNote,
+    );
+
+    const annotated = await attachTurnConflicts(results, combinedNote);
+    const annotatedCombined = combinedNote
+      ? annotated.find((p) => p.importKey === combinedNote?.importKey)
+      : undefined;
+    const annotatedResults = annotated.filter((p) => p.importKey !== annotatedCombined?.importKey);
+
+    res.json({
+      imported: results.length,
+      results: annotatedResults,
+      combinedNote: annotatedCombined,
+      hasDuplicateTurns,
+      duplicateTurnCount,
+    });
   } catch (err) {
     next(err);
   }
@@ -532,14 +705,31 @@ router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
 // Create Subjects, Topics, and Notes based on the *final* edited rows.
 router.post('/chatworthy/apply', async (req, res, next) => {
   try {
-    const { rows } = req.body as { rows: ApplyImportedNotePayload[] };
+    const { rows, notes } = req.body as ApplyImportRequest & { rows: ApplyImportedNotePayload[] };
     if (!Array.isArray(rows) || !rows.length) {
       return res.status(400).json({ message: 'No rows provided' });
     }
 
+    const commandMap = new Map<string, ApplyNoteImportCommand>();
+    if (Array.isArray(notes)) {
+      notes.forEach((cmd) => {
+        if (cmd && cmd.importedNoteId) {
+          commandMap.set(cmd.importedNoteId, cmd);
+        }
+      });
+    }
+
+    const cleanupNeeded: CleanupNeededItem[] = [];
+    const cleanupNeededNoteIds = new Set<string>();
+
     const createdNotes: NoteDoc[] = [];
+    const fingerprints: any[] = [];
 
     for (const row of rows) {
+      const cmd = commandMap.get(row.importKey);
+      const include = cmd ? cmd.include : true;
+      if (!include) continue;
+
       const subjectName = row.subjectLabel?.trim() || undefined;
       const topicName = row.topicLabel?.trim() || undefined;
 
@@ -569,9 +759,91 @@ router.post('/chatworthy/apply', async (req, res, next) => {
         chatworthyFileName: row.chatworthyFileName,
         chatworthyTurnIndex: row.chatworthyTurnIndex,
         chatworthyTotalTurns: row.chatworthyTotalTurns,
+
+        // source metadata
+        sourceType: 'chatworthy',
+        sourceChatId: row.chatworthyChatId,
       });
 
       createdNotes.push(doc);
+
+      const turns = extractPromptResponseTurns(row.body);
+      const pairHashes = turns.map((turn) => hashPromptResponsePair(turn.prompt, turn.response));
+
+      const existingFps = pairHashes.length
+        ? await TurnFingerprintModel.find({ pairHash: { $in: pairHashes } }).lean().exec()
+        : [];
+      const fpsByHash = new Map<string, any[]>();
+      existingFps.forEach((fp) => {
+        const list = fpsByHash.get(fp.pairHash) || [];
+        list.push(fp);
+        fpsByHash.set(fp.pairHash, list);
+      });
+
+      const decision = cmd?.duplicateDecision ?? 'keepAsNew';
+      const turnActions = cmd?.turnActions ?? {};
+
+      for (let idx = 0; idx < turns.length; idx += 1) {
+        const turn = turns[idx];
+        const pairHash = pairHashes[idx];
+        const conflicts = fpsByHash.get(pairHash) || [];
+    if (!conflicts.length) {
+      fingerprints.push({
+        sourceType: 'chatworthy',
+        pairHash,
+        noteId: doc._id,
+            chatId: row.chatworthyChatId,
+            turnIndex: turn.turnIndex,
+            createdAt: new Date(),
+          });
+          continue;
+        }
+
+        if (decision === 'replace') {
+          const action = turnActions[turn.turnIndex] ?? 'useImported';
+          if (action === 'useImported') {
+            const target = conflicts[0];
+            const existingNoteId = String(target.noteId);
+            const fpCount = await TurnFingerprintModel.countDocuments({ noteId: existingNoteId }).exec();
+            await TurnFingerprintModel.updateOne(
+              { _id: target._id },
+              {
+                $set: {
+                  noteId: doc._id,
+                  turnIndex: turn.turnIndex,
+                  chatId: row.chatworthyChatId,
+                },
+              },
+            ).exec();
+            if (fpCount === 1) {
+              await NoteModel.findByIdAndDelete(existingNoteId).exec();
+            } else if (fpCount > 1 && !cleanupNeededNoteIds.has(existingNoteId)) {
+              cleanupNeededNoteIds.add(existingNoteId);
+              const existingNote = await NoteModel.findById(existingNoteId).lean().exec();
+              if (existingNote) {
+                let existingSubjectName: string | undefined;
+                let existingTopicName: string | undefined;
+                if (existingNote.subjectId) {
+                  const subj = await SubjectModel.findById(existingNote.subjectId).lean().exec();
+                  existingSubjectName = subj?.name;
+                }
+                if (existingNote.topicId) {
+                  const topic = await TopicModel.findById(existingNote.topicId).lean().exec();
+                  existingTopicName = topic?.name;
+                }
+                const item: CleanupNeededItem = {
+                  existingNoteId: existingNote._id.toString(),
+                  existingNoteTitle: existingNote.title || 'Untitled note',
+                  existingSubjectName,
+                  existingTopicName,
+                };
+                cleanupNeeded.push(item);
+              }
+            }
+          }
+        }
+        // keepAsNew or useExisting -> no new fingerprint
+      }
     }
 
     let batchId: string | undefined;
@@ -590,11 +862,18 @@ router.post('/chatworthy/apply', async (req, res, next) => {
       );
     }
 
-    res.json({
-      created: createdNotes.length,
-      noteIds: createdNotes.map((n) => n.id),
-      importBatchId: batchId,
-    });
+  if (fingerprints.length) {
+    await TurnFingerprintModel.insertMany(fingerprints, { ordered: false });
+  }
+
+  const responseBody: ApplyImportResponse = {
+    created: createdNotes.length,
+    noteIds: createdNotes.map((n) => n.id),
+    importBatchId: batchId,
+    cleanupNeeded,
+  };
+
+  res.status(200).json(responseBody);
   } catch (err) {
     next(err);
   }

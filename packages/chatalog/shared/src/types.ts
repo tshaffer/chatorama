@@ -142,6 +142,49 @@ export interface MergeNotesResult {
   deletedNoteIds: string[];
 }
 
+// ---- Import duplicate detection ----
+export type DuplicateStatus = 'none' | 'partial' | 'full';
+export type TurnAction = 'useImported' | 'useExisting';
+export type DuplicateDecision = 'keepAsNew' | 'replace';
+
+export interface TurnConflict {
+  turnIndex: number;
+  fingerprintId: string;
+  existingNoteId: string;
+  existingSubjectId?: string;
+  existingTopicId?: string;
+  existingSubjectName?: string;
+  existingTopicName?: string;
+  existingNoteTitle?: string;
+}
+
+export interface CleanupNeededItem {
+  existingNoteId: string;
+  existingNoteTitle: string;
+  existingSubjectName?: string;
+  existingTopicName?: string;
+}
+
+export interface ApplyNoteImportCommand {
+  importedNoteId: string;
+  include: boolean;
+  duplicateDecision?: DuplicateDecision;
+  turnActions?: Record<number, TurnAction>;
+}
+
+export interface ApplyImportRequest {
+  importBatchId?: string;
+  rows: any[]; // legacy payload (per-note content)
+  notes: ApplyNoteImportCommand[];
+}
+
+export interface ApplyImportResponse {
+  cleanupNeeded: CleanupNeededItem[];
+  created?: number;
+  noteIds?: string[];
+  importBatchId?: string;
+}
+
 // --- Subject-level relations summary ---
 
 export interface RelatedTopicSummary {

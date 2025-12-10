@@ -26,6 +26,7 @@ import {
   type EditableImportedNoteRow,
 } from './ImportResultsDialog';
 import { chatalogApi } from '../api/chatalogApi';
+import type { ApplyNoteImportCommand, CleanupNeededItem } from '@chatorama/chatalog-shared';
 
 type Props = {
   onDone?: () => void;
@@ -57,6 +58,7 @@ export default function ImportChatworthyButton({
     msg: string;
     severity: 'success' | 'error';
   }>({ open: false, msg: '', severity: 'success' });
+  const [cleanupNeeded, setCleanupNeeded] = useState<CleanupNeededItem[]>([]);
 
   const [lastImport, setLastImport] = useState<ImportResponse | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -77,6 +79,7 @@ export default function ImportChatworthyButton({
       const res = await importChatworthy(file).unwrap();
       setLastImport(res);
       setReviewOpen(true);
+      setCleanupNeeded([]);
 
       setSnack({
         open: true,
@@ -101,7 +104,10 @@ export default function ImportChatworthyButton({
     setReviewOpen(false);
   };
 
-  const handleApplyEdits = async (rows: EditableImportedNoteRow[]) => {
+  const handleApplyEdits = async (
+    rows: EditableImportedNoteRow[],
+    commands: ApplyNoteImportCommand[],
+  ) => {
     if (!lastImport) {
       setReviewOpen(false);
       return;
@@ -125,16 +131,18 @@ export default function ImportChatworthyButton({
           chatworthyTurnIndex: r.chatworthyTurnIndex,
           chatworthyTotalTurns: r.chatworthyTotalTurns,
         })),
+        notes: commands,
       };
 
       const res = await applyChatworthyImport(payload).unwrap();
+      setCleanupNeeded(res.cleanupNeeded ?? []);
 
       setSnack({
         open: true,
         msg:
-          res.created === 1
+          (res.created ?? 0) === 1
             ? 'Created 1 note'
-            : `Created ${res.created} notes`,
+            : `Created ${res.created ?? 0} notes`,
         severity: 'success',
       });
 
@@ -166,6 +174,43 @@ export default function ImportChatworthyButton({
     />
   );
 
+
+  const cleanupBanner =
+    cleanupNeeded.length > 0 ? (
+      <Box
+        sx={{
+          position: 'fixed',
+          top: 24,                // adjust to taste
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: (theme) => theme.zIndex.modal + 1,
+          minWidth: 420,          // keeps banner readable; adjust if needed
+          maxWidth: '80vw',
+        }}
+      >
+        <Alert
+          severity="info"
+          variant="filled"
+          onClose={() => setCleanupNeeded([])}   // dismiss button
+          sx={{
+            boxShadow: 3,
+          }}
+        >
+          <div>Some notes may need manual cleanup because they contain multiple turns:</div>
+
+          <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
+            {cleanupNeeded.map((item) => (
+              <li key={item.existingNoteId}>
+                {[item.existingSubjectName, item.existingTopicName, item.existingNoteTitle]
+                  .filter(Boolean)
+                  .join(' / ') || item.existingNoteTitle}
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      </Box>
+    ) : null;
+
   const dialog =
     lastImport && reviewOpen ? (
       <ImportResultsDialog
@@ -175,6 +220,8 @@ export default function ImportChatworthyButton({
         combinedNote={lastImport.combinedNote}
         subjects={subjects}
         onApply={handleApplyEdits}
+        hasDuplicateTurns={lastImport.hasDuplicateTurns}
+        duplicateTurnCount={lastImport.duplicateTurnCount}
       />
     ) : null;
 
@@ -229,6 +276,7 @@ export default function ImportChatworthyButton({
     // Action icon for AppBar
     return (
       <>
+        {cleanupBanner}
         {fileInput}
         {dialog}
         {overlay}
@@ -271,6 +319,7 @@ export default function ImportChatworthyButton({
   // Default: inline button usage
   return (
     <>
+      {cleanupBanner}
       {fileInput}
       {dialog}
       {overlay}

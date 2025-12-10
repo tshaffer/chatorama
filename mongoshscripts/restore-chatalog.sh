@@ -39,7 +39,7 @@ echo "Using MONGO_URI: $MONGO_URI"
 echo "Restoring from backup directory: $BACKUP_DIR"
 echo
 
-collections=("subjects" "topics" "notes")
+collections=("subjects" "topics" "notes" "quicknotes" "turnfingerprints")
 
 for coll in "${collections[@]}"; do
   file_path="$BACKUP_DIR/${coll}.json"
