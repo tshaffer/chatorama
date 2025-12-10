@@ -18,7 +18,7 @@ async function main() {
   console.log('Connected to Mongo');
 
   const cursor = NoteModel.find({
-    $or: [{ sourceType: 'chatworthy' }, { chatworthyChatId: { $exists: true } }],
+    markdown: { $exists: true, $ne: '' },
   })
     .lean()
     .cursor();
@@ -47,7 +47,7 @@ async function main() {
     }
   }
 
-  console.log(`Done. Processed ${processed} notes.`);
+  console.log(`Done. Processed ${processed} notes (all notes with non-empty markdown).`);
   await mongoose.disconnect();
 }
 
