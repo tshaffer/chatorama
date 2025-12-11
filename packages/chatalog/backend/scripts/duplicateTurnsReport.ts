@@ -2,6 +2,7 @@
 // MONGO_URI="mongodb://localhost:27017/chatalog_dev" \
 //   npx ts-node scripts/duplicateTurnsReport.ts
 
+import crypto from 'crypto';
 import mongoose, { Types } from 'mongoose';
 import * as fs from 'fs';
 import path from 'path';
@@ -15,6 +16,7 @@ interface DuplicateTurnOccurrence {
   topicId?: string;
   subjectId?: string;
   createdAt?: string;
+  containerSignature: string;
 }
 
 interface DuplicateTurnReportEntry {
@@ -99,12 +101,16 @@ async function main() {
         return;
       }
 
+      const signatureInput = `${String((note as any).topicId || '')}|||${note.title || ''}|||${note.markdown || ''}`;
+      const containerSignature = crypto.createHash('sha256').update(signatureInput).digest('hex');
+
       occurrences.push({
         noteId: note._id.toString(),
         title: note.title,
         topicId: (note as any).topicId?.toString?.() ?? (note as any).topicId,
         subjectId: (note as any).subjectId,
         createdAt: note.createdAt ? new Date(note.createdAt).toISOString() : undefined,
+        containerSignature,
       });
     });
 
