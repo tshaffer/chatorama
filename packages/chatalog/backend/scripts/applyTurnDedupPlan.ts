@@ -143,6 +143,9 @@ async function main() {
   let notesUpdated = 0;
   let notesDeleted = 0;
   let fingerprintsDeleted = 0;
+  let simulatedTurnsDeleted = 0;
+  let simulatedNotesUpdated = 0;
+  let simulatedNotesDeleted = 0;
 
   for (const [pairHash, noteIds] of deleteMap.entries()) {
     for (const noteId of noteIds) {
@@ -171,6 +174,10 @@ async function main() {
           turnsToKeep.push(turn);
         }
       }
+
+      simulatedTurnsDeleted += turnsToRemove.length;
+      if (turnsToRemove.length > 0 && turnsToKeep.length > 0) simulatedNotesUpdated += 1;
+      if (turnsToRemove.length > 0 && turnsToKeep.length === 0) simulatedNotesDeleted += 1;
 
       if (!turnsToRemove.length) {
         warnBoth(
@@ -232,6 +239,10 @@ async function main() {
   logBoth(`TurnFingerprints deleted: ${fingerprintsDeleted}`);
   if (dryRun) {
     logBoth('DRY RUN mode: no database changes were made.');
+    logBoth('---- Dry Run Impact ----');
+    logBoth(`Turns that would be deleted: ${simulatedTurnsDeleted}`);
+    logBoth(`Notes that would be updated: ${simulatedNotesUpdated}`);
+    logBoth(`Notes that would be deleted: ${simulatedNotesDeleted}`);
   }
 
   if (logfilePath) {
