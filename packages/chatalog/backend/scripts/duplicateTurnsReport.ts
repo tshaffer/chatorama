@@ -17,6 +17,7 @@ interface DuplicateTurnOccurrence {
   subjectId?: string;
   createdAt?: string;
   containerSignature: string;
+  containerSignatureWithSubject: string;
 }
 
 interface DuplicateTurnReportEntry {
@@ -103,6 +104,15 @@ async function main() {
 
       const signatureInput = `${String((note as any).topicId || '')}|||${note.title || ''}|||${note.markdown || ''}`;
       const containerSignature = crypto.createHash('sha256').update(signatureInput).digest('hex');
+      const subjectIdStr = String((note as any).subjectId || '');
+      const topicIdStr = String((note as any).topicId || '');
+      const titleStr = note.title || '';
+      const markdownStr = note.markdown || '';
+      const signatureWithSubjectInput = `${subjectIdStr}|||${topicIdStr}|||${titleStr}|||${markdownStr}`;
+      const containerSignatureWithSubject = crypto
+        .createHash('sha256')
+        .update(signatureWithSubjectInput)
+        .digest('hex');
 
       occurrences.push({
         noteId: note._id.toString(),
@@ -111,6 +121,7 @@ async function main() {
         subjectId: (note as any).subjectId,
         createdAt: note.createdAt ? new Date(note.createdAt).toISOString() : undefined,
         containerSignature,
+        containerSignatureWithSubject,
       });
     });
 
