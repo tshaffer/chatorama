@@ -120,7 +120,8 @@ async function main() {
         autoDeleteNoteIds,
       });
 
-      occurrences.forEach((o) => usedNoteIds.add(o.noteId));
+      // Mark only the duplicates as "used", not the canonical
+      autoDeleteNoteIds.forEach((id) => usedNoteIds.add(id));
     });
 
     // Remaining occurrences after auto-resolve
