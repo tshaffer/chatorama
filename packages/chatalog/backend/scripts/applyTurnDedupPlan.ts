@@ -3,6 +3,7 @@
 //   npx ts-node scripts/validateTurnDedupPlan.ts
 //   npx ts-node scripts/applyTurnDedupPlan.ts           # DRY RUN
 //   npx ts-node scripts/applyTurnDedupPlan.ts --apply   # LIVE
+//   npx ts-node scripts/applyTurnDedupPlan.ts --logfile           # DRY RUN
 
 import mongoose, { Types } from 'mongoose';
 import * as fs from 'fs';
