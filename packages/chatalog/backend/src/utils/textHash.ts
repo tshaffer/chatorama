@@ -31,47 +31,54 @@ export type LogicalTurn = {
  * pair with the whole body as the response when no pairs are detected.
  */
 export function extractPromptResponseTurns(markdown: string): LogicalTurn[] {
-  const normalized = normalizeText(markdown);
-  if (!normalized) return [];
+  if (!markdown || typeof markdown !== 'string') return [];
 
-  type Section = { type: 'prompt' | 'response'; start: number; end: number; headingStart: number };
-
-  const headingRe = /^##\s*(Prompt|Response)\b.*$/gim;
-  const sections: Section[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = headingRe.exec(normalized))) {
-    const type = match[1].toLowerCase() === 'prompt' ? 'prompt' : 'response';
-    const headingStart = match.index ?? 0;
-    const start = headingStart + match[0].length;
-    sections.push({ type, start, end: normalized.length, headingStart });
-  }
-
-  // determine end offsets
-  for (let i = 0; i < sections.length; i++) {
-    const nextHeadingStart = i + 1 < sections.length ? sections[i + 1].headingStart : normalized.length;
-    sections[i].end = nextHeadingStart;
-  }
+  const text = markdown.replace(/\r\n/g, '\n');
+  const promptRe = /\*\*Prompt\*\*/gi;
+  const responseRe = /\*\*Response\*\*/gi;
 
   const turns: LogicalTurn[] = [];
-  let currentPrompt = '';
-  let promptIdx = 0;
+  let promptMatch: RegExpExecArray | null;
+  let turnIndex = 0;
 
-  for (const sec of sections) {
-    const content = normalizeText(normalized.slice(sec.start, sec.end));
-    if (sec.type === 'prompt') {
-      currentPrompt = content;
-      promptIdx = turns.length; // tentative index
-    } else {
-      // response
-      const turnIndex = turns.length;
-      turns.push({ prompt: currentPrompt, response: content, turnIndex });
-      currentPrompt = '';
+  while ((promptMatch = promptRe.exec(text)) !== null) {
+    const promptStart = promptMatch.index + promptMatch[0].length;
+
+    responseRe.lastIndex = promptStart;
+    const responseMatch = responseRe.exec(text);
+    if (!responseMatch) {
+      break; // no response after this prompt; stop parsing
     }
+
+    const responseStart = responseMatch.index + responseMatch[0].length;
+
+    // find next prompt to bound the response
+    promptRe.lastIndex = responseStart;
+    const nextPromptMatch = promptRe.exec(text);
+    const responseEnd = nextPromptMatch ? nextPromptMatch.index : text.length;
+
+    const rawPrompt = text.slice(promptStart, responseMatch.index);
+    const rawResponse = text.slice(responseStart, responseEnd);
+
+    const prompt = normalizeText(
+      rawPrompt
+        .split('\n')
+        .map((line) => line.replace(/^\s*>\s?/, '')) // strip leading blockquote markers
+        .join('\n'),
+    );
+    const response = normalizeText(rawResponse);
+
+    if (prompt || response) {
+      turns.push({ prompt, response, turnIndex });
+      turnIndex += 1;
+    }
+
+    if (!nextPromptMatch) break;
   }
 
   if (!turns.length) {
-    return [{ prompt: '', response: normalized, turnIndex: 0 }];
+    return [{ prompt: '', response: normalizeText(text), turnIndex: 0 }];
   }
 
-  return turns.map((t, idx) => ({ ...t, turnIndex: idx }));
+  return turns;
 }
