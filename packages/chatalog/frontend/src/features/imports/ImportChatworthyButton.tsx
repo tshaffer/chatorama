@@ -175,6 +175,8 @@ export default function ImportChatworthyButton({
         combinedNote={lastImport.combinedNote}
         subjects={subjects}
         onApply={handleApplyEdits}
+        hasDuplicateTurns={lastImport.hasDuplicateTurns}
+        duplicateTurnCount={lastImport.duplicateTurnCount}
       />
     ) : null;
 

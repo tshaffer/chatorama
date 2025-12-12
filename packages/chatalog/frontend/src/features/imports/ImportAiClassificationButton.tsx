@@ -157,6 +157,8 @@ export default function ImportAiClassificationButton({
         importedNotes={lastImport.results}
         subjects={subjects}
         onApply={handleApplyEdits}
+        hasDuplicateTurns={lastImport.hasDuplicateTurns}
+        duplicateTurnCount={lastImport.duplicateTurnCount}
       />
     ) : null;
 

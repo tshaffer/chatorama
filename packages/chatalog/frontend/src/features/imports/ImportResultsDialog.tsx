@@ -24,6 +24,7 @@ import {
   Checkbox,
   ToggleButton,
   ToggleButtonGroup,
+  Alert,
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
@@ -54,6 +55,8 @@ type Props = {
   combinedNote?: ImportedNoteSummary;
   subjects: SubjectWithTopics[];
   onApply: (rows: EditableImportedNoteRow[]) => void;
+  hasDuplicateTurns?: boolean;
+  duplicateTurnCount?: number;
 };
 
 export function ImportResultsDialog({
@@ -63,6 +66,8 @@ export function ImportResultsDialog({
   combinedNote,
   subjects,
   onApply,
+  hasDuplicateTurns = false,
+  duplicateTurnCount = 0,
 }: Props) {
   type ViewMode = 'simple' | 'markdown' | 'full';
   const VIEW_MODE_STORAGE_KEY = 'chatalog.importResults.viewMode';
@@ -481,6 +486,13 @@ export function ImportResultsDialog({
     >
       <DialogTitle>Review Imported Notes</DialogTitle>
       <DialogContent dividers sx={{ p: 2 }}>
+        {hasDuplicateTurns && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            This import contains {duplicateTurnCount} turn
+            {duplicateTurnCount === 1 ? '' : 's'} that already exist in Chatalog. No
+            changes are made automatically yet.
+          </Alert>
+        )}
         <Box
           sx={{
             display: 'flex',

@@ -24,6 +24,8 @@ export type ImportResponse = {
   imported: number;
   results: ImportedNoteSummary[];
   combinedNote?: ImportedNoteSummary;
+  hasDuplicateTurns: boolean;
+  duplicateTurnCount: number;
 };
 
 export type ApplyImportedRow = {
@@ -56,6 +58,11 @@ export const importsApi = baseApi.injectEndpoints({
           body,
         };
       },
+      transformResponse: (res: ImportResponse) => ({
+        ...res,
+        hasDuplicateTurns: res.hasDuplicateTurns ?? false,
+        duplicateTurnCount: res.duplicateTurnCount ?? 0,
+      }),
       // No invalidatesTags here; preview only.
     }),
 
@@ -67,6 +74,11 @@ export const importsApi = baseApi.injectEndpoints({
       query: () => ({
         url: 'imports/ai-classification/preview',
         method: 'POST',
+      }),
+      transformResponse: (res: ImportResponse) => ({
+        ...res,
+        hasDuplicateTurns: res.hasDuplicateTurns ?? false,
+        duplicateTurnCount: res.duplicateTurnCount ?? 0,
       }),
       // Preview only, no invalidations.
     }),

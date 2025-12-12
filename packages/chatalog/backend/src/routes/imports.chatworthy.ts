@@ -524,7 +524,36 @@ router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
       return res.status(400).json({ message: 'Unsupported file type. Use .md or .zip.' });
     }
 
-    res.json({ imported: results.length, results, combinedNote });
+    const turnFingerprints = results.flatMap((preview) => {
+      const turns = extractPromptResponseTurns(preview.body || '');
+      return turns.map((turn) => ({
+        pairHash: hashPromptResponsePair(turn.prompt, turn.response),
+      }));
+    });
+
+    const pairHashes = Array.from(new Set(turnFingerprints.map((t) => t.pairHash)));
+
+    let duplicateTurnCount = 0;
+    let hasDuplicateTurns = false;
+
+    if (pairHashes.length) {
+      const existing = await TurnFingerprintModel.aggregate<{ _id: string; count: number }>([
+        { $match: { pairHash: { $in: pairHashes } } },
+        { $group: { _id: '$pairHash', count: { $sum: 1 } } },
+      ]);
+
+      const existingByHash = new Map<string, number>();
+      existing.forEach((row) => existingByHash.set(row._id as string, row.count));
+
+      for (const t of turnFingerprints) {
+        const count = existingByHash.get(t.pairHash) ?? 0;
+        if (count > 0) duplicateTurnCount += 1;
+      }
+
+      hasDuplicateTurns = duplicateTurnCount > 0;
+    }
+
+    res.json({ imported: results.length, results, combinedNote, hasDuplicateTurns, duplicateTurnCount });
   } catch (err) {
     next(err);
   }
