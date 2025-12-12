@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { NoteModel } from '../models/Note';
 import { ImportBatchModel } from '../models/ImportBatch';
+import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
 import {
   type TopicNotesWithRelations,
   type NotePreview,
@@ -344,6 +345,8 @@ export async function deleteNote(req: Request, res: Response) {
       { $inc: { remainingCount: -1 } },
     ).exec();
   }
+
+  await TurnFingerprintModel.deleteMany({ noteId: doc._id }).exec();
 
   res.status(204).send();
 }

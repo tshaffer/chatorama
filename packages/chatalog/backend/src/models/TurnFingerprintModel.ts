@@ -5,7 +5,7 @@ export interface TurnFingerprintDoc extends Document {
   _id: Types.ObjectId;
   sourceType: string; // e.g., 'chatworthy'
   pairHash: string;
-  noteId: Types.ObjectId;
+  noteId: Types.ObjectId; // owning Note; used for cleanup when a note is deleted
   chatId?: string;
   turnIndex?: number;
   createdAt: Date;
