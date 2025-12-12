@@ -44,17 +44,21 @@ export function extractPromptResponseTurns(markdown: string): LogicalTurn[] {
   while ((promptMatch = promptRe.exec(text)) !== null) {
     const promptStart = promptMatch.index + promptMatch[0].length;
 
+    // Find the Response after this Prompt
     responseRe.lastIndex = promptStart;
     const responseMatch = responseRe.exec(text);
     if (!responseMatch) {
-      break; // no response after this prompt; stop parsing
+      // No Response after this Prompt → stop parsing further
+      break;
     }
 
     const responseStart = responseMatch.index + responseMatch[0].length;
 
-    // find next prompt to bound the response
-    promptRe.lastIndex = responseStart;
-    const nextPromptMatch = promptRe.exec(text);
+    // IMPORTANT: use a *separate* regex instance to find the NEXT Prompt
+    // so we don't disturb `promptRe`'s lastIndex used by the outer loop.
+    const nextPromptRe = /\*\*Prompt\*\*/gi;
+    nextPromptRe.lastIndex = responseStart;
+    const nextPromptMatch = nextPromptRe.exec(text);
     const responseEnd = nextPromptMatch ? nextPromptMatch.index : text.length;
 
     const rawPrompt = text.slice(promptStart, responseMatch.index);
@@ -73,7 +77,8 @@ export function extractPromptResponseTurns(markdown: string): LogicalTurn[] {
       turnIndex += 1;
     }
 
-    if (!nextPromptMatch) break;
+    // DO NOT modify promptRe.lastIndex here; let the while loop's
+    // next promptRe.exec(text) find the next actual Prompt.
   }
 
   if (!turns.length) {
