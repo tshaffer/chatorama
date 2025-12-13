@@ -62,6 +62,18 @@ router.get('/:batchId/notes', async (req, res, next) => {
   }
 });
 
+// DELETE /api/v1/import-batches
+router.delete('/', async (_req, res, next) => {
+  try {
+    await ImportBatchModel.deleteMany({}).exec();
+
+    // Notes created by these batches remain; we only remove history entries.
+    return res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /api/v1/import-batches/:batchId
 router.delete('/:batchId', async (req, res, next) => {
   try {

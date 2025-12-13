@@ -144,6 +144,14 @@ export const importsApi = baseApi.injectEndpoints({
         { type: 'ImportBatch' as const, id: batchId },
       ],
     }),
+
+    deleteAllImportBatches: build.mutation<void, void>({
+      query: () => ({
+        url: 'import-batches',
+        method: 'DELETE',
+      }),
+      invalidatesTags: [{ type: 'ImportBatch' as const, id: 'LIST' }],
+    }),
   }),
   overrideExisting: true,
 });
@@ -155,4 +163,5 @@ export const {
   useGetImportBatchesQuery,
   useGetImportBatchNotesQuery,
   useDeleteImportBatchMutation,
+  useDeleteAllImportBatchesMutation,
 } = importsApi;

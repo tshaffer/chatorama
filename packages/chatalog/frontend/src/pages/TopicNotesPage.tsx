@@ -30,6 +30,7 @@ import {
   useGetImportBatchesQuery,
   useGetImportBatchNotesQuery,
   useDeleteImportBatchMutation,
+  useDeleteAllImportBatchesMutation,
 } from '../features/imports/importsApi';
 import { useGetTopicRelationsSummaryQuery } from '../features/subjects/subjectsApi';
 import ReorderableNotesList from '../features/notes/ReorderableNotesList';
@@ -252,6 +253,10 @@ export default function TopicNotesPage() {
               setSelectedBatchId(null);
               clearSelection();
             }
+          }}
+          onClearedAll={() => {
+            setSelectedBatchId(null);
+            clearSelection();
           }}
         />
       </Box>
@@ -664,10 +669,20 @@ type ImportHistoryProps = {
   selectedBatchId: string | null;
   onSelectBatch: (id: string) => void;
   onDeletedBatch?: (id: string) => void;
+  onClearedAll?: () => void;
 };
 
-function ImportHistorySection({ batches, selectedBatchId, onSelectBatch, onDeletedBatch }: ImportHistoryProps) {
+function ImportHistorySection({
+  batches,
+  selectedBatchId,
+  onSelectBatch,
+  onDeletedBatch,
+  onClearedAll,
+}: ImportHistoryProps) {
   const [deleteImportBatch, { isLoading: deletingBatch }] = useDeleteImportBatchMutation();
+  const [deleteAllImportBatches, { isLoading: clearingAll }] = useDeleteAllImportBatchesMutation();
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
+
   const items = useMemo(
     () => [...batches].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
     [batches],
@@ -680,15 +695,44 @@ function ImportHistorySection({ batches, selectedBatchId, onSelectBatch, onDelet
     return { date, time };
   };
 
+  const handleClearAll = async () => {
+    try {
+      await deleteAllImportBatches().unwrap();
+      setClearDialogOpen(false);
+      onClearedAll?.();
+    } catch {
+      setClearDialogOpen(false);
+    }
+  };
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-      <Typography
-        variant="subtitle2"
-        color="text.secondary"
-        sx={{ flexShrink: 0 }}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexShrink: 0,
+        }}
       >
-        Import History
-      </Typography>
+        <Typography variant="subtitle2" color="text.secondary">
+          Import History
+        </Typography>
+        {items.length > 0 && (
+          <Tooltip title="Remove all entries from Import History">
+            <span>
+              <Button
+                size="small"
+                color="error"
+                disabled={deletingBatch || clearingAll}
+                onClick={() => setClearDialogOpen(true)}
+              >
+                Clear history…
+              </Button>
+            </span>
+          </Tooltip>
+        )}
+      </Box>
 
       {items.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
@@ -726,7 +770,7 @@ function ImportHistorySection({ batches, selectedBatchId, onSelectBatch, onDelet
                     tooltip="Delete from history"
                     icon={<DeleteIcon fontSize="small" />}
                     size="small"
-                    disabled={deletingBatch}
+                    disabled={deletingBatch || clearingAll}
                     onConfirm={async () => {
                       await deleteImportBatch({ batchId: b.id }).unwrap();
                       onDeletedBatch?.(b.id);
@@ -738,6 +782,26 @@ function ImportHistorySection({ batches, selectedBatchId, onSelectBatch, onDelet
           })}
         </Stack>
       )}
+
+      <Dialog
+        open={clearDialogOpen}
+        onClose={() => (!clearingAll ? setClearDialogOpen(false) : null)}
+      >
+        <DialogTitle>Clear all import history?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will remove all entries from Import History. Notes created by these imports will not be deleted. This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setClearDialogOpen(false)} disabled={clearingAll}>
+            Cancel
+          </Button>
+          <Button onClick={handleClearAll} color="error" disabled={clearingAll}>
+            {clearingAll ? 'Clearing…' : 'Delete all'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
