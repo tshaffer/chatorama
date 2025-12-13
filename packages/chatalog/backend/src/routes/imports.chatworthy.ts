@@ -411,6 +411,23 @@ type ApplyImportedNotePayload = {
   chatworthyTotalTurns?: number;
 };
 
+function getDuplicateTurnCountFromFingerprints(
+  fps: Array<{ noteId?: any; turnIndex?: number; sourceNoteId?: any; sourceTurnIndex?: number }>,
+): number {
+  const keys = new Set<string>();
+  fps.forEach((fp) => {
+    const noteKey = fp.noteId ? String(fp.noteId) : fp.sourceNoteId ? String(fp.sourceNoteId) : 'unknown-note';
+    const idx =
+      typeof fp.turnIndex === 'number'
+        ? String(fp.turnIndex)
+        : typeof fp.sourceTurnIndex === 'number'
+          ? String(fp.sourceTurnIndex)
+          : 'unknown-index';
+    keys.add(`${noteKey}:${idx}`);
+  });
+  return keys.size;
+}
+
 async function summarizeDuplicateTurns(previews: PreviewNoteInfo[], combinedNote?: PreviewNoteInfo) {
   const allPreviews = combinedNote ? [...previews, combinedNote] : previews;
   const turnFingerprints = allPreviews.flatMap((preview) => {
@@ -426,13 +443,17 @@ async function summarizeDuplicateTurns(previews: PreviewNoteInfo[], combinedNote
     return { hasDuplicateTurns: false, duplicateTurnCount: 0 };
   }
 
-  const existing = await TurnFingerprintModel.aggregate<{ _id: string; count: number }>([
-    { $match: { pairHash: { $in: pairHashes } } },
-    { $group: { _id: '$pairHash', count: { $sum: 1 } } },
-  ]);
+  const existingFingerprints = await TurnFingerprintModel.find(
+    { pairHash: { $in: pairHashes } },
+    { _id: 1, pairHash: 1, noteId: 1, turnIndex: 1 },
+  )
+    .lean()
+    .exec();
 
   const existingByHash = new Map<string, number>();
-  existing.forEach((row) => existingByHash.set(row._id as string, row.count));
+  existingFingerprints.forEach((fp) => {
+    existingByHash.set(fp.pairHash, (existingByHash.get(fp.pairHash) ?? 0) + 1);
+  });
 
   let duplicateTurnCount = 0;
   for (const t of turnFingerprints) {
@@ -440,7 +461,12 @@ async function summarizeDuplicateTurns(previews: PreviewNoteInfo[], combinedNote
     if (count > 0) duplicateTurnCount += 1;
   }
 
-  return { hasDuplicateTurns: duplicateTurnCount > 0, duplicateTurnCount };
+  const uniqueExistingTurns = getDuplicateTurnCountFromFingerprints(existingFingerprints);
+
+  // Prefer unique turn count from existing fingerprints; fall back to per-import count.
+  const finalDuplicateCount = uniqueExistingTurns || duplicateTurnCount;
+
+  return { hasDuplicateTurns: finalDuplicateCount > 0, duplicateTurnCount: finalDuplicateCount };
 }
 
 async function attachTurnConflicts(previews: PreviewNoteInfo[], combinedNote?: PreviewNoteInfo) {
@@ -466,7 +492,7 @@ async function attachTurnConflicts(previews: PreviewNoteInfo[], combinedNote?: P
 
   const existingFingerprints = await TurnFingerprintModel.find(
     { pairHash: { $in: allHashes } },
-    { _id: 1, pairHash: 1, noteId: 1 },
+    { _id: 1, pairHash: 1, noteId: 1, turnIndex: 1 },
   )
     .lean()
     .exec();

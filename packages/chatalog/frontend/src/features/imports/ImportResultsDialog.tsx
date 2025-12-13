@@ -538,6 +538,8 @@ export function ImportResultsDialog({
     }
   }, [viewMode, VIEW_MODE_STORAGE_KEY]);
 
+  const bannerDuplicateTurnCount = duplicateTurnCount ?? 0;
+
   return (
     <Dialog
       open={open}
@@ -555,8 +557,8 @@ export function ImportResultsDialog({
       <DialogContent dividers sx={{ p: 2 }}>
         {hasDuplicateTurns && (
           <Alert severity="warning" sx={{ mb: 2 }}>
-            This import contains {duplicateTurnCount} turn
-            {duplicateTurnCount === 1 ? '' : 's'} that already exist in Chatalog. No
+            This import contains {bannerDuplicateTurnCount} turn
+            {bannerDuplicateTurnCount === 1 ? '' : 's'} that already exist in Chatalog. No
             changes are made automatically yet.
           </Alert>
         )}
