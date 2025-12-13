@@ -6,6 +6,7 @@ import type {
   DuplicateStatus,
   TurnConflict,
   ApplyNoteImportCommand,
+  ApplyImportResponse,
 } from '@chatorama/chatalog-shared';
 
 export type ImportedNoteSummary = {
@@ -98,7 +99,7 @@ export const importsApi = baseApi.injectEndpoints({
     }),
 
     // APPLY import: actually create Subjects/Topics/Notes
-    applyChatworthyImport: build.mutation<{ created: number; noteIds: string[] }, ApplyImportRequestPayload>({
+    applyChatworthyImport: build.mutation<ApplyImportResponse, ApplyImportRequestPayload>({
       query: (payload) => ({
         url: 'imports/chatworthy/apply',
         method: 'POST',

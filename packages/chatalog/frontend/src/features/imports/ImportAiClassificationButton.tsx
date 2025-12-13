@@ -24,7 +24,7 @@ import {
   ImportResultsDialog,
   type EditableImportedNoteRow,
 } from './ImportResultsDialog';
-import type { ApplyNoteImportCommand } from '@chatorama/chatalog-shared';
+import type { ApplyNoteImportCommand, CleanupNeededItem } from '@chatorama/chatalog-shared';
 
 type Props = {
   onDone?: () => void;
@@ -48,6 +48,7 @@ export default function ImportAiClassificationButton({
     msg: string;
     severity: 'success' | 'error';
   }>({ open: false, msg: '', severity: 'success' });
+  const [cleanupNeeded, setCleanupNeeded] = useState<CleanupNeededItem[]>([]);
 
   const [lastImport, setLastImport] = useState<ImportResponse | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -71,6 +72,7 @@ export default function ImportAiClassificationButton({
 
       setLastImport(res);
       setReviewOpen(true);
+      setCleanupNeeded([]);
 
       setSnack({
         open: true,
@@ -129,13 +131,14 @@ export default function ImportAiClassificationButton({
       };
 
       const res = await applyChatworthyImport(payload).unwrap();
+      setCleanupNeeded(res.cleanupNeeded ?? []);
 
       setSnack({
         open: true,
         msg:
-          res.created === 1
+          (res.created ?? 0) === 1
             ? 'Created 1 note from AI classification'
-            : `Created ${res.created} notes from AI classification`,
+            : `Created ${res.created ?? 0} notes from AI classification`,
         severity: 'success',
       });
 
@@ -213,11 +216,30 @@ export default function ImportAiClassificationButton({
     </Portal>
   );
 
+  const cleanupBanner =
+    cleanupNeeded.length > 0 ? (
+      <Box sx={{ mb: 2 }}>
+        <Alert severity="info">
+          <div>Some notes may need manual cleanup because they contain multiple turns:</div>
+          <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
+            {cleanupNeeded.map((item) => (
+              <li key={item.existingNoteId}>
+                {[item.existingSubjectName, item.existingTopicName, item.existingNoteTitle]
+                  .filter(Boolean)
+                  .join(' / ') || item.existingNoteTitle}
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      </Box>
+    ) : null;
+
   const buttonDisabled = busy;
 
   if (mode === 'icon') {
     return (
       <>
+        {cleanupBanner}
         {dialog}
         {overlay}
         <Tooltip title={tooltip}>
@@ -261,6 +283,7 @@ export default function ImportAiClassificationButton({
   // Inline button variant
   return (
     <>
+      {cleanupBanner}
       {dialog}
       {overlay}
       <Tooltip title={tooltip}>

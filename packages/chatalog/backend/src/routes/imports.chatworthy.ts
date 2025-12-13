@@ -10,7 +10,7 @@ import { NoteModel } from '../models/Note';
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
 import type { NoteDoc } from '../models/Note';
-import { slugifyStandard, type ApplyImportRequest, type ApplyNoteImportCommand } from '@chatorama/chatalog-shared';
+import { slugifyStandard, type ApplyImportRequest, type ApplyNoteImportCommand, type ApplyImportResponse, type CleanupNeededItem } from '@chatorama/chatalog-shared';
 import { ImportBatchModel } from '../models/ImportBatch';
 import { normalizeText, hashPromptResponsePair, extractPromptResponseTurns } from '../utils/textHash';
 import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
@@ -466,7 +466,7 @@ async function attachTurnConflicts(previews: PreviewNoteInfo[], combinedNote?: P
 
   const existingFingerprints = await TurnFingerprintModel.find(
     { pairHash: { $in: allHashes } },
-    { pairHash: 1, noteId: 1 },
+    { _id: 1, pairHash: 1, noteId: 1 },
   )
     .lean()
     .exec();
@@ -693,6 +693,9 @@ router.post('/chatworthy/apply', async (req, res, next) => {
       });
     }
 
+    const cleanupNeeded: CleanupNeededItem[] = [];
+    const cleanupNeededNoteIds = new Set<string>();
+
     const createdNotes: NoteDoc[] = [];
     const fingerprints: any[] = [];
 
@@ -758,11 +761,11 @@ router.post('/chatworthy/apply', async (req, res, next) => {
         const turn = turns[idx];
         const pairHash = pairHashes[idx];
         const conflicts = fpsByHash.get(pairHash) || [];
-        if (!conflicts.length) {
-          fingerprints.push({
-            sourceType: 'chatworthy',
-            pairHash,
-            noteId: doc._id,
+    if (!conflicts.length) {
+      fingerprints.push({
+        sourceType: 'chatworthy',
+        pairHash,
+        noteId: doc._id,
             chatId: row.chatworthyChatId,
             turnIndex: turn.turnIndex,
             createdAt: new Date(),
@@ -770,15 +773,40 @@ router.post('/chatworthy/apply', async (req, res, next) => {
           continue;
         }
 
-        if (decision === 'replace') {
-          const action = turnActions[turn.turnIndex] ?? 'useImported';
-          if (action === 'useImported') {
-            const target = conflicts[0];
-            await TurnFingerprintModel.updateOne(
-              { _id: target._id },
-              {
-                $set: {
-                  noteId: doc._id,
+    if (decision === 'replace') {
+      const action = turnActions[turn.turnIndex] ?? 'useImported';
+      if (action === 'useImported') {
+        const target = conflicts[0];
+        const existingNoteId = String(target.noteId);
+        const fpCount = await TurnFingerprintModel.countDocuments({ noteId: existingNoteId }).exec();
+        if (fpCount > 1 && !cleanupNeededNoteIds.has(existingNoteId)) {
+          cleanupNeededNoteIds.add(existingNoteId);
+          const existingNote = await NoteModel.findById(existingNoteId).lean().exec();
+          if (existingNote) {
+            let existingSubjectName: string | undefined;
+            let existingTopicName: string | undefined;
+            if (existingNote.subjectId) {
+              const subj = await SubjectModel.findById(existingNote.subjectId).lean().exec();
+              existingSubjectName = subj?.name;
+            }
+            if (existingNote.topicId) {
+              const topic = await TopicModel.findById(existingNote.topicId).lean().exec();
+              existingTopicName = topic?.name;
+            }
+            const item: CleanupNeededItem = {
+              existingNoteId: existingNote._id.toString(),
+              existingNoteTitle: existingNote.title || 'Untitled note',
+              existingSubjectName,
+              existingTopicName,
+            };
+            cleanupNeeded.push(item);
+          }
+        }
+        await TurnFingerprintModel.updateOne(
+          { _id: target._id },
+          {
+            $set: {
+              noteId: doc._id,
                   turnIndex: turn.turnIndex,
                   chatId: row.chatworthyChatId,
                 },
@@ -806,15 +834,18 @@ router.post('/chatworthy/apply', async (req, res, next) => {
       );
     }
 
-    if (fingerprints.length) {
-      await TurnFingerprintModel.insertMany(fingerprints, { ordered: false });
-    }
+  if (fingerprints.length) {
+    await TurnFingerprintModel.insertMany(fingerprints, { ordered: false });
+  }
 
-    res.json({
-      created: createdNotes.length,
-      noteIds: createdNotes.map((n) => n.id),
-      importBatchId: batchId,
-    });
+  const responseBody: ApplyImportResponse = {
+    created: createdNotes.length,
+    noteIds: createdNotes.map((n) => n.id),
+    importBatchId: batchId,
+    cleanupNeeded,
+  };
+
+  res.status(200).json(responseBody);
   } catch (err) {
     next(err);
   }
