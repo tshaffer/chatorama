@@ -142,6 +142,19 @@ export interface MergeNotesResult {
   deletedNoteIds: string[];
 }
 
+// ---- Import duplicate detection ----
+export type DuplicateStatus = 'none' | 'partial' | 'full';
+
+export interface TurnConflict {
+  turnIndex: number;
+  existingNoteId: string;
+  existingSubjectId?: string;
+  existingTopicId?: string;
+  existingSubjectName?: string;
+  existingTopicName?: string;
+  existingNoteTitle?: string;
+}
+
 // --- Subject-level relations summary ---
 
 export interface RelatedTopicSummary {

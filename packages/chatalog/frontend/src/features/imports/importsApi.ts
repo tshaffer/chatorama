@@ -1,6 +1,11 @@
 // frontend/src/features/imports/importsApi.ts
 import { chatalogApi as baseApi } from '../api/chatalogApi';
-import type { ImportBatch, NotePreview } from '@chatorama/chatalog-shared';
+import type {
+  ImportBatch,
+  NotePreview,
+  DuplicateStatus,
+  TurnConflict,
+} from '@chatorama/chatalog-shared';
 
 export type ImportedNoteSummary = {
   file: string;
@@ -18,6 +23,9 @@ export type ImportedNoteSummary = {
   chatworthyFileName?: string;
   chatworthyTurnIndex?: number;
   chatworthyTotalTurns?: number;
+  duplicateStatus: DuplicateStatus;
+  duplicateCount: number;
+  conflicts: TurnConflict[];
 };
 
 export type ImportResponse = {

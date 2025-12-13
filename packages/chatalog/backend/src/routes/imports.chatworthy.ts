@@ -443,6 +443,101 @@ async function summarizeDuplicateTurns(previews: PreviewNoteInfo[], combinedNote
   return { hasDuplicateTurns: duplicateTurnCount > 0, duplicateTurnCount };
 }
 
+async function attachTurnConflicts(previews: PreviewNoteInfo[], combinedNote?: PreviewNoteInfo) {
+  const allPreviews = combinedNote ? [...previews, combinedNote] : previews;
+  const perPreview = allPreviews.map((preview) => {
+    const turns = extractPromptResponseTurns(preview.body || '');
+    const hashes = turns.map((turn) => ({
+      turnIndex: turn.turnIndex,
+      pairHash: hashPromptResponsePair(turn.prompt, turn.response),
+    }));
+    return { preview, turns, hashes };
+  });
+
+  const allHashes = Array.from(new Set(perPreview.flatMap((p) => p.hashes.map((h) => h.pairHash))));
+  if (!allHashes.length) {
+    return allPreviews.map((p) => ({
+      ...p,
+      duplicateStatus: 'none' as const,
+      duplicateCount: 0,
+      conflicts: [],
+    }));
+  }
+
+  const existingFingerprints = await TurnFingerprintModel.find(
+    { pairHash: { $in: allHashes } },
+    { pairHash: 1, noteId: 1 },
+  )
+    .lean()
+    .exec();
+
+  const noteIds = Array.from(new Set(existingFingerprints.map((f) => String(f.noteId))));
+  const notes = await NoteModel.find(
+    { _id: { $in: noteIds } },
+    { _id: 1, subjectId: 1, topicId: 1, title: 1 },
+  )
+    .lean()
+    .exec();
+
+  const subjectIds = Array.from(new Set(notes.map((n) => n.subjectId).filter(Boolean) as string[]));
+  const topicIds = Array.from(new Set(notes.map((n) => n.topicId).filter(Boolean) as string[]));
+
+  const subjects = subjectIds.length
+    ? await SubjectModel.find({ _id: { $in: subjectIds } }, { _id: 1, name: 1 }).lean().exec()
+    : [];
+  const topics = topicIds.length
+    ? await TopicModel.find({ _id: { $in: topicIds } }, { _id: 1, name: 1 }).lean().exec()
+    : [];
+
+  const noteById = new Map<string, any>();
+  notes.forEach((n) => noteById.set(String(n._id), n));
+
+  const subjectById = new Map<string, any>();
+  subjects.forEach((s) => subjectById.set(String(s._id), s));
+  const topicById = new Map<string, any>();
+  topics.forEach((t) => topicById.set(String(t._id), t));
+
+  const fingerprintsByHash = new Map<string, any[]>();
+  existingFingerprints.forEach((f) => {
+    const list = fingerprintsByHash.get(f.pairHash) || [];
+    list.push(f);
+    fingerprintsByHash.set(f.pairHash, list);
+  });
+
+  return perPreview.map(({ preview, turns, hashes }) => {
+    const conflicts: any[] = [];
+    hashes.forEach((h) => {
+      const fps = fingerprintsByHash.get(h.pairHash) || [];
+      fps.forEach((fp) => {
+        const existing = noteById.get(String(fp.noteId));
+        if (!existing) return;
+        const subj = existing.subjectId ? subjectById.get(String(existing.subjectId)) : null;
+        const topic = existing.topicId ? topicById.get(String(existing.topicId)) : null;
+        conflicts.push({
+          turnIndex: h.turnIndex,
+          existingNoteId: String(fp.noteId),
+          existingSubjectId: existing.subjectId ? String(existing.subjectId) : undefined,
+          existingTopicId: existing.topicId ? String(existing.topicId) : undefined,
+          existingSubjectName: subj?.name,
+          existingTopicName: topic?.name,
+          existingNoteTitle: existing.title,
+        });
+      });
+    });
+
+    const duplicateCount = conflicts.length;
+    const duplicateStatus =
+      duplicateCount === 0 ? 'none' : duplicateCount === turns.length ? 'full' : 'partial';
+
+    return {
+      ...preview,
+      duplicateStatus,
+      duplicateCount,
+      conflicts,
+    };
+  });
+}
+
 // ---------------- main importers ----------------
 
 // NOTE: This is now *preview-only*. No DB writes here.
@@ -561,10 +656,16 @@ router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
       combinedNote,
     );
 
+    const annotated = await attachTurnConflicts(results, combinedNote);
+    const annotatedCombined = combinedNote
+      ? annotated.find((p) => p.importKey === combinedNote?.importKey)
+      : undefined;
+    const annotatedResults = annotated.filter((p) => p.importKey !== annotatedCombined?.importKey);
+
     res.json({
       imported: results.length,
-      results,
-      combinedNote,
+      results: annotatedResults,
+      combinedNote: annotatedCombined,
       hasDuplicateTurns,
       duplicateTurnCount,
     });

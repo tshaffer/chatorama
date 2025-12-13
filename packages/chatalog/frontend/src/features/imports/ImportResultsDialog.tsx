@@ -25,6 +25,7 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Alert,
+  IconButton,
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
@@ -33,6 +34,10 @@ import type { ImportedNoteSummary } from '../imports/importsApi';
 import { subjectsApi, useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
 import { useGetNoteQuery } from '../notes/notesApi';
 import MarkdownBody from '../../components/MarkdownBody';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import type { DuplicateStatus } from '@chatorama/chatalog-shared';
 
 export type EditableImportedNoteRow = ImportedNoteSummary & {
   editedTitle: string;
@@ -45,6 +50,16 @@ export type EditableImportedNoteRow = ImportedNoteSummary & {
   // whether this row should be imported when Apply is clicked
   selected: boolean;
 };
+
+type DuplicateDecision = 'keepAsNew' | 'replace';
+
+interface NoteDuplicateResolution {
+  noteId: string;
+  decision: DuplicateDecision;
+  turnActions: {
+    [turnIndex: number]: 'useImported' | 'useExisting';
+  };
+}
 
 type SubjectWithTopics = Subject & { topics?: Topic[] };
 
@@ -108,6 +123,37 @@ export function ImportResultsDialog({
   const [singleRows, setSingleRows] = useState<EditableImportedNoteRow[]>(() =>
     combinedNote ? buildEditableRows([combinedNote]) : [],
   );
+
+  const [duplicateResolutions, setDuplicateResolutions] = useState<
+    Record<string, NoteDuplicateResolution>
+  >({});
+
+  const setNoteDecision = (noteId: string, decision: DuplicateDecision) => {
+    setDuplicateResolutions((prev) => ({
+      ...prev,
+      [noteId]: {
+        noteId,
+        decision,
+        turnActions: prev[noteId]?.turnActions ?? {},
+      },
+    }));
+  };
+
+  const setTurnAction = (noteId: string, turnIndex: number, action: 'useImported' | 'useExisting') => {
+    setDuplicateResolutions((prev) => {
+      const existing = prev[noteId] ?? { noteId, decision: 'keepAsNew' as DuplicateDecision, turnActions: {} };
+      return {
+        ...prev,
+        [noteId]: {
+          ...existing,
+          turnActions: {
+            ...existing.turnActions,
+            [turnIndex]: action,
+          },
+        },
+      };
+    });
+  };
 
   // Initialize defaults + rows whenever a new import result comes in
   React.useEffect(() => {
@@ -617,6 +663,7 @@ export function ImportResultsDialog({
                 <TableRow>
                   <TableCell padding="checkbox" />
                   <TableCell>Title</TableCell>
+                  <TableCell align="center">Dupes</TableCell>
                   <TableCell>Subject</TableCell>
                   <TableCell>Topic</TableCell>
                 </TableRow>
@@ -635,7 +682,7 @@ export function ImportResultsDialog({
                       cursor: 'pointer',
                       '&.Mui-selected': { backgroundColor: 'action.hover' },
                     }}
-                  >
+                    >
                     <TableCell padding="checkbox">
                       <Checkbox
                         checked={row.selected}
@@ -658,6 +705,54 @@ export function ImportResultsDialog({
                           })
                         }
                       />
+                    </TableCell>
+                    <TableCell align="center">
+                      {(() => {
+                        const status = row.duplicateStatus as DuplicateStatus;
+                        const count = row.duplicateCount ?? 0;
+                        const conflicts = row.conflicts ?? [];
+                        let IconComp: typeof CheckCircleOutlineIcon | typeof WarningAmberIcon | typeof ErrorOutlineIcon =
+                          CheckCircleOutlineIcon;
+                        let color: 'success' | 'warning' | 'error' = 'success';
+                        let label = 'No duplicate turns detected';
+                        if (status === 'partial') {
+                          IconComp = WarningAmberIcon;
+                          color = 'warning';
+                          label = `${count} duplicate turn${count === 1 ? '' : 's'} detected`;
+                        } else if (status === 'full') {
+                          IconComp = ErrorOutlineIcon;
+                          color = 'error';
+                          label = `All turns (${count}) are duplicates`;
+                        }
+                        return (
+                          <Tooltip
+                            title={
+                              <Box>
+                                <div>{label}</div>
+                                {conflicts.slice(0, 3).map((c, idx) => (
+                                  <div key={idx}>
+                                    {[c.existingSubjectName, c.existingTopicName, c.existingNoteTitle]
+                                      .filter(Boolean)
+                                      .join(' / ')}
+                                  </div>
+                                ))}
+                                {conflicts.length > 3 && <div>…</div>}
+                              </Box>
+                            }
+                          >
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedImportKey(row.importKey);
+                                setPreviewMode('imported');
+                              }}
+                            >
+                              <IconComp color={color} fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell sx={{ minWidth: 220 }}>
                       <Autocomplete
@@ -947,6 +1042,60 @@ export function ImportResultsDialog({
                 <Box sx={{ mt: 2 }}>
                   <MarkdownBody markdown={selectedRow.body} />
                 </Box>
+                {selectedRow.duplicateStatus !== 'none' && selectedRow.conflicts?.length > 0 && (
+                  <Box sx={{ mt: 3 }}>
+                    <Typography variant="h6" sx={{ mb: 1 }}>
+                      Turn Conflicts
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                      These turns in the imported note also appear in existing notes. Choose what to do per turn.
+                    </Typography>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Turn</TableCell>
+                          <TableCell>Existing Note</TableCell>
+                          <TableCell>Action</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {selectedRow.conflicts.map((conflict) => {
+                          const noteId = selectedRow.importKey;
+                          const resolution = duplicateResolutions[noteId];
+                          const action =
+                            resolution?.turnActions?.[conflict.turnIndex] ?? 'useImported';
+                          const existingText = [
+                            conflict.existingSubjectName,
+                            conflict.existingTopicName,
+                            conflict.existingNoteTitle,
+                          ]
+                            .filter(Boolean)
+                            .join(' / ');
+                          return (
+                            <TableRow key={conflict.turnIndex}>
+                              <TableCell>{conflict.turnIndex}</TableCell>
+                              <TableCell>{existingText || conflict.existingNoteId}</TableCell>
+                              <TableCell>
+                                <ToggleButtonGroup
+                                  size="small"
+                                  value={action}
+                                  exclusive
+                                  onChange={(_, value) => {
+                                    if (!value) return;
+                                    setTurnAction(noteId, conflict.turnIndex, value);
+                                  }}
+                                >
+                                  <ToggleButton value="useImported">Use imported</ToggleButton>
+                                  <ToggleButton value="useExisting">Use existing</ToggleButton>
+                                </ToggleButtonGroup>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </Box>
+                )}
               </>
             ) : (
               <>
