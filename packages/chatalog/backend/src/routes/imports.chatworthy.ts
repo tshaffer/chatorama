@@ -773,45 +773,47 @@ router.post('/chatworthy/apply', async (req, res, next) => {
           continue;
         }
 
-    if (decision === 'replace') {
-      const action = turnActions[turn.turnIndex] ?? 'useImported';
-      if (action === 'useImported') {
-        const target = conflicts[0];
-        const existingNoteId = String(target.noteId);
-        const fpCount = await TurnFingerprintModel.countDocuments({ noteId: existingNoteId }).exec();
-        if (fpCount > 1 && !cleanupNeededNoteIds.has(existingNoteId)) {
-          cleanupNeededNoteIds.add(existingNoteId);
-          const existingNote = await NoteModel.findById(existingNoteId).lean().exec();
-          if (existingNote) {
-            let existingSubjectName: string | undefined;
-            let existingTopicName: string | undefined;
-            if (existingNote.subjectId) {
-              const subj = await SubjectModel.findById(existingNote.subjectId).lean().exec();
-              existingSubjectName = subj?.name;
-            }
-            if (existingNote.topicId) {
-              const topic = await TopicModel.findById(existingNote.topicId).lean().exec();
-              existingTopicName = topic?.name;
-            }
-            const item: CleanupNeededItem = {
-              existingNoteId: existingNote._id.toString(),
-              existingNoteTitle: existingNote.title || 'Untitled note',
-              existingSubjectName,
-              existingTopicName,
-            };
-            cleanupNeeded.push(item);
-          }
-        }
-        await TurnFingerprintModel.updateOne(
-          { _id: target._id },
-          {
-            $set: {
-              noteId: doc._id,
+        if (decision === 'replace') {
+          const action = turnActions[turn.turnIndex] ?? 'useImported';
+          if (action === 'useImported') {
+            const target = conflicts[0];
+            const existingNoteId = String(target.noteId);
+            const fpCount = await TurnFingerprintModel.countDocuments({ noteId: existingNoteId }).exec();
+            await TurnFingerprintModel.updateOne(
+              { _id: target._id },
+              {
+                $set: {
+                  noteId: doc._id,
                   turnIndex: turn.turnIndex,
                   chatId: row.chatworthyChatId,
                 },
               },
             ).exec();
+            if (fpCount === 1) {
+              await NoteModel.findByIdAndDelete(existingNoteId).exec();
+            } else if (fpCount > 1 && !cleanupNeededNoteIds.has(existingNoteId)) {
+              cleanupNeededNoteIds.add(existingNoteId);
+              const existingNote = await NoteModel.findById(existingNoteId).lean().exec();
+              if (existingNote) {
+                let existingSubjectName: string | undefined;
+                let existingTopicName: string | undefined;
+                if (existingNote.subjectId) {
+                  const subj = await SubjectModel.findById(existingNote.subjectId).lean().exec();
+                  existingSubjectName = subj?.name;
+                }
+                if (existingNote.topicId) {
+                  const topic = await TopicModel.findById(existingNote.topicId).lean().exec();
+                  existingTopicName = topic?.name;
+                }
+                const item: CleanupNeededItem = {
+                  existingNoteId: existingNote._id.toString(),
+                  existingNoteTitle: existingNote.title || 'Untitled note',
+                  existingSubjectName,
+                  existingTopicName,
+                };
+                cleanupNeeded.push(item);
+              }
+            }
           }
         }
         // keepAsNew or useExisting -> no new fingerprint
