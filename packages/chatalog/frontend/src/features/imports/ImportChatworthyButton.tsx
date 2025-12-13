@@ -174,11 +174,30 @@ export default function ImportChatworthyButton({
     />
   );
 
+
   const cleanupBanner =
     cleanupNeeded.length > 0 ? (
-      <Box sx={{ mb: 2 }}>
-        <Alert severity="info">
+      <Box
+        sx={{
+          position: 'fixed',
+          top: 24,                // adjust to taste
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: (theme) => theme.zIndex.modal + 1,
+          minWidth: 420,          // keeps banner readable; adjust if needed
+          maxWidth: '80vw',
+        }}
+      >
+        <Alert
+          severity="info"
+          variant="filled"
+          onClose={() => setCleanupNeeded([])}   // dismiss button
+          sx={{
+            boxShadow: 3,
+          }}
+        >
           <div>Some notes may need manual cleanup because they contain multiple turns:</div>
+
           <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
             {cleanupNeeded.map((item) => (
               <li key={item.existingNoteId}>
