@@ -106,6 +106,9 @@ export function ImportResultsDialog({
   const topicBulkUpdateRef = React.useRef(false);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
+  const hasDuplicatesForRow = (n: ImportedNoteSummary) =>
+    n.duplicateStatus !== 'none' && (n.duplicateCount ?? 0) > 0;
+
   const buildEditableRows = (notes: ImportedNoteSummary[]) =>
     notes.map((n) => ({
       ...n,
@@ -115,7 +118,8 @@ export function ImportResultsDialog({
       showBody: false,
       subjectTouched: false,
       topicTouched: false,
-      selected: true, // default: include all notes initially
+      // default: include only notes without duplicate turns
+      selected: !hasDuplicatesForRow(n),
     }));
 
   const [rows, setRows] = useState<EditableImportedNoteRow[]>(() =>
@@ -183,7 +187,7 @@ export function ImportResultsDialog({
         showBody: false,
         subjectTouched: false,
         topicTouched: false,
-        selected: true,
+        selected: !hasDuplicatesForRow(n),
       })),
     );
 
@@ -198,7 +202,7 @@ export function ImportResultsDialog({
             showBody: false,
             subjectTouched: false,
             topicTouched: false,
-            selected: true,
+            selected: !hasDuplicatesForRow(combinedNote),
           },
         ]
         : [],
@@ -318,9 +322,9 @@ export function ImportResultsDialog({
         r.subjectTouched
           ? r
           : {
-              ...r,
-              subjectLabel: next ?? '',
-            },
+            ...r,
+            subjectLabel: next ?? '',
+          },
       ),
     );
   };
@@ -334,9 +338,9 @@ export function ImportResultsDialog({
         r.topicTouched
           ? r
           : {
-              ...r,
-              topicLabel: next ?? '',
-            },
+            ...r,
+            topicLabel: next ?? '',
+          },
       ),
     );
   };
@@ -595,14 +599,14 @@ export function ImportResultsDialog({
               ...panelSx,
               ...(viewMode === 'full'
                 ? {
-                    flex: '0 0 auto',
-                    flexBasis: `${panelWidths[0] * 100}%`,
-                    pr: 1,
-                  }
+                  flex: '0 0 auto',
+                  flexBasis: `${panelWidths[0] * 100}%`,
+                  pr: 1,
+                }
                 : {
-                    flex: 1,
-                    pr: viewMode === 'markdown' ? 1 : 0,
-                  }),
+                  flex: 1,
+                  pr: viewMode === 'markdown' ? 1 : 0,
+                }),
             }}
           >
             <Box sx={{ mb: 2 }}>
@@ -700,7 +704,7 @@ export function ImportResultsDialog({
                       cursor: 'pointer',
                       '&.Mui-selected': { backgroundColor: 'action.hover' },
                     }}
-                    >
+                  >
                     <TableCell padding="checkbox">
                       <Checkbox
                         checked={row.selected}
@@ -876,13 +880,13 @@ export function ImportResultsDialog({
               ...panelSx,
               ...(viewMode === 'full'
                 ? {
-                    flex: '0 0 auto',
-                    flexBasis: `${panelWidths[1] * 100}%`,
-                    px: 1,
-                  }
+                  flex: '0 0 auto',
+                  flexBasis: `${panelWidths[1] * 100}%`,
+                  px: 1,
+                }
                 : {
-                    display: 'none',
-                  }),
+                  display: 'none',
+                }),
             }}
           >
             <Typography variant="subtitle1" sx={{ mb: 1 }}>
@@ -1021,16 +1025,16 @@ export function ImportResultsDialog({
               ...panelSx,
               ...(viewMode === 'full'
                 ? {
-                    flex: '0 0 auto',
-                    flexBasis: `${panelWidths[2] * 100}%`,
-                    pl: 1,
-                  }
+                  flex: '0 0 auto',
+                  flexBasis: `${panelWidths[2] * 100}%`,
+                  pl: 1,
+                }
                 : viewMode === 'markdown'
-                ? {
+                  ? {
                     flex: 1,
                     pl: 1,
                   }
-                : {
+                  : {
                     display: 'none',
                   }),
             }}
