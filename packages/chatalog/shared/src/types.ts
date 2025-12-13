@@ -144,15 +144,31 @@ export interface MergeNotesResult {
 
 // ---- Import duplicate detection ----
 export type DuplicateStatus = 'none' | 'partial' | 'full';
+export type TurnAction = 'useImported' | 'useExisting';
+export type DuplicateDecision = 'keepAsNew' | 'replace';
 
 export interface TurnConflict {
   turnIndex: number;
+  fingerprintId: string;
   existingNoteId: string;
   existingSubjectId?: string;
   existingTopicId?: string;
   existingSubjectName?: string;
   existingTopicName?: string;
   existingNoteTitle?: string;
+}
+
+export interface ApplyNoteImportCommand {
+  importedNoteId: string;
+  include: boolean;
+  duplicateDecision?: DuplicateDecision;
+  turnActions?: Record<number, TurnAction>;
+}
+
+export interface ApplyImportRequest {
+  importBatchId?: string;
+  rows: any[]; // legacy payload (per-note content)
+  notes: ApplyNoteImportCommand[];
 }
 
 // --- Subject-level relations summary ---

@@ -10,7 +10,7 @@ import { NoteModel } from '../models/Note';
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
 import type { NoteDoc } from '../models/Note';
-import { slugifyStandard } from '@chatorama/chatalog-shared';
+import { slugifyStandard, type ApplyImportRequest, type ApplyNoteImportCommand } from '@chatorama/chatalog-shared';
 import { ImportBatchModel } from '../models/ImportBatch';
 import { normalizeText, hashPromptResponsePair, extractPromptResponseTurns } from '../utils/textHash';
 import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
@@ -515,6 +515,7 @@ async function attachTurnConflicts(previews: PreviewNoteInfo[], combinedNote?: P
         const topic = existing.topicId ? topicById.get(String(existing.topicId)) : null;
         conflicts.push({
           turnIndex: h.turnIndex,
+          fingerprintId: String(fp._id),
           existingNoteId: String(fp.noteId),
           existingSubjectId: existing.subjectId ? String(existing.subjectId) : undefined,
           existingTopicId: existing.topicId ? String(existing.topicId) : undefined,
@@ -678,15 +679,28 @@ router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
 // Create Subjects, Topics, and Notes based on the *final* edited rows.
 router.post('/chatworthy/apply', async (req, res, next) => {
   try {
-    const { rows } = req.body as { rows: ApplyImportedNotePayload[] };
+    const { rows, notes } = req.body as ApplyImportRequest & { rows: ApplyImportedNotePayload[] };
     if (!Array.isArray(rows) || !rows.length) {
       return res.status(400).json({ message: 'No rows provided' });
+    }
+
+    const commandMap = new Map<string, ApplyNoteImportCommand>();
+    if (Array.isArray(notes)) {
+      notes.forEach((cmd) => {
+        if (cmd && cmd.importedNoteId) {
+          commandMap.set(cmd.importedNoteId, cmd);
+        }
+      });
     }
 
     const createdNotes: NoteDoc[] = [];
     const fingerprints: any[] = [];
 
     for (const row of rows) {
+      const cmd = commandMap.get(row.importKey);
+      const include = cmd ? cmd.include : true;
+      if (!include) continue;
+
       const subjectName = row.subjectLabel?.trim() || undefined;
       const topicName = row.topicLabel?.trim() || undefined;
 
@@ -725,17 +739,55 @@ router.post('/chatworthy/apply', async (req, res, next) => {
       createdNotes.push(doc);
 
       const turns = extractPromptResponseTurns(row.body);
-      turns.forEach((turn) => {
-        const pairHash = hashPromptResponsePair(turn.prompt, turn.response);
-        fingerprints.push({
-          sourceType: 'chatworthy',
-          pairHash,
-          noteId: doc._id,
-          chatId: row.chatworthyChatId,
-          turnIndex: turn.turnIndex,
-          createdAt: new Date(),
-        });
+      const pairHashes = turns.map((turn) => hashPromptResponsePair(turn.prompt, turn.response));
+
+      const existingFps = pairHashes.length
+        ? await TurnFingerprintModel.find({ pairHash: { $in: pairHashes } }).lean().exec()
+        : [];
+      const fpsByHash = new Map<string, any[]>();
+      existingFps.forEach((fp) => {
+        const list = fpsByHash.get(fp.pairHash) || [];
+        list.push(fp);
+        fpsByHash.set(fp.pairHash, list);
       });
+
+      const decision = cmd?.duplicateDecision ?? 'keepAsNew';
+      const turnActions = cmd?.turnActions ?? {};
+
+      for (let idx = 0; idx < turns.length; idx += 1) {
+        const turn = turns[idx];
+        const pairHash = pairHashes[idx];
+        const conflicts = fpsByHash.get(pairHash) || [];
+        if (!conflicts.length) {
+          fingerprints.push({
+            sourceType: 'chatworthy',
+            pairHash,
+            noteId: doc._id,
+            chatId: row.chatworthyChatId,
+            turnIndex: turn.turnIndex,
+            createdAt: new Date(),
+          });
+          continue;
+        }
+
+        if (decision === 'replace') {
+          const action = turnActions[turn.turnIndex] ?? 'useImported';
+          if (action === 'useImported') {
+            const target = conflicts[0];
+            await TurnFingerprintModel.updateOne(
+              { _id: target._id },
+              {
+                $set: {
+                  noteId: doc._id,
+                  turnIndex: turn.turnIndex,
+                  chatId: row.chatworthyChatId,
+                },
+              },
+            ).exec();
+          }
+        }
+        // keepAsNew or useExisting -> no new fingerprint
+      }
     }
 
     let batchId: string | undefined;

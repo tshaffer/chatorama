@@ -24,6 +24,7 @@ import {
   ImportResultsDialog,
   type EditableImportedNoteRow,
 } from './ImportResultsDialog';
+import type { ApplyNoteImportCommand } from '@chatorama/chatalog-shared';
 
 type Props = {
   onDone?: () => void;
@@ -95,7 +96,10 @@ export default function ImportAiClassificationButton({
     setReviewOpen(false);
   };
 
-  const handleApplyEdits = async (rows: EditableImportedNoteRow[]) => {
+  const handleApplyEdits = async (
+    rows: EditableImportedNoteRow[],
+    commands: ApplyNoteImportCommand[],
+  ) => {
     if (!lastImport) {
       setReviewOpen(false);
       return;
@@ -121,6 +125,7 @@ export default function ImportAiClassificationButton({
           chatworthyTurnIndex: r.chatworthyTurnIndex,
           chatworthyTotalTurns: r.chatworthyTotalTurns,
         })),
+        notes: commands,
       };
 
       const res = await applyChatworthyImport(payload).unwrap();

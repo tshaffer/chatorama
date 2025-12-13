@@ -5,6 +5,7 @@ import type {
   NotePreview,
   DuplicateStatus,
   TurnConflict,
+  ApplyNoteImportCommand,
 } from '@chatorama/chatalog-shared';
 
 export type ImportedNoteSummary = {
@@ -53,6 +54,11 @@ export type ApplyImportedRow = {
   chatworthyTotalTurns?: number;
 };
 
+export type ApplyImportRequestPayload = {
+  rows: ApplyImportedRow[];
+  notes: ApplyNoteImportCommand[];
+};
+
 export const importsApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
     // PREVIEW import (no DB writes) - Chatworthy markdown/zip
@@ -92,7 +98,7 @@ export const importsApi = baseApi.injectEndpoints({
     }),
 
     // APPLY import: actually create Subjects/Topics/Notes
-    applyChatworthyImport: build.mutation<{ created: number; noteIds: string[] }, { rows: ApplyImportedRow[] }>({
+    applyChatworthyImport: build.mutation<{ created: number; noteIds: string[] }, ApplyImportRequestPayload>({
       query: (payload) => ({
         url: 'imports/chatworthy/apply',
         method: 'POST',

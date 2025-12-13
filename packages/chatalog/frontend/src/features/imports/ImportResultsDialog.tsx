@@ -37,7 +37,11 @@ import MarkdownBody from '../../components/MarkdownBody';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import type { DuplicateStatus } from '@chatorama/chatalog-shared';
+import type {
+  DuplicateStatus,
+  DuplicateDecision,
+  ApplyNoteImportCommand,
+} from '@chatorama/chatalog-shared';
 
 export type EditableImportedNoteRow = ImportedNoteSummary & {
   editedTitle: string;
@@ -50,8 +54,6 @@ export type EditableImportedNoteRow = ImportedNoteSummary & {
   // whether this row should be imported when Apply is clicked
   selected: boolean;
 };
-
-type DuplicateDecision = 'keepAsNew' | 'replace';
 
 interface NoteDuplicateResolution {
   noteId: string;
@@ -69,7 +71,7 @@ type Props = {
   importedNotes: ImportedNoteSummary[];
   combinedNote?: ImportedNoteSummary;
   subjects: SubjectWithTopics[];
-  onApply: (rows: EditableImportedNoteRow[]) => void;
+  onApply: (rows: EditableImportedNoteRow[], commands: ApplyNoteImportCommand[]) => void;
   hasDuplicateTurns?: boolean;
   duplicateTurnCount?: number;
 };
@@ -341,8 +343,23 @@ export function ImportResultsDialog({
 
   const handleApply = () => {
     const base = importMode === 'perTurn' ? rows : singleRows.length ? singleRows : rows;
-    const payload = base.filter((r) => r.selected);
-    onApply(payload);
+    const commands: ApplyNoteImportCommand[] = base.map((r) => {
+      const resolution = duplicateResolutions[r.importKey];
+      const hasDuplicates = r.duplicateStatus !== 'none' && r.duplicateCount > 0;
+      const decision: DuplicateDecision | undefined = hasDuplicates
+        ? resolution?.decision ?? 'keepAsNew'
+        : undefined;
+      const turnActions =
+        decision === 'replace' ? resolution?.turnActions : undefined;
+
+      return {
+        importedNoteId: r.importKey,
+        include: r.selected,
+        duplicateDecision: decision,
+        turnActions,
+      };
+    });
+    onApply(base, commands);
   };
 
   const { data: subjectsWithTopics = [], isLoading: isLoadingSubjects } =
@@ -664,6 +681,7 @@ export function ImportResultsDialog({
                   <TableCell padding="checkbox" />
                   <TableCell>Title</TableCell>
                   <TableCell align="center">Dupes</TableCell>
+                  <TableCell align="center">Decision</TableCell>
                   <TableCell>Subject</TableCell>
                   <TableCell>Topic</TableCell>
                 </TableRow>
@@ -753,6 +771,22 @@ export function ImportResultsDialog({
                           </Tooltip>
                         );
                       })()}
+                    </TableCell>
+                    <TableCell align="center" sx={{ minWidth: 220 }}>
+                      {row.selected && row.duplicateStatus !== 'none' && (
+                        <ToggleButtonGroup
+                          size="small"
+                          value={duplicateResolutions[row.importKey]?.decision ?? 'keepAsNew'}
+                          exclusive
+                          onChange={(_e, value: DuplicateDecision | null) => {
+                            if (!value) return;
+                            setNoteDecision(row.importKey, value);
+                          }}
+                        >
+                          <ToggleButton value="keepAsNew">Keep as new</ToggleButton>
+                          <ToggleButton value="replace">Replace existing</ToggleButton>
+                        </ToggleButtonGroup>
+                      )}
                     </TableCell>
                     <TableCell sx={{ minWidth: 220 }}>
                       <Autocomplete
@@ -1064,6 +1098,8 @@ export function ImportResultsDialog({
                           const resolution = duplicateResolutions[noteId];
                           const action =
                             resolution?.turnActions?.[conflict.turnIndex] ?? 'useImported';
+                          const disabled =
+                            (duplicateResolutions[noteId]?.decision ?? 'keepAsNew') !== 'replace';
                           const existingText = [
                             conflict.existingSubjectName,
                             conflict.existingTopicName,
@@ -1080,6 +1116,7 @@ export function ImportResultsDialog({
                                   size="small"
                                   value={action}
                                   exclusive
+                                  disabled={disabled}
                                   onChange={(_, value) => {
                                     if (!value) return;
                                     setTurnAction(noteId, conflict.turnIndex, value);
