@@ -131,6 +131,79 @@ function toArrayTags(fmTags: unknown): string[] {
   return [];
 }
 
+type GenerateTitleOptions = {
+  maxChars?: number;
+  minSentenceChars?: number;
+};
+
+/**
+ * Generate a human-friendly title from a prompt:
+ * - Normalize whitespace
+ * - Prefer a full sentence ending (., ?, !, …) before maxChars
+ * - Otherwise truncate to maxChars, avoiding mid-word cuts when possible
+ */
+function generateTitleFromPrompt(
+  rawPrompt: string | undefined | null,
+  options: GenerateTitleOptions = {},
+): string | undefined {
+  const maxChars = options.maxChars ?? 80;
+  const minSentenceChars = options.minSentenceChars ?? 20;
+
+  if (!rawPrompt) return undefined;
+
+  // Normalize whitespace
+  let prompt = rawPrompt.trim().replace(/\s+/g, ' ');
+  if (!prompt) return undefined;
+
+  const searchRange = prompt.slice(0, Math.min(prompt.length, maxChars));
+
+  // Sentence enders: . ? ! …, optionally followed by quotes/parens/brackets and then space/end
+  const sentenceEndRegex = /[.!?…]+["')\]]*(?=\s|$)/g;
+
+  let match: RegExpExecArray | null;
+  let chosenEndIndex: number | null = null;
+
+  while ((match = sentenceEndRegex.exec(searchRange)) !== null) {
+    const endIndex = match.index + match[0].length;
+    if (endIndex <= maxChars && endIndex >= minSentenceChars) {
+      chosenEndIndex = endIndex; // keep the last good one
+    }
+  }
+
+  let candidate: string;
+
+  if (chosenEndIndex !== null) {
+    // Use the sentence ending before maxChars
+    candidate = prompt.slice(0, chosenEndIndex);
+  } else {
+    // Fallback: truncate by length, but avoid mid-word cuts if possible
+    if (prompt.length <= maxChars) {
+      candidate = prompt;
+    } else {
+      const hardCut = prompt.slice(0, maxChars);
+      const lastSpace = hardCut.lastIndexOf(' ');
+
+      if (lastSpace >= minSentenceChars) {
+        candidate = hardCut.slice(0, lastSpace);
+      } else {
+        candidate = hardCut;
+      }
+    }
+  }
+
+  candidate = candidate.trim();
+
+  // Remove trailing commas/semicolons/colons, keep real sentence endings
+  candidate = candidate.replace(/[,;:]+$/,'').trim();
+
+  if (!candidate) {
+    // Backup: first chunk of normalized prompt
+    candidate = prompt.slice(0, maxChars).trim();
+  }
+
+  return candidate || undefined;
+}
+
 // ----- Chatworthy parsing types -----
 
 type ParsedMd = {
@@ -577,10 +650,25 @@ async function parseOneMarkdownForPreview(
 
   parsedNotes.forEach((p, idx) => {
     const importKey = `${fileName}::${idx}`;
+
+    // NEW: derive a title from the first prompt in this note's body, if available
+    const turns = extractPromptResponseTurns(p.markdown || '');
+    const firstPrompt = turns.length > 0 ? turns[0].prompt : undefined;
+
+    const promptBasedTitle =
+      firstPrompt
+        ? generateTitleFromPrompt(firstPrompt, {
+            maxChars: 80,
+            minSentenceChars: 20,
+          })
+        : undefined;
+
+    const finalTitle = promptBasedTitle || p.title || 'Untitled';
+
     previews.push({
       file: fileName,
       importKey,
-      title: p.title,
+      title: finalTitle,
       subjectName: p.subjectName,
       topicName: p.topicName,
       body: p.markdown,
@@ -617,10 +705,28 @@ async function parseOneMarkdownForPreview(
       fmTitle,
     }).trim();
 
+    // NEW: derive a title for the combined note from the first prompt in the full body
+    const combinedTurns = extractPromptResponseTurns(combinedBody || '');
+    const combinedFirstPrompt =
+      combinedTurns.length > 0 ? combinedTurns[0].prompt : undefined;
+
+    const promptBasedCombinedTitle =
+      combinedFirstPrompt
+        ? generateTitleFromPrompt(combinedFirstPrompt, {
+            maxChars: 80,
+            minSentenceChars: 20,
+          })
+        : undefined;
+
+    const combinedTitle =
+      promptBasedCombinedTitle ||
+      first.title ||
+      fileName;
+
     combined = {
       file: fileName,
       importKey: `${fileName}::combined`,
-      title: first.title || fileName,
+      title: combinedTitle,
       subjectName: first.subjectName,
       topicName: first.topicName,
       body: combinedBody,
@@ -1097,15 +1203,27 @@ router.post('/ai-classification/preview', async (req, res, next) => {
         continue;
       }
 
-      const markdown = buildMarkdownFromSeed(seedNote, n.suggestedTitle);
+      // NEW: generate a title based on the prompt text (preferred)
+      const promptBasedTitle =
+        generateTitleFromPrompt(seedNote.promptText, {
+          maxChars: 80,
+          minSentenceChars: 20,
+        }) ?? undefined;
+
+      // Fallback to previous behavior if prompt is missing/empty
+      const fallbackTitle =
+        (n.suggestedTitle && n.suggestedTitle.trim()) ||
+        seedNote.chatTitle ||
+        'Untitled';
+
+      const finalTitle = promptBasedTitle || fallbackTitle;
+
+      const markdown = buildMarkdownFromSeed(seedNote, finalTitle);
 
       results.push({
         file: seedNote.fileName,
         importKey: n.aiNoteKey,
-        title:
-          (n.suggestedTitle && n.suggestedTitle.trim()) ||
-          seedNote.chatTitle ||
-          'Untitled',
+        title: finalTitle,
         subjectName: n.subjectName,
         topicName: n.topicName,
         body: markdown,

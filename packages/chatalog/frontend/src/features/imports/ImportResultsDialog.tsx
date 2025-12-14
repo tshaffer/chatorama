@@ -541,6 +541,21 @@ export function ImportResultsDialog({
 
   const bannerDuplicateTurnCount = duplicateTurnCount ?? 0;
 
+  const hasAnyDuplicates: boolean =
+    Boolean(
+      rows?.some(
+        (r) =>
+          (r.duplicateStatus && r.duplicateStatus !== 'none') ||
+          (typeof r.duplicateCount === 'number' && r.duplicateCount > 0),
+      ),
+    ) ||
+    Boolean(
+      combinedNote &&
+        ((combinedNote as any).duplicateStatus &&
+          (combinedNote as any).duplicateStatus !== 'none'),
+    ) ||
+    hasDuplicateTurns;
+
   return (
     <Dialog
       open={open}
@@ -688,9 +703,34 @@ export function ImportResultsDialog({
               <TableHead>
                 <TableRow>
                   <TableCell padding="checkbox" />
-                  <TableCell>Title</TableCell>
-                  <TableCell align="center">Dupes</TableCell>
-                  <TableCell align="center">Decision</TableCell>
+                  <TableCell
+                    sx={{
+                      width: '40%',
+                      minWidth: 260,
+                    }}
+                  >
+                    Title
+                  </TableCell>
+                  <TableCell
+                    align="center"
+                    sx={{
+                      width: 80,
+                      maxWidth: 90,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Dupes
+                  </TableCell>
+                  <TableCell
+                    align="center"
+                    sx={{
+                      width: hasAnyDuplicates ? 200 : 120,
+                      maxWidth: hasAnyDuplicates ? 220 : 140,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Decision
+                  </TableCell>
                   <TableCell>Subject</TableCell>
                   <TableCell>Topic</TableCell>
                 </TableRow>
@@ -720,7 +760,12 @@ export function ImportResultsDialog({
                         size="small"
                       />
                     </TableCell>
-                    <TableCell sx={{ minWidth: 240 }}>
+                    <TableCell
+                      sx={{
+                        width: '40%',
+                        minWidth: 260,
+                      }}
+                    >
                       <TextField
                         fullWidth
                         size="small"
@@ -733,7 +778,14 @@ export function ImportResultsDialog({
                         }
                       />
                     </TableCell>
-                    <TableCell align="center">
+                    <TableCell
+                      align="center"
+                      sx={{
+                        width: 80,
+                        maxWidth: 90,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
                       {(() => {
                         const status = row.duplicateStatus as DuplicateStatus;
                         const count = row.duplicateCount ?? 0;
@@ -781,7 +833,14 @@ export function ImportResultsDialog({
                         );
                       })()}
                     </TableCell>
-                    <TableCell align="center" sx={{ minWidth: 220 }}>
+                    <TableCell
+                      align="center"
+                      sx={{
+                        width: hasAnyDuplicates ? 200 : 120,
+                        maxWidth: hasAnyDuplicates ? 220 : 140,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
                       {row.selected && row.duplicateStatus !== 'none' && (
                         <ToggleButtonGroup
                           size="small"
