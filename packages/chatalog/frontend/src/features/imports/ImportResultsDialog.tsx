@@ -88,6 +88,7 @@ export function ImportResultsDialog({
 }: Props) {
   type ViewMode = 'simple' | 'markdown' | 'full';
   const VIEW_MODE_STORAGE_KEY = 'chatalog.importResults.viewMode';
+  const isSingleTurnImport = importedNotes.length === 1;
   const [importMode, setImportMode] = useState<'perTurn' | 'single'>('perTurn');
   const [selectedImportKey, setSelectedImportKey] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<'imported' | 'existing'>('imported');
@@ -611,32 +612,34 @@ export function ImportResultsDialog({
                 }),
             }}
           >
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="body2" sx={{ mb: 0.5 }}>
-                How would you like to import this file?
-              </Typography>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
-                <FormControlLabel
-                  control={
-                    <Radio
-                      checked={importMode === 'perTurn'}
-                      onChange={() => setImportMode('perTurn')}
-                    />
-                  }
-                  label="One note per turn"
-                />
-                <FormControlLabel
-                  control={
-                    <Radio
-                      checked={importMode === 'single'}
-                      onChange={() => setImportMode('single')}
-                      disabled={!combinedNote}
-                    />
-                  }
-                  label="Single note for entire conversation"
-                />
-              </Stack>
-            </Box>
+            {!isSingleTurnImport && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                  How would you like to import this file?
+                </Typography>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
+                  <FormControlLabel
+                    control={
+                      <Radio
+                        checked={importMode === 'perTurn'}
+                        onChange={() => setImportMode('perTurn')}
+                      />
+                    }
+                    label="One note per turn"
+                  />
+                  <FormControlLabel
+                    control={
+                      <Radio
+                        checked={importMode === 'single'}
+                        onChange={() => setImportMode('single')}
+                        disabled={!combinedNote}
+                      />
+                    }
+                    label="Single note for entire conversation"
+                  />
+                </Stack>
+              </Box>
+            )}
 
             <Typography variant="body2" sx={{ mb: 2 }}>
               Set default Subject/Topic labels below, then tweak each note as needed.
