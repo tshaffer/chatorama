@@ -44,9 +44,11 @@ function renderFrontMatter(meta: ExportNoteMetadata): string {
  * Helper: First non-empty line as title
  * ------------------------------------------------------------- */
 function firstLineTitle(s: string | undefined, fallback: string) {
-  const line = (s || '')
-    .split('\n')
-    .find(l => l.trim().length > 0)?.trim() ?? fallback;
+  const line =
+    (s || '')
+      .split('\n')
+      .find((l) => l.trim().length > 0)
+      ?.trim() ?? fallback;
   return line.length > 220 ? line.slice(0, 217) + '…' : line;
 }
 
@@ -125,9 +127,87 @@ function normalizeSuggestionsSection(md: string): string {
   return out;
 }
 
+/**
+ * Some renderers you care about (Chrome + Chatalog) correctly format code only when it uses
+ * your “double-fence” structure:
+ *
+ *   ```
+ *   ``js
+ *   code...
+ *   ``
+ *   ```
+ *
+ * Turndown often emits:
+ *
+ *   js
+ *
+ *   `code...`
+ *
+ * And inside lists it may indent the fence marker lines. This fixer:
+ * - converts the lang+inline-code pattern to the double-fence structure
+ * - removes indentation on fence marker lines so you get:
+ *     ```        (column 0)
+ *     ``json     (column 0)
+ *     ``         (column 0)
+ */
+function fixChatalogDoubleFences(md: string): string {
+  let out = md;
+
+  // (A) Unindent fence marker lines anywhere (outer ``` lines, inner ``lang lines, inner `` lines).
+  // Only touches lines that are *just* markers (optionally with trailing spaces).
+  out = out
+    .replace(/^[ \t]+(```)[ \t]*$/gm, '$1')
+    .replace(/^[ \t]+(``[A-Za-z][\w+-]{0,30})[ \t]*$/gm, '$1')
+    .replace(/^[ \t]+(``)[ \t]*$/gm, '$1');
+
+  // (B) Convert:
+  //   <lang>\n
+  //   \n
+  //   `<code>`\n
+  // into:
+  //   ```\n
+  //   ``<lang>\n
+  //   <code>\n
+  //   ``\n
+  //   ```
+  //
+  // IMPORTANT: We should not run this conversion inside an existing triple-backtick fenced block,
+  // to avoid accidental changes in code examples.
+  const parts: string[] = [];
+  const fenceRe = /```[\s\S]*?```/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+
+  const convertInText = (text: string) =>
+    text.replace(
+      /(^|\n)[ \t]*([A-Za-z][\w+-]{0,30})[ \t]*\n(?:[ \t]*\n)+[ \t]*`([\s\S]*?)`[ \t]*(?=\n|$)/g,
+      (_match: string, prefix: string, lang: string, code: string) => {
+        const body = String(code).replace(/^\n+|\n+$/g, '');
+        return `${prefix}\`\`\`\n\`\`${lang}\n${body}\n\`\`\n\`\`\``;
+      }
+    );
+
+  while ((m = fenceRe.exec(out)) !== null) {
+    parts.push(convertInText(out.slice(last, m.index)));
+    parts.push(m[0]); // keep existing fenced blocks intact
+    last = m.index + m[0].length;
+  }
+  parts.push(convertInText(out.slice(last)));
+  out = parts.join('');
+
+  // (C) Unindent again (conversion may have preserved some list indentation around the marker lines)
+  out = out
+    .replace(/^[ \t]+(```)[ \t]*$/gm, '$1')
+    .replace(/^[ \t]+(``[A-Za-z][\w+-]{0,30})[ \t]*$/gm, '$1')
+    .replace(/^[ \t]+(``)[ \t]*$/gm, '$1');
+
+  return out;
+}
+
 function renderResponseSection(md: string): string {
   const body = (md || '').trimEnd();
-  return `**Response**\n\n${normalizeSuggestionsSection(body)}`;
+  const fixed = fixChatalogDoubleFences(body);
+  return `**Response**\n\n${normalizeSuggestionsSection(fixed)}`;
 }
 
 /* -------------------------------------------------------------
@@ -139,27 +219,24 @@ const td = new TurndownService({
   bulletListMarker: '-',
   emDelimiter: '*',
   fence: '```',
-  strongDelimiter: '**'
+  strongDelimiter: '**',
 });
 td.use(gfm);
 
 /* -------------------------------------------------------------
- * ⭐ NEW RULE: Preserve <br> as real newline
- * Fixes newline stripping in ChatGPT prompts
+ * ⭐ Preserve <br> as real newline
  * ------------------------------------------------------------- */
 td.addRule('preserveBreaks', {
   filter: 'br',
-  replacement: () => '\n'
+  replacement: () => '\n',
 });
 
 /* -------------------------------------------------------------
- * Additional Turndown rules (unchanged from your version)
+ * Additional Turndown rules
  * ------------------------------------------------------------- */
-
 td.addRule('fencedCodeWithLang', {
   filter: (node: any) =>
-    node.nodeName === 'PRE' &&
-    (node as HTMLElement).firstElementChild?.nodeName === 'CODE',
+    node.nodeName === 'PRE' && (node as HTMLElement).firstElementChild?.nodeName === 'CODE',
   replacement: (_content: string, node: any) => {
     const codeEl = (node as HTMLElement).querySelector('code')!;
     const cls = codeEl.getAttribute('class') || '';
@@ -167,14 +244,12 @@ td.addRule('fencedCodeWithLang', {
     const lang = match ? match[1] : '';
     const code = codeEl.textContent || '';
     return `\n\`\`\`${lang}\n${code}\n\`\`\`\n`;
-  }
+  },
 });
 
 td.addRule('inlineCode', {
-  filter: (node: any) =>
-    node.nodeName === 'CODE' &&
-    node.parentElement?.nodeName !== 'PRE',
-  replacement: (content: string) => '`' + content + '`'
+  filter: (node: any) => node.nodeName === 'CODE' && node.parentElement?.nodeName !== 'PRE',
+  replacement: (content: string) => '`' + content + '`',
 });
 
 td.addRule('katexMath', {
@@ -189,7 +264,7 @@ td.addRule('katexMath', {
     const tex = ann?.textContent || '';
     const isBlock = el.classList.contains('katex-display');
     return isBlock ? `\n$$\n${tex}\n$$\n` : `$${tex}$`;
-  }
+  },
 });
 
 td.addRule('images', {
@@ -200,25 +275,28 @@ td.addRule('images', {
     const src = img.src || '';
     if (!src) return `![${alt}]`;
     return `![${alt}](${src})`;
-  }
+  },
 });
 
 td.addRule('blockquoteTight', {
   filter: 'blockquote',
   replacement: (content: string) =>
-    '\n' + content.split('\n').map((l: string) => (l ? '> ' + l : '>')).join('\n') + '\n'
+    '\n' +
+    content
+      .split('\n')
+      .map((l: string) => (l ? '> ' + l : '>'))
+      .join('\n') +
+    '\n',
 });
 
 function tidyMarkdown(md: string) {
-  return md
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]+$/gm, '');
+  return md.replace(/\n{3,}/g, '\n\n').replace(/[ \t]+$/gm, '');
 }
 
 function htmlToMarkdown(html: string): string {
   const container = document.createElement('div');
   container.innerHTML = html;
-  container.querySelectorAll('button,svg,nav,[data-testid="toolbar"]').forEach(n => n.remove());
+  container.querySelectorAll('button,svg,nav,[data-testid="toolbar"]').forEach((n) => n.remove());
   const md = td.turndown(container.innerHTML);
   return tidyMarkdown(md);
 }
@@ -269,8 +347,6 @@ function toPureMarkdownChatStyleFromHtml(
   turns.forEach((t, i) => {
     if (t.role === 'user') {
       promptCounter += 1;
-
-      // Use the raw text for prompts, so we preserve their original line structure.
       const sourceText = (t.text ?? '').replace(/\r\n/g, '\n');
       const titleText = firstLineTitle(sourceText, `Prompt ${promptCounter}`);
 
@@ -284,35 +360,26 @@ function toPureMarkdownChatStyleFromHtml(
   });
 
   if (includeToc) {
-    out.push(...buildToc(promptInfos.map(p => ({ idx: p.idx, title: p.title, anchor: p.anchor }))));
+    out.push(...buildToc(promptInfos.map((p) => ({ idx: p.idx, title: p.title, anchor: p.anchor }))));
   }
 
   const sep = '\n\n';
-
   let currentPromptNumber = 0;
+
   const blocks = turns.map((t, i) => {
     if (t.role === 'user') {
       currentPromptNumber += 1;
       const anchorId = `p-${currentPromptNumber}`;
 
-      // 🔑 For Prompts, use the raw text from the DOM (textContent),
-      // not the Turndown-processed HTML. This preserves any newline
-      // characters that come from ChatGPT's "pre-wrap" styling or
-      // Shift+Enter line breaks.
+      // For prompts, preserve raw text line structure.
       const bodyText = (t.text ?? '').replace(/\r\n/g, '\n').trimEnd();
-
       return renderPromptBlockquoteWithAnchor(bodyText, anchorId);
     }
 
-    // For non-user turns (assistant/system/tool), we still go through
-    // HTML → Markdown, since we want full formatting.
-    const bodyMd = htmlToMarkdown(htmlBodies[i] || '')
-      .replace(/\r\n/g, '\n')
-      .trimEnd();
+    // For non-user turns, go HTML → Markdown.
+    const bodyMd = htmlToMarkdown(htmlBodies[i] || '').replace(/\r\n/g, '\n').trimEnd();
 
-    if (t.role === 'assistant') {
-      return renderResponseSection(bodyMd);
-    }
+    if (t.role === 'assistant') return renderResponseSection(bodyMd);
 
     const label = t.role === 'system' ? 'System' : 'Tool';
     return `**${label}**\n\n${bodyMd}`;
@@ -343,16 +410,12 @@ export function buildMarkdownExport(
     includeToc?: boolean;
   }
 ): string {
-
-  console.log('buildMarkdownExport invoked');
-
-  const metaWithTitle: ExportNoteMetadata = opts?.title
-    ? { ...meta, chatTitle: opts.title }
-    : meta;
+  const metaWithTitle: ExportNoteMetadata = opts?.title ? { ...meta, chatTitle: opts.title } : meta;
 
   const htmlBodies = opts?.htmlBodies ?? [];
   const includeToc = opts?.includeToc ?? true;
 
+  // Fallback path when we don't have HTML bodies aligned with turns.
   if (!htmlBodies.length || htmlBodies.length !== turns.length) {
     const includeFrontMatter = opts?.includeFrontMatter ?? true;
 
@@ -369,8 +432,10 @@ export function buildMarkdownExport(
       '',
       metaWithTitle.pageUrl ? `Source: ${metaWithTitle.pageUrl}` : '',
       metaWithTitle.exportedAt ? `Exported: ${metaWithTitle.exportedAt}` : '',
-      ''
-    ].filter(Boolean).join('\n');
+      '',
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     const prompts: { idx: number; title: string; anchor: string }[] = [];
     let pc = 0;
@@ -400,21 +465,18 @@ export function buildMarkdownExport(
     });
 
     const body = blocks.join('\n\n');
-    const notes = opts?.freeformNotes?.trim() ? `\n\n## Notes\n\n${opts.freeformNotes.trim()}\n` : '';
+    const notes = opts?.freeformNotes?.trim()
+      ? `\n\n## Notes\n\n${opts.freeformNotes.trim()}\n`
+      : '';
     return `${metaLines}${toc.join('\n')}${body}${notes}${body.endsWith('\n') ? '' : '\n'}`;
   }
 
-  return toPureMarkdownChatStyleFromHtml(
-    metaWithTitle,
-    turns,
-    htmlBodies,
-    {
-      title: metaWithTitle.chatTitle,
-      includeFrontMatter: opts?.includeFrontMatter ?? true,
-      includeMetaRow: opts?.includeMetaRow ?? true,
-      hrBetween: true,
-      freeformNotes: opts?.freeformNotes,
-      includeToc,
-    }
-  );
+  return toPureMarkdownChatStyleFromHtml(metaWithTitle, turns, htmlBodies, {
+    title: metaWithTitle.chatTitle,
+    includeFrontMatter: opts?.includeFrontMatter ?? true,
+    includeMetaRow: opts?.includeMetaRow ?? true,
+    hrBetween: true,
+    freeformNotes: opts?.freeformNotes,
+    includeToc,
+  });
 }
