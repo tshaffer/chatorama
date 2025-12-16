@@ -98,6 +98,10 @@ export function ImportResultsDialog({
   const [panelWidths, setPanelWidths] = React.useState<[number, number, number]>(
     DEFAULT_PANEL_WIDTHS,
   );
+  const MARKDOWN_SPLIT_STORAGE_KEY = 'chatalog.importResults.markdownSplitLeft';
+  const DEFAULT_MARKDOWN_SPLIT_LEFT = 0.55; // left fraction
+  const [markdownSplitLeft, setMarkdownSplitLeft] = React.useState<number>(DEFAULT_MARKDOWN_SPLIT_LEFT);
+
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const [viewMode, setViewMode] = React.useState<ViewMode>('full');
 
@@ -215,6 +219,26 @@ export function ImportResultsDialog({
     subjectBulkUpdateRef.current = false;
     topicBulkUpdateRef.current = false;
   }, [rows, singleRows]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    try {
+      const raw = window.localStorage.getItem(MARKDOWN_SPLIT_STORAGE_KEY);
+      if (!raw) return;
+      const v = Number(raw);
+      if (Number.isFinite(v) && v > 0.1 && v < 0.9) setMarkdownSplitLeft(v);
+    } catch {
+      // ignore
+    }
+  }, [open]);
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem(MARKDOWN_SPLIT_STORAGE_KEY, String(markdownSplitLeft));
+    } catch {
+      // ignore
+    }
+  }, [markdownSplitLeft]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -409,15 +433,628 @@ export function ImportResultsDialog({
   const selectedRow =
     (activeRows.length ? activeRows : rows).find((r) => r.importKey === selectedImportKey) ?? null;
 
-  const panelHeight = '70vh';
   const panelSx = {
-    maxHeight: panelHeight,
+    flex: '1 1 auto',
     minHeight: 0,
-    overflowY: 'auto',
-    overflowX: 'hidden',
     display: 'flex',
     flexDirection: 'column',
+    overflow: 'hidden',
+    position: 'relative',
+    zIndex: 2,
   } as const;
+
+  const renderLeftPanelContent = () => (
+    <>
+      <Box sx={{ flex: '0 0 auto' }}>
+        {!isSingleTurnImport && (
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body2" sx={{ mb: 0.5 }}>
+              How would you like to import this file?
+            </Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
+              <FormControlLabel
+                control={
+                  <Radio
+                    checked={importMode === 'perTurn'}
+                    onChange={() => setImportMode('perTurn')}
+                  />
+                }
+                label="One note per turn"
+              />
+              <FormControlLabel
+                control={
+                  <Radio
+                    checked={importMode === 'single'}
+                    onChange={() => setImportMode('single')}
+                    disabled={!combinedNote}
+                  />
+                }
+                label="Single note for entire conversation"
+              />
+            </Stack>
+          </Box>
+        )}
+
+        <Typography variant="body2" sx={{ mb: 2 }}>
+          Set default Subject/Topic labels below, then tweak each note as needed.
+          You can either pick from the list or type new labels. Changing a
+          default updates any rows whose Subject/Topic you haven&apos;t manually
+          edited yet. Select a row to see the full note body in the preview panel.
+        </Typography>
+
+        <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+          <Autocomplete
+            freeSolo
+            options={subjectOptions}
+            value={defaultSubjectLabel}
+            onInputChange={(_e, newInputValue) =>
+              updateDefaultSubject(newInputValue ?? '')
+            }
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Default Subject label"
+                size="small"
+                sx={{ minWidth: 220 }}
+              />
+            )}
+          />
+
+          <Autocomplete
+            freeSolo
+            options={topicOptionsForSubject(defaultSubjectLabel, defaultTopicLabel)}
+            value={defaultTopicLabel}
+            onInputChange={(_e, newInputValue) =>
+              updateDefaultTopic(newInputValue ?? '')
+            }
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Default Topic label"
+                size="small"
+                sx={{ minWidth: 220 }}
+              />
+            )}
+          />
+        </Box>
+      </Box>
+
+      <Box
+        sx={{
+          flex: '1 1 auto',
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          pr: 1,
+        }}
+      >
+        <Table size="small" stickyHeader>
+          <TableHead>
+            <TableRow>
+              <TableCell padding="checkbox" />
+              <TableCell
+                sx={{
+                  width: '40%',
+                  minWidth: 260,
+                }}
+              >
+                Title
+              </TableCell>
+              <TableCell
+                align="center"
+                sx={{
+                  width: 80,
+                  maxWidth: 90,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Dupes
+              </TableCell>
+              <TableCell
+                align="center"
+                sx={{
+                  width: hasAnyDuplicates ? 200 : 120,
+                  maxWidth: hasAnyDuplicates ? 220 : 140,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Decision
+              </TableCell>
+              <TableCell>Subject</TableCell>
+              <TableCell>Topic</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {(activeRows.length ? activeRows : rows).map((row) => (
+              <TableRow
+                key={row.importKey}
+                hover
+                selected={selectedImportKey === row.importKey}
+                onClick={() => {
+                  setSelectedImportKey(row.importKey);
+                  setPreviewMode('imported');
+                }}
+                sx={{
+                  cursor: 'pointer',
+                  '&.Mui-selected': { backgroundColor: 'action.hover' },
+                }}
+              >
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    checked={row.selected}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) =>
+                      handleRowChange(row.importKey, { selected: e.target.checked })
+                    }
+                    size="small"
+                  />
+                </TableCell>
+                <TableCell
+                  sx={{
+                    width: '40%',
+                    minWidth: 260,
+                  }}
+                >
+                  <TextField
+                    fullWidth
+                    size="small"
+                    value={row.editedTitle}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) =>
+                      handleRowChange(row.importKey, {
+                        editedTitle: e.target.value,
+                      })
+                    }
+                  />
+                </TableCell>
+                <TableCell
+                  align="center"
+                  sx={{
+                    width: 80,
+                    maxWidth: 90,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {(() => {
+                    const status = row.duplicateStatus as DuplicateStatus;
+                    const count = row.duplicateCount ?? 0;
+                    const conflicts = row.conflicts ?? [];
+                    let IconComp: typeof CheckCircleOutlineIcon | typeof WarningAmberIcon | typeof ErrorOutlineIcon =
+                      CheckCircleOutlineIcon;
+                    let color: 'success' | 'warning' | 'error' = 'success';
+                    let label = 'No duplicate turns detected';
+                    if (status === 'partial') {
+                      IconComp = WarningAmberIcon;
+                      color = 'warning';
+                      label = `${count} duplicate turn${count === 1 ? '' : 's'} detected`;
+                    } else if (status === 'full') {
+                      IconComp = ErrorOutlineIcon;
+                      color = 'error';
+                      label = `All turns (${count}) are duplicates`;
+                    }
+                    return (
+                      <Tooltip
+                        title={
+                          <Box>
+                            <div>{label}</div>
+                            {conflicts.slice(0, 3).map((c, idx) => (
+                              <div key={idx}>
+                                {[c.existingSubjectName, c.existingTopicName, c.existingNoteTitle]
+                                  .filter(Boolean)
+                                  .join(' / ')}
+                              </div>
+                            ))}
+                            {conflicts.length > 3 && <div>…</div>}
+                          </Box>
+                        }
+                      >
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedImportKey(row.importKey);
+                            setPreviewMode('imported');
+                          }}
+                        >
+                          <IconComp color={color} fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    );
+                  })()}
+                </TableCell>
+                <TableCell
+                  align="center"
+                  sx={{
+                    width: hasAnyDuplicates ? 200 : 120,
+                    maxWidth: hasAnyDuplicates ? 220 : 140,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {row.selected && row.duplicateStatus !== 'none' && (
+                    <ToggleButtonGroup
+                      size="small"
+                      value={duplicateResolutions[row.importKey]?.decision ?? 'keepAsNew'}
+                      exclusive
+                      onChange={(_e, value: DuplicateDecision | null) => {
+                        if (!value) return;
+                        setNoteDecision(row.importKey, value);
+                      }}
+                    >
+                      <ToggleButton value="keepAsNew">Keep as new</ToggleButton>
+                      <ToggleButton value="replace">Replace existing</ToggleButton>
+                    </ToggleButtonGroup>
+                  )}
+                </TableCell>
+                <TableCell sx={{ minWidth: 220 }}>
+                  <Autocomplete
+                    freeSolo
+                    options={subjectOptions}
+                    value={row.subjectLabel}
+                    onChange={(_e, newValue) => {
+                      if (subjectBulkUpdateRef.current) return;
+                      handleRowChange(row.importKey, {
+                        subjectLabel: newValue ?? '',
+                        subjectTouched: true,
+                      });
+                    }}
+                    onInputChange={(_e, newInputValue) => {
+                      if (subjectBulkUpdateRef.current) return;
+                      handleRowChange(row.importKey, {
+                        subjectLabel: newInputValue ?? '',
+                        subjectTouched: true,
+                      });
+                    }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Subject"
+                        size="small"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    )}
+                  />
+                </TableCell>
+                <TableCell sx={{ minWidth: 220 }}>
+                  <Autocomplete
+                    freeSolo
+                    options={topicOptionsForSubject(row.subjectLabel, row.topicLabel)}
+                    value={row.topicLabel}
+                    onChange={(_e, newValue) => {
+                      if (topicBulkUpdateRef.current) return;
+                      handleRowChange(row.importKey, {
+                        topicLabel: newValue ?? '',
+                        topicTouched: true,
+                      });
+                    }}
+                    onInputChange={(_e, newInputValue) => {
+                      if (topicBulkUpdateRef.current) return;
+                      handleRowChange(row.importKey, {
+                        topicLabel: newInputValue ?? '',
+                        topicTouched: true,
+                      });
+                    }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Topic"
+                        size="small"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    )}
+                  />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Box>
+    </>
+  );
+
+  const renderMiddlePanelContent = () => (
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
+      <Typography
+        variant="subtitle2"
+        color="text.secondary"
+        sx={{
+          mb: 1,
+          flexShrink: 0,
+          position: 'sticky',
+          top: 0,
+          zIndex: (theme) => theme.zIndex.appBar - 1,
+          bgcolor: 'background.paper',
+          pt: 1,
+        }}
+      >
+        Existing hierarchy
+      </Typography>
+
+      <Box sx={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', pr: 1 }}>
+        {isLoadingSubjects ? (
+          <LinearProgress />
+        ) : subjectsWithTopics.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            No subjects yet.
+          </Typography>
+        ) : (
+          <SimpleTreeView
+            expandedItems={expandedItems}
+            onExpandedItemsChange={(_event, itemIds) => {
+              setExpandedItems(itemIds);
+              itemIds
+                .filter((id) => id.startsWith('topic-'))
+                .forEach((topicItemId) => {
+                  const topicId = topicItemId.replace('topic-', '');
+                  const parentSubject = subjectsWithTopics.find((s) =>
+                    (s.topics ?? []).some((t) => t.id === topicId),
+                  );
+                  if (parentSubject) {
+                    void ensureTopicNotes(parentSubject.id, topicId);
+                  }
+                });
+            }}
+            selectedItems={
+              previewMode === 'existing' && selectedExistingNoteId
+                ? `note-${selectedExistingNoteId}`
+                : undefined
+            }
+          >
+            {subjectsWithTopics.map((subject) => (
+              <TreeItem key={subject.id} itemId={`subject-${subject.id}`} label={subject.name}>
+                {(subject.topics ?? []).map((topic) => {
+                  const notes = topicNotesMap[topic.id] ?? [];
+                  const loading = loadingTopicNotes[topic.id];
+                  const error = topicErrors[topic.id];
+                  return (
+                    <TreeItem key={topic.id} itemId={`topic-${topic.id}`} label={topic.name}>
+                      {loading && (
+                        <TreeItem
+                          itemId={`topic-${topic.id}-loading`}
+                          label={
+                            <Typography variant="body2" color="text.secondary">
+                              Loading notes…
+                            </Typography>
+                          }
+                        />
+                      )}
+                      {error && (
+                        <TreeItem
+                          itemId={`topic-${topic.id}-error`}
+                          label={
+                            <Typography variant="body2" color="error">
+                              {error}
+                            </Typography>
+                          }
+                        />
+                      )}
+                      {!loading && !error && notes.length === 0 && (
+                        <TreeItem
+                          itemId={`topic-${topic.id}-empty`}
+                          label={
+                            <Typography variant="body2" color="text.secondary">
+                              No notes
+                            </Typography>
+                          }
+                        />
+                      )}
+                      {notes.map((note) => (
+                        <TreeItem
+                          key={note.id}
+                          itemId={`note-${note.id}`}
+                          label={
+                            <Box
+                              sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSelectedExistingNoteId(note.id);
+                                setPreviewMode('existing');
+                              }}
+                            >
+                              {note.title || 'Untitled note'}
+                            </Box>
+                          }
+                        />
+                      ))}
+                    </TreeItem>
+                  );
+                })}
+              </TreeItem>
+            ))}
+          </SimpleTreeView>
+        )}
+      </Box>
+    </Box>
+  );
+
+  const renderRightPanelContent = () => (
+    <>
+      <Box sx={{ flex: '0 0 auto' }}>
+        {previewMode === 'existing' && selectedExistingNoteId ? (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              mb: 2,
+            }}
+          >
+            <Typography variant="subtitle2" color="text.secondary">
+              Viewing existing note
+            </Typography>
+            <Button size="small" onClick={() => setPreviewMode('imported')}>
+              Return to imported note preview
+            </Button>
+          </Box>
+        ) : selectedRow ? (
+          <Typography variant="h6">
+            {selectedRow.title || 'Untitled imported note'}
+          </Typography>
+        ) : (
+          <Typography variant="subtitle1">Preview</Typography>
+        )}
+      </Box>
+      <Box sx={{ flex: '1 1 auto', minHeight: 0, pr: 2 }}>
+        <Box
+          sx={{
+            height: '100%',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            pr: 1,
+            '&::-webkit-scrollbar': { width: 12 },
+            '&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: 8 },
+            '&::-webkit-scrollbar-track': { backgroundColor: 'rgba(0,0,0,0.08)' },
+          }}
+        >
+          {previewMode === 'existing' && selectedExistingNoteId ? (
+            <>
+              {isFetchingExistingNote && (
+                <Typography variant="body2" color="text.secondary">
+                  Loading note…
+                </Typography>
+              )}
+              {existingNote && (
+                <>
+                  <Typography variant="h6" sx={{ mt: 1 }}>
+                    {existingNote.title || 'Untitled note'}
+                  </Typography>
+                  <Box sx={{ mt: 2 }}>
+                    <MarkdownBody markdown={existingNote.markdown} />
+                  </Box>
+                </>
+              )}
+            </>
+          ) : selectedRow ? (
+            <>
+              <Box sx={{ mt: 2 }}>
+                <MarkdownBody markdown={selectedRow.body} />
+              </Box>
+              {selectedRow.duplicateStatus !== 'none' && selectedRow.conflicts?.length > 0 && (
+                <Box sx={{ mt: 3 }}>
+                  <Typography variant="h6" sx={{ mb: 1 }}>
+                    Turn Conflicts
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                    These turns in the imported note also appear in existing notes. Choose what to do per turn.
+                  </Typography>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Turn</TableCell>
+                        <TableCell>Existing Note</TableCell>
+                        <TableCell>Action</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {selectedRow.conflicts.map((conflict) => {
+                        const noteId = selectedRow.importKey;
+                        const resolution = duplicateResolutions[noteId];
+                        const action =
+                          resolution?.turnActions?.[conflict.turnIndex] ?? 'useImported';
+                        const disabled =
+                          (duplicateResolutions[noteId]?.decision ?? 'keepAsNew') !== 'replace';
+                        const existingText = [
+                          conflict.existingSubjectName,
+                          conflict.existingTopicName,
+                          conflict.existingNoteTitle,
+                        ]
+                          .filter(Boolean)
+                          .join(' / ');
+                        return (
+                          <TableRow key={conflict.turnIndex}>
+                            <TableCell>{conflict.turnIndex}</TableCell>
+                            <TableCell>{existingText || conflict.existingNoteId}</TableCell>
+                            <TableCell>
+                              <ToggleButtonGroup
+                                size="small"
+                                value={action}
+                                exclusive
+                                disabled={disabled}
+                                onChange={(_, value) => {
+                                  if (!value) return;
+                                  setTurnAction(noteId, conflict.turnIndex, value);
+                                }}
+                              >
+                                <ToggleButton value="useImported">Use imported</ToggleButton>
+                                <ToggleButton value="useExisting">Use existing</ToggleButton>
+                              </ToggleButtonGroup>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </Box>
+              )}
+            </>
+          ) : (
+            <>
+              <Typography variant="body2" color="text.secondary">
+                Select an imported row to see its content here.
+              </Typography>
+            </>
+          )}
+        </Box>
+      </Box>
+    </>
+  );
+
+  const [markdownDrag, setMarkdownDrag] = React.useState<{
+    active: boolean;
+    startX: number;
+    startLeft: number;
+  }>({ active: false, startX: 0, startLeft: DEFAULT_MARKDOWN_SPLIT_LEFT });
+
+  const MIN_MARKDOWN_FRACTION = 0.2;
+
+  const handleMarkdownDividerMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
+    event.preventDefault();
+    setMarkdownDrag({
+      active: true,
+      startX: event.clientX,
+      startLeft: markdownSplitLeft,
+    });
+  };
+
+  const handleWindowMouseMoveMarkdown = React.useCallback(
+    (event: MouseEvent) => {
+      if (!markdownDrag.active || !containerRef.current) return;
+
+      const rect = containerRef.current.getBoundingClientRect();
+      const totalWidth = rect.width || 1;
+      const deltaX = event.clientX - markdownDrag.startX;
+      const deltaFrac = deltaX / totalWidth;
+
+      let nextLeft = markdownDrag.startLeft + deltaFrac;
+      nextLeft = Math.max(MIN_MARKDOWN_FRACTION, Math.min(nextLeft, 1 - MIN_MARKDOWN_FRACTION));
+      setMarkdownSplitLeft(nextLeft);
+    },
+    [markdownDrag.active, markdownDrag.startLeft, markdownDrag.startX, markdownSplitLeft],
+  );
+
+  const handleWindowMouseUpMarkdown = React.useCallback(() => {
+    if (markdownDrag.active) setMarkdownDrag((p) => ({ ...p, active: false }));
+  }, [markdownDrag.active]);
+
+  React.useEffect(() => {
+    if (!markdownDrag.active) return;
+
+    window.addEventListener('mousemove', handleWindowMouseMoveMarkdown);
+    window.addEventListener('mouseup', handleWindowMouseUpMarkdown);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMoveMarkdown);
+      window.removeEventListener('mouseup', handleWindowMouseUpMarkdown);
+    };
+  }, [markdownDrag.active, handleWindowMouseMoveMarkdown, handleWindowMouseUpMarkdown]);
 
   type DividerIndex = 0 | 1;
   const MIN_PANEL_FRACTION = 0.15;
@@ -551,8 +1188,8 @@ export function ImportResultsDialog({
     ) ||
     Boolean(
       combinedNote &&
-        ((combinedNote as any).duplicateStatus &&
-          (combinedNote as any).duplicateStatus !== 'none'),
+      ((combinedNote as any).duplicateStatus &&
+        (combinedNote as any).duplicateStatus !== 'none'),
     ) ||
     hasDuplicateTurns;
 
@@ -566,11 +1203,25 @@ export function ImportResultsDialog({
         sx: {
           width: '95vw',
           maxWidth: 1700,
+          height: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
         },
       }}
     >
       <DialogTitle>Review Imported Notes</DialogTitle>
-      <DialogContent dividers sx={{ p: 2 }}>
+      <DialogContent
+        dividers
+        sx={{
+          p: 2,
+          flex: '1 1 auto',
+          minHeight: 0,
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         {hasDuplicateTurns && (
           <Alert severity="warning" sx={{ mb: 2 }}>
             This import contains {bannerDuplicateTurnCount} turn
@@ -609,608 +1260,135 @@ export function ImportResultsDialog({
             alignItems: 'stretch',
             minHeight: 0,
             width: '100%',
+            flex: '1 1 auto',
+            overflow: 'hidden',
           }}
         >
-          {/* Left: existing import UI */}
-          <Box
-            sx={{
-              ...panelSx,
-              ...(viewMode === 'full'
-                ? {
-                  flex: '0 0 auto',
-                  flexBasis: `${panelWidths[0] * 100}%`,
-                  pr: 1,
-                }
-                : {
-                  flex: 1,
-                  pr: viewMode === 'markdown' ? 1 : 0,
-                }),
-            }}
-          >
-            {!isSingleTurnImport && (
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" sx={{ mb: 0.5 }}>
-                  How would you like to import this file?
-                </Typography>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
-                  <FormControlLabel
-                    control={
-                      <Radio
-                        checked={importMode === 'perTurn'}
-                        onChange={() => setImportMode('perTurn')}
-                      />
-                    }
-                    label="One note per turn"
-                  />
-                  <FormControlLabel
-                    control={
-                      <Radio
-                        checked={importMode === 'single'}
-                        onChange={() => setImportMode('single')}
-                        disabled={!combinedNote}
-                      />
-                    }
-                    label="Single note for entire conversation"
-                  />
-                </Stack>
-              </Box>
-            )}
-
-            <Typography variant="body2" sx={{ mb: 2 }}>
-              Set default Subject/Topic labels below, then tweak each note as needed.
-              You can either pick from the list or type new labels. Changing a
-              default updates any rows whose Subject/Topic you haven&apos;t manually
-              edited yet. Select a row to see the full note body in the preview panel.
-            </Typography>
-
-            <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
-              <Autocomplete
-                freeSolo
-                options={subjectOptions}
-                value={defaultSubjectLabel}
-                onInputChange={(_e, newInputValue) =>
-                  updateDefaultSubject(newInputValue ?? '')
-                }
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Default Subject label"
-                    size="small"
-                    sx={{ minWidth: 220 }}
-                  />
-                )}
-              />
-
-              <Autocomplete
-                freeSolo
-                options={topicOptionsForSubject(defaultSubjectLabel, defaultTopicLabel)}
-                value={defaultTopicLabel}
-                onInputChange={(_e, newInputValue) =>
-                  updateDefaultTopic(newInputValue ?? '')
-                }
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Default Topic label"
-                    size="small"
-                    sx={{ minWidth: 220 }}
-                  />
-                )}
-              />
+          {viewMode === 'simple' && (
+            <Box sx={{ ...panelSx, flex: '1 1 auto', pr: 0 }}>
+              {renderLeftPanelContent()}
             </Box>
-
-            <Table size="small" stickyHeader>
-              <TableHead>
-                <TableRow>
-                  <TableCell padding="checkbox" />
-                  <TableCell
-                    sx={{
-                      width: '40%',
-                      minWidth: 260,
-                    }}
-                  >
-                    Title
-                  </TableCell>
-                  <TableCell
-                    align="center"
-                    sx={{
-                      width: 80,
-                      maxWidth: 90,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    Dupes
-                  </TableCell>
-                  <TableCell
-                    align="center"
-                    sx={{
-                      width: hasAnyDuplicates ? 200 : 120,
-                      maxWidth: hasAnyDuplicates ? 220 : 140,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    Decision
-                  </TableCell>
-                  <TableCell>Subject</TableCell>
-                  <TableCell>Topic</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {(activeRows.length ? activeRows : rows).map((row) => (
-                  <TableRow
-                    key={row.importKey}
-                    hover
-                    selected={selectedImportKey === row.importKey}
-                    onClick={() => {
-                      setSelectedImportKey(row.importKey);
-                      setPreviewMode('imported');
-                    }}
-                    sx={{
-                      cursor: 'pointer',
-                      '&.Mui-selected': { backgroundColor: 'action.hover' },
-                    }}
-                  >
-                    <TableCell padding="checkbox">
-                      <Checkbox
-                        checked={row.selected}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) =>
-                          handleRowChange(row.importKey, { selected: e.target.checked })
-                        }
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell
-                      sx={{
-                        width: '40%',
-                        minWidth: 260,
-                      }}
-                    >
-                      <TextField
-                        fullWidth
-                        size="small"
-                        value={row.editedTitle}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) =>
-                          handleRowChange(row.importKey, {
-                            editedTitle: e.target.value,
-                          })
-                        }
-                      />
-                    </TableCell>
-                    <TableCell
-                      align="center"
-                      sx={{
-                        width: 80,
-                        maxWidth: 90,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {(() => {
-                        const status = row.duplicateStatus as DuplicateStatus;
-                        const count = row.duplicateCount ?? 0;
-                        const conflicts = row.conflicts ?? [];
-                        let IconComp: typeof CheckCircleOutlineIcon | typeof WarningAmberIcon | typeof ErrorOutlineIcon =
-                          CheckCircleOutlineIcon;
-                        let color: 'success' | 'warning' | 'error' = 'success';
-                        let label = 'No duplicate turns detected';
-                        if (status === 'partial') {
-                          IconComp = WarningAmberIcon;
-                          color = 'warning';
-                          label = `${count} duplicate turn${count === 1 ? '' : 's'} detected`;
-                        } else if (status === 'full') {
-                          IconComp = ErrorOutlineIcon;
-                          color = 'error';
-                          label = `All turns (${count}) are duplicates`;
-                        }
-                        return (
-                          <Tooltip
-                            title={
-                              <Box>
-                                <div>{label}</div>
-                                {conflicts.slice(0, 3).map((c, idx) => (
-                                  <div key={idx}>
-                                    {[c.existingSubjectName, c.existingTopicName, c.existingNoteTitle]
-                                      .filter(Boolean)
-                                      .join(' / ')}
-                                  </div>
-                                ))}
-                                {conflicts.length > 3 && <div>…</div>}
-                              </Box>
-                            }
-                          >
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedImportKey(row.importKey);
-                                setPreviewMode('imported');
-                              }}
-                            >
-                              <IconComp color={color} fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        );
-                      })()}
-                    </TableCell>
-                    <TableCell
-                      align="center"
-                      sx={{
-                        width: hasAnyDuplicates ? 200 : 120,
-                        maxWidth: hasAnyDuplicates ? 220 : 140,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {row.selected && row.duplicateStatus !== 'none' && (
-                        <ToggleButtonGroup
-                          size="small"
-                          value={duplicateResolutions[row.importKey]?.decision ?? 'keepAsNew'}
-                          exclusive
-                          onChange={(_e, value: DuplicateDecision | null) => {
-                            if (!value) return;
-                            setNoteDecision(row.importKey, value);
-                          }}
-                        >
-                          <ToggleButton value="keepAsNew">Keep as new</ToggleButton>
-                          <ToggleButton value="replace">Replace existing</ToggleButton>
-                        </ToggleButtonGroup>
-                      )}
-                    </TableCell>
-                    <TableCell sx={{ minWidth: 220 }}>
-                      <Autocomplete
-                        freeSolo
-                        options={subjectOptions}
-                        value={row.subjectLabel}
-                        onChange={(_e, newValue) => {
-                          if (subjectBulkUpdateRef.current) return;
-                          handleRowChange(row.importKey, {
-                            subjectLabel: newValue ?? '',
-                            subjectTouched: true,
-                          });
-                        }}
-                        onInputChange={(_e, newInputValue) => {
-                          if (subjectBulkUpdateRef.current) return;
-                          handleRowChange(row.importKey, {
-                            subjectLabel: newInputValue ?? '',
-                            subjectTouched: true,
-                          });
-                        }}
-                        renderInput={(params) => (
-                          <TextField
-                            {...params}
-                            label="Subject"
-                            size="small"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        )}
-                      />
-                    </TableCell>
-                    <TableCell sx={{ minWidth: 220 }}>
-                      <Autocomplete
-                        freeSolo
-                        options={topicOptionsForSubject(row.subjectLabel, row.topicLabel)}
-                        value={row.topicLabel}
-                        onChange={(_e, newValue) => {
-                          if (topicBulkUpdateRef.current) return;
-                          handleRowChange(row.importKey, {
-                            topicLabel: newValue ?? '',
-                            topicTouched: true,
-                          });
-                        }}
-                        onInputChange={(_e, newInputValue) => {
-                          if (topicBulkUpdateRef.current) return;
-                          handleRowChange(row.importKey, {
-                            topicLabel: newInputValue ?? '',
-                            topicTouched: true,
-                          });
-                        }}
-                        renderInput={(params) => (
-                          <TextField
-                            {...params}
-                            label="Topic"
-                            size="small"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        )}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Box>
-
-          {/* Divider between left and middle – only in Full mode */}
-          {viewMode === 'full' && (
-            <Box
-              onMouseDown={(e) => handleDividerMouseDown(e, 0)}
-              sx={{
-                width: 10,
-                cursor: 'col-resize',
-                flexShrink: 0,
-                alignSelf: 'stretch',
-                bgcolor: 'divider',
-                opacity: 0.6,
-                transition: 'opacity 120ms ease',
-                '&:hover': { opacity: 1 },
-                '&:active': { opacity: 1 },
-              }}
-            />
           )}
 
-          {/* Middle: hierarchy */}
-          <Box
-            sx={{
-              ...panelSx,
-              ...(viewMode === 'full'
-                ? {
+          {viewMode === 'markdown' && (
+            <>
+              <Box
+                sx={{
+                  ...panelSx,
                   flex: '0 0 auto',
-                  flexBasis: `${panelWidths[1] * 100}%`,
-                  px: 1,
-                }
-                : {
-                  display: 'none',
-                }),
-            }}
-          >
-            <Typography variant="subtitle1" sx={{ mb: 1 }}>
-              Existing Hierarchy
-            </Typography>
-            {isLoadingSubjects ? (
-              <LinearProgress />
-            ) : subjectsWithTopics.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No subjects yet.
-              </Typography>
-            ) : (
-              <SimpleTreeView
-                expandedItems={expandedItems}
-                expansionTrigger="iconContainer"
-                onExpandedItemsChange={(_event, itemIds) => {
-                  setExpandedItems(itemIds);
-                  itemIds.forEach((id) => {
-                    if (id.startsWith('topic:')) {
-                      const topicId = id.replace('topic:', '');
-                      const subject = subjectsWithTopics.find((s) =>
-                        s.topics?.some((t) => t.id === topicId),
-                      );
-                      const topic = subject?.topics?.find((t) => t.id === topicId);
-                      if (subject && topic) {
-                        void ensureTopicNotes(subject.id, topic.id);
-                      }
-                    }
-                  });
-                }}
-                onItemClick={(_event, itemId) => {
-                  if (itemId.startsWith('note:')) {
-                    const noteId = itemId.replace('note:', '');
-                    setSelectedExistingNoteId(noteId);
-                    setPreviewMode('existing');
-                  }
+                  flexBasis: `${markdownSplitLeft * 100}%`,
+                  minWidth: 360,
+                  minHeight: 0,
+                  overflow: 'hidden',
+                  pr: 2,
                 }}
               >
-                {subjectsWithTopics.map((s) => (
-                  <TreeItem key={s.id} itemId={`subject:${s.id}`} label={s.name}>
-                    {(s.topics ?? []).map((t) => {
-                      const notes = topicNotesMap[t.id] || [];
-                      const isLoading = loadingTopicNotes[t.id];
-                      const topicError = topicErrors[t.id];
+                {renderLeftPanelContent()}
+              </Box>
 
-                      return (
-                        <TreeItem key={t.id} itemId={`topic:${t.id}`} label={t.name}>
-                          {isLoading && (
-                            <TreeItem
-                              itemId={`topic-loading:${t.id}`}
-                              label="Loading notes…"
-                            />
-                          )}
-                          {topicError && (
-                            <TreeItem
-                              itemId={`topic-error:${t.id}`}
-                              label={`Error: ${topicError}`}
-                            />
-                          )}
-                          {notes.map((n) => {
-                            // Prefer summary, fall back to markdown if present
-                            const rawSummary = (n as any).summary as string | undefined;
-                            const rawMarkdown = (n as any).markdown as string | undefined;
-                            const baseText =
-                              rawSummary && rawSummary.trim().length > 0
-                                ? rawSummary
-                                : rawMarkdown || '';
+              <Box
+                onMouseDown={handleMarkdownDividerMouseDown}
+                sx={{
+                  width: 6,
+                  cursor: 'col-resize',
+                  flexShrink: 0,
+                  alignSelf: 'stretch',
+                  bgcolor: 'divider',
+                  opacity: 0.6,
+                  transition: 'opacity 120ms ease',
+                  '&:hover': { opacity: 1 },
+                  '&:active': { opacity: 1 },
+                  position: 'relative',
+                  zIndex: 1,
+                }}
+              />
 
-                            const snippet =
-                              baseText.length > 0 ? baseText.slice(0, 160) : '';
-
-                            const handleNoteClick: React.MouseEventHandler<HTMLSpanElement> = (
-                              event,
-                            ) => {
-                              event.stopPropagation();
-                              setSelectedExistingNoteId(n.id);
-                              setPreviewMode('existing');
-                            };
-
-                            return (
-                              <TreeItem
-                                key={n.id}
-                                itemId={`note:${n.id}`}
-                                label={
-                                  snippet ? (
-                                    <Tooltip title={snippet} arrow placement="right">
-                                      <span
-                                        onClick={handleNoteClick}
-                                        style={{ cursor: 'pointer' }}
-                                      >
-                                        {n.title || 'Untitled note'}
-                                      </span>
-                                    </Tooltip>
-                                  ) : (
-                                    <span
-                                      onClick={handleNoteClick}
-                                      style={{ cursor: 'pointer' }}
-                                    >
-                                      {n.title || 'Untitled note'}
-                                    </span>
-                                  )
-                                }
-                              />
-                            );
-                          })}
-                        </TreeItem>
-                      );
-                    })}
-                  </TreeItem>
-                ))}
-              </SimpleTreeView>
-            )}
-          </Box>
-
-          {/* Divider between middle and right – only in Full mode */}
-          {viewMode === 'full' && (
-            <Box
-              onMouseDown={(e) => handleDividerMouseDown(e, 1)}
-              sx={{
-                width: 10,
-                cursor: 'col-resize',
-                flexShrink: 0,
-                alignSelf: 'stretch',
-                bgcolor: 'divider',
-                opacity: 0.6,
-                transition: 'opacity 120ms ease',
-                '&:hover': { opacity: 1 },
-                '&:active': { opacity: 1 },
-              }}
-            />
+              <Box
+                sx={{
+                  ...panelSx,
+                  flex: '0 0 auto',
+                  flexBasis: `${(1 - markdownSplitLeft) * 100}%`,
+                  minWidth: 0,
+                  minHeight: 0,
+                  overflow: 'hidden',
+                  pl: 2,
+                }}
+              >
+                {renderRightPanelContent()}
+              </Box>
+            </>
           )}
 
-          {/* Right: preview */}
-          <Box
-            sx={{
-              ...panelSx,
-              ...(viewMode === 'full'
-                ? {
+          {viewMode === 'full' && (
+            <>
+              <Box
+                sx={{
+                  ...panelSx,
+                  flex: '0 0 auto',
+                  flexBasis: `${panelWidths[0] * 100}%`,
+                  pr: 2,
+                }}
+              >
+                {renderLeftPanelContent()}
+              </Box>
+
+              <Box
+                onMouseDown={(e) => handleDividerMouseDown(e, 0)}
+                sx={{
+                  width: 6,
+                  cursor: 'col-resize',
+                  flexShrink: 0,
+                  alignSelf: 'stretch',
+                  bgcolor: 'divider',
+                  opacity: 0.6,
+                  transition: 'opacity 120ms ease',
+                  '&:hover': { opacity: 1 },
+                  '&:active': { opacity: 1 },
+                  position: 'relative',
+                  zIndex: 1,
+                }}
+              />
+
+              <Box
+                sx={{
+                  ...panelSx,
+                  flex: '0 0 auto',
+                  flexBasis: `${panelWidths[1] * 100}%`,
+                  px: 2,
+                }}
+              >
+                {renderMiddlePanelContent()}
+              </Box>
+
+              <Box
+                onMouseDown={(e) => handleDividerMouseDown(e, 1)}
+                sx={{
+                  width: 6,
+                  cursor: 'col-resize',
+                  flexShrink: 0,
+                  alignSelf: 'stretch',
+                  bgcolor: 'divider',
+                  opacity: 0.6,
+                  transition: 'opacity 120ms ease',
+                  '&:hover': { opacity: 1 },
+                  '&:active': { opacity: 1 },
+                  position: 'relative',
+                  zIndex: 1,
+                }}
+              />
+
+              <Box
+                sx={{
+                  ...panelSx,
                   flex: '0 0 auto',
                   flexBasis: `${panelWidths[2] * 100}%`,
-                  pl: 1,
-                }
-                : viewMode === 'markdown'
-                  ? {
-                    flex: 1,
-                    pl: 1,
-                  }
-                  : {
-                    display: 'none',
-                  }),
-            }}
-          >
-            {previewMode === 'existing' && selectedExistingNoteId ? (
-              <>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    mb: 2,
-                  }}
-                >
-                  <Typography variant="subtitle2" color="text.secondary">
-                    Viewing existing note
-                  </Typography>
-                  <Button size="small" onClick={() => setPreviewMode('imported')}>
-                    Return to imported note preview
-                  </Button>
-                </Box>
-                {isFetchingExistingNote && (
-                  <Typography variant="body2" color="text.secondary">
-                    Loading note…
-                  </Typography>
-                )}
-                {existingNote && (
-                  <>
-                    <Typography variant="h6">
-                      {existingNote.title || 'Untitled note'}
-                    </Typography>
-                    <Box sx={{ mt: 2 }}>
-                      <MarkdownBody markdown={existingNote.markdown} />
-                    </Box>
-                  </>
-                )}
-              </>
-            ) : selectedRow ? (
-              <>
-                <Typography variant="h6">
-                  {selectedRow.title || 'Untitled imported note'}
-                </Typography>
-                <Box sx={{ mt: 2 }}>
-                  <MarkdownBody markdown={selectedRow.body} />
-                </Box>
-                {selectedRow.duplicateStatus !== 'none' && selectedRow.conflicts?.length > 0 && (
-                  <Box sx={{ mt: 3 }}>
-                    <Typography variant="h6" sx={{ mb: 1 }}>
-                      Turn Conflicts
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                      These turns in the imported note also appear in existing notes. Choose what to do per turn.
-                    </Typography>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Turn</TableCell>
-                          <TableCell>Existing Note</TableCell>
-                          <TableCell>Action</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {selectedRow.conflicts.map((conflict) => {
-                          const noteId = selectedRow.importKey;
-                          const resolution = duplicateResolutions[noteId];
-                          const action =
-                            resolution?.turnActions?.[conflict.turnIndex] ?? 'useImported';
-                          const disabled =
-                            (duplicateResolutions[noteId]?.decision ?? 'keepAsNew') !== 'replace';
-                          const existingText = [
-                            conflict.existingSubjectName,
-                            conflict.existingTopicName,
-                            conflict.existingNoteTitle,
-                          ]
-                            .filter(Boolean)
-                            .join(' / ');
-                          return (
-                            <TableRow key={conflict.turnIndex}>
-                              <TableCell>{conflict.turnIndex}</TableCell>
-                              <TableCell>{existingText || conflict.existingNoteId}</TableCell>
-                              <TableCell>
-                                <ToggleButtonGroup
-                                  size="small"
-                                  value={action}
-                                  exclusive
-                                  disabled={disabled}
-                                  onChange={(_, value) => {
-                                    if (!value) return;
-                                    setTurnAction(noteId, conflict.turnIndex, value);
-                                  }}
-                                >
-                                  <ToggleButton value="useImported">Use imported</ToggleButton>
-                                  <ToggleButton value="useExisting">Use existing</ToggleButton>
-                                </ToggleButtonGroup>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </Box>
-                )}
-              </>
-            ) : (
-              <>
-                <Typography variant="subtitle1">Preview</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Select an imported row to see its content here.
-                </Typography>
-              </>
-            )}
-          </Box>
+                  pl: 2,
+                }}
+              >
+                {renderRightPanelContent()}
+              </Box>
+            </>
+          )}
         </Box>
       </DialogContent>
       <DialogActions>
