@@ -266,6 +266,7 @@ router.post('/:id/convert', async (req, res) => {
       links: [],
       backlinks: [],
       sources: [{ type: 'manual' as const }],
+      importedAt: new Date(),
     });
 
     await quick.deleteOne();

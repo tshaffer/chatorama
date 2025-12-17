@@ -47,9 +47,11 @@ import {
   useGetSubjectsWithTopicsQuery,
   useCreateSubjectMutation,
   useCreateTopicMutation,
+  resolveSubjectAndTopicNames,
 } from '../subjects/subjectsApi';
 import Autocomplete from '@mui/material/Autocomplete';
 import { useGetAllTopicsQuery } from '../topics/topicsApi';
+import NotePropertiesDialog from './NotePropertiesDialog';
 
 // ---------------- helpers ----------------
 
@@ -408,6 +410,7 @@ export default function NoteEditor({
   const [subjectLabel, setSubjectLabel] = useState('');
   const [topicLabel, setTopicLabel] = useState('');
   const [dirty, setDirty] = useState(false);
+  const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [snack, setSnack] = useState<{
     open: boolean;
     msg: string;
@@ -432,6 +435,16 @@ export default function NoteEditor({
         (t) => t.id === (note as Note | undefined)?.topicId,
       ),
     [topics, note],
+  );
+
+  const { subjectName: resolvedSubjectName, topicName: resolvedTopicName } = useMemo(
+    () =>
+      resolveSubjectAndTopicNames(
+        subjectsWithTopics as (Subject & { topics: Topic[] })[] | undefined,
+        (note as Note | undefined)?.subjectId,
+        (note as Note | undefined)?.topicId,
+      ),
+    [subjectsWithTopics, note],
   );
 
   // Subject/topic editing helpers
@@ -973,6 +986,18 @@ export default function NoteEditor({
               </Button>
             </span>
           </Tooltip>
+          <Tooltip title="View note properties">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => setPropertiesOpen(true)}
+                disabled={isLoading}
+              >
+                Properties
+              </Button>
+            </span>
+          </Tooltip>
           <Tooltip title="Delete this note">
             <span>
               <Button
@@ -1438,6 +1463,14 @@ export default function NoteEditor({
           {renderPreviewContent()}
         </Box>
       )}
+
+      <NotePropertiesDialog
+        open={propertiesOpen}
+        onClose={() => setPropertiesOpen(false)}
+        note={note as Note | undefined}
+        subjectName={resolvedSubjectName || noteSubject?.name}
+        topicName={resolvedTopicName || noteTopic?.name}
+      />
 
       <Snackbar
         open={snack.open}

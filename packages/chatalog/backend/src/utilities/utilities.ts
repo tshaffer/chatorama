@@ -11,9 +11,22 @@ export function toPreview(doc: any): NotePreview {
     summary: doc.summary,
     status: doc.status,
     tags: doc.tags ?? [],
+    subjectId: doc.subjectId ? String(doc.subjectId) : undefined,
+    topicId: doc.topicId ? String(doc.topicId) : undefined,
+    createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : doc.createdAt,
+    importedAt: doc.importedAt instanceof Date ? doc.importedAt.toISOString() : doc.importedAt,
     updatedAt: (doc.updatedAt instanceof Date
       ? doc.updatedAt.toISOString()
       : doc.updatedAt ?? new Date().toISOString()),
+    sources: doc.sources,
+    chatworthyNoteId: doc.chatworthyNoteId,
+    chatworthyChatId: doc.chatworthyChatId,
+    chatworthyChatTitle: doc.chatworthyChatTitle,
+    chatworthyFileName: doc.chatworthyFileName,
+    chatworthyTurnIndex: doc.chatworthyTurnIndex,
+    chatworthyTotalTurns: doc.chatworthyTotalTurns,
+    sourceType: doc.sourceType,
+    sourceChatId: doc.sourceChatId,
   };
 }
 
@@ -53,4 +66,3 @@ export async function dedupeSlug(baseSlug: string, topicId?: string): Promise<st
     slug = `${baseSlug}-${i++}`;
   }
 }
-

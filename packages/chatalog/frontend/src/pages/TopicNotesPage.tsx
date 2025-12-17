@@ -25,6 +25,7 @@ import {
   useGetTopicNotesWithRelationsQuery,
   useReorderNotesInTopicMutation,
   useDeleteNoteMutation,
+  useGetNoteQuery,
 } from '../features/notes/notesApi';
 import {
   useGetImportBatchesQuery,
@@ -32,7 +33,11 @@ import {
   useDeleteImportBatchMutation,
   useDeleteAllImportBatchesMutation,
 } from '../features/imports/importsApi';
-import { useGetTopicRelationsSummaryQuery } from '../features/subjects/subjectsApi';
+import {
+  useGetTopicRelationsSummaryQuery,
+  useGetSubjectsWithTopicsQuery,
+  resolveSubjectAndTopicNames,
+} from '../features/subjects/subjectsApi';
 import ReorderableNotesList from '../features/notes/ReorderableNotesList';
 import MoveNotesDialog from '../features/notes/MoveNotesDialog';
 import MergeNotesDialog from '../features/notes/MergeNotesDialog';
@@ -42,6 +47,7 @@ import { NoteStatusIndicator } from '../features/notes/NoteStatusIndicator';
 import { selectNoteStatusVisibility } from '../features/settings/settingsSlice';
 import ConfirmIconButton from '../components/ConfirmIconButton';
 import DeleteIcon from '@mui/icons-material/Delete';
+import NotePropertiesDialog from '../features/notes/NotePropertiesDialog';
 
 // Extract leading ObjectId from "<id>" or "<id>-<slug>"
 const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
@@ -67,14 +73,17 @@ export default function TopicNotesPage() {
   const [mergeOpen, setMergeOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const [propertiesNoteId, setPropertiesNoteId] = useState<string | null>(null);
 
   useEffect(() => {
     setSelectedBatchId(null);
     setSelectedIds(new Set());
+    setPropertiesNoteId(null);
   }, [subjectSlug, topicSlug]);
 
   useEffect(() => {
     setSelectedIds(new Set());
+    setPropertiesNoteId(null);
   }, [selectedBatchId]);
 
   const clearSelection = () => setSelectedIds(new Set());
@@ -124,6 +133,8 @@ export default function TopicNotesPage() {
   } = useGetTopicRelationsSummaryQuery(
     subjectId && topicId ? { subjectId, topicId } : (skipToken as any),
   );
+  const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery();
+  const { data: propertiesNote } = useGetNoteQuery(propertiesNoteId ?? skipToken);
 
   const notes = data?.notes ?? [];
   const relatedSubjectNotes = data?.relatedSubjectNotes ?? [];
@@ -142,6 +153,30 @@ export default function TopicNotesPage() {
       reorder({ subjectId, topicId, noteIdsInOrder });
     },
     [reorder, subjectId, topicId, selectedBatchId],
+  );
+
+  const propertiesPreviewNote = useMemo(
+    () => activeNotes.find((n) => n.id === propertiesNoteId),
+    [activeNotes, propertiesNoteId],
+  );
+
+  const noteForProperties =
+    (propertiesNote as any) ??
+    (propertiesPreviewNote as any) ??
+    (propertiesNoteId
+      ? ({
+          id: propertiesNoteId,
+        } as any)
+      : undefined);
+
+  const { subjectName: propertiesSubjectName, topicName: propertiesTopicName } = useMemo(
+    () =>
+      resolveSubjectAndTopicNames(
+        subjectsWithTopics as any,
+        noteForProperties?.subjectId,
+        noteForProperties?.topicId,
+      ),
+    [subjectsWithTopics, noteForProperties],
   );
 
   const onOpenNote = (noteId: string) => navigate(`/n/${noteId}`);
@@ -419,6 +454,7 @@ export default function TopicNotesPage() {
                     onToggleSelect={toggleSelect}
                     onReordered={isBatchMode ? () => { } : onReordered}
                     onOpenNote={onOpenNote}
+                    onShowProperties={(id) => setPropertiesNoteId(id)}
                   />
 
                   {!isBatchMode && (
@@ -649,6 +685,14 @@ export default function TopicNotesPage() {
           </>
         )}
       </Box>
+
+      <NotePropertiesDialog
+        open={Boolean(propertiesNoteId)}
+        onClose={() => setPropertiesNoteId(null)}
+        note={noteForProperties as any}
+        subjectName={propertiesSubjectName}
+        topicName={propertiesTopicName}
+      />
 
       {topicId && (
         <LinkNoteToTargetDialog

@@ -59,11 +59,22 @@ export interface Note {
 
   sources?: { url?: string; type?: 'chatworthy' | 'clip' | 'manual' }[];
 
+  // Chatworthy provenance
   chatworthyNoteId?: string;
+  chatworthyChatId?: string;
+  chatworthyChatTitle?: string;
+  chatworthyFileName?: string;
+  chatworthyTurnIndex?: number;
+  chatworthyTotalTurns?: number;
   chatId?: string;
+
+  // Legacy/source metadata
+  sourceType?: string;
+  sourceChatId?: string;
 
   createdAt: string;         // ISO
   updatedAt: string;         // ISO
+  importedAt?: string;       // ISO
 }
 
 // Lightweight list item for UIs
@@ -76,6 +87,19 @@ export interface NotePreview {
   updatedAt: string;         // ISO
 
   importBatchId?: string;
+  subjectId?: string;
+  topicId?: string;
+  createdAt?: string;
+  importedAt?: string;
+  sources?: { url?: string; type?: 'chatworthy' | 'clip' | 'manual' }[];
+  chatworthyNoteId?: string;
+  chatworthyChatId?: string;
+  chatworthyChatTitle?: string;
+  chatworthyFileName?: string;
+  chatworthyTurnIndex?: number;
+  chatworthyTotalTurns?: number;
+  sourceType?: string;
+  sourceChatId?: string;
 
   // Include relations for smarter UIs (optional; may or may not be populated)
   relations?: NoteRelation[];

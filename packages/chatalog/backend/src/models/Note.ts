@@ -31,6 +31,7 @@ export interface NoteDoc extends Document {
   sourceChatId?: string;
 
   importBatchId?: string;
+  importedAt?: Date;
 
   order: number;
   createdAt: Date;
@@ -95,6 +96,7 @@ const NoteSchema = new Schema<NoteDoc>(
     sourceChatId: { type: String },
 
     importBatchId: { type: String, index: true },
+    importedAt: { type: Date, default: Date.now },
 
     order:     { type: Number, required: true, default: 0, index: true },
   },

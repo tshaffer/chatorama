@@ -229,6 +229,30 @@ export const subjectsApi = baseApi.injectEndpoints({
   overrideExisting: true,
 });
 
+export function resolveSubjectAndTopicNames(
+  subjects: (Subject & { topics: Topic[] })[] | undefined,
+  subjectId?: string,
+  topicId?: string,
+): { subjectName?: string; topicName?: string } {
+  if (!subjects) return {};
+
+  const subject = subjectId
+    ? subjects.find((s) => safeId(s as any) === subjectId)
+    : undefined;
+
+  const topic =
+    topicId && subjects
+      ? subjects
+        .flatMap((s) => s.topics?.map((t) => ({ ...t, subjectId: safeId(s as any) })) || [])
+        .find((t) => safeId(t as any) === topicId)
+      : undefined;
+
+  return {
+    subjectName: subject?.name,
+    topicName: topic?.name,
+  };
+}
+
 export const {
   useGetSubjectsQuery,
   useGetSubjectsWithTopicsQuery,

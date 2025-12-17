@@ -12,8 +12,12 @@ import {
   IconButton,
   ListItemIcon,
   Checkbox,
+  Stack,
+  Menu,
+  MenuItem,
 } from '@mui/material';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { useSelector } from 'react-redux';
 import { NoteStatusIndicator } from './NoteStatusIndicator';
 import { selectNoteStatusVisibility } from '../settings/settingsSlice';
@@ -33,6 +37,7 @@ type Props = {
   onOpenNote?: (noteId: string) => void;
   selectedIds: Set<string>;
   onToggleSelect: (noteId: string) => void;
+  onShowProperties?: (noteId: string) => void;
 };
 
 export default function ReorderableNotesList({
@@ -42,6 +47,7 @@ export default function ReorderableNotesList({
   onOpenNote,
   selectedIds,
   onToggleSelect,
+  onShowProperties,
 }: Props) {
   const [items, setItems] = useState(() =>
     [...notes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
@@ -92,6 +98,7 @@ export default function ReorderableNotesList({
                 onToggleSelect={() => onToggleSelect(id)}
                 onOpen={() => onOpenNote?.(id)}
                 noteStatusVisibility={noteStatusVisibility}
+                onShowProperties={() => onShowProperties?.(id)}
               />
             );
           })}
@@ -109,6 +116,7 @@ type RowProps = {
   onToggleSelect: () => void;
   onOpen?: () => void;
   noteStatusVisibility: ReturnType<typeof selectNoteStatusVisibility>;
+  onShowProperties?: () => void;
 };
 
 function SortableNoteRow({
@@ -119,8 +127,10 @@ function SortableNoteRow({
   onToggleSelect,
   onOpen,
   noteStatusVisibility,
+  onShowProperties,
 }: RowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -135,9 +145,37 @@ function SortableNoteRow({
       style={style}
       disablePadding
       secondaryAction={
-        <IconButton edge="end" size="small" {...listeners} {...attributes} aria-label="drag-handle">
-          <DragIndicatorIcon />
-        </IconButton>
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          <IconButton
+            edge="end"
+            size="small"
+            aria-label="note actions"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuAnchor(e.currentTarget);
+            }}
+          >
+            <MoreVertIcon fontSize="small" />
+          </IconButton>
+          <IconButton edge="end" size="small" {...listeners} {...attributes} aria-label="drag-handle">
+            <DragIndicatorIcon />
+          </IconButton>
+          <Menu
+            anchorEl={menuAnchor}
+            open={Boolean(menuAnchor)}
+            onClose={() => setMenuAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          >
+            <MenuItem
+              onClick={() => {
+                setMenuAnchor(null);
+                onShowProperties?.();
+              }}
+            >
+              Properties
+            </MenuItem>
+          </Menu>
+        </Stack>
       }
     >
       <ListItemButton

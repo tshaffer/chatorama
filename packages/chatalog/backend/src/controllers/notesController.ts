@@ -35,14 +35,32 @@ export async function listNotes(req: Request, res: Response) {
   if (subjectId) filter.subjectId = subjectId;
   if (topicId) filter.topicId = topicId;
 
-  // include relations so NotePreview can use them
+  // include relations so NotePreview can use them + provenance fields used in UI
   const projection = {
     title: 1,
     summary: 1,
-    status: 1,     // 🔹 NEW
+    status: 1,
     tags: 1,
     updatedAt: 1,
+    createdAt: 1,
+    importedAt: 1,
     relations: 1,
+    sources: 1,
+    subjectId: 1,
+    topicId: 1,
+    chatworthyNoteId: 1,
+    chatworthyChatId: 1,
+    chatworthyChatTitle: 1,
+    chatworthyFileName: 1,
+    chatworthyTurnIndex: 1,
+    chatworthyTotalTurns: 1,
+    sourceType: 1,
+    sourceChatId: 1,
+    importBatchId: 1,
+    markdown: 1,
+    links: 1,
+    backlinks: 1,
+    slug: 1,
   };
 
   let query = NoteModel.find(filter, projection);
@@ -72,12 +90,28 @@ export async function listNotesByTopicWithRelations(req: Request, res: Response)
   const projection = {
     title: 1,
     summary: 1,
-    status: 1,     // 🔹 NEW
+    status: 1,
     tags: 1,
     updatedAt: 1,
+    createdAt: 1,
+    importedAt: 1,
     relations: 1,
     subjectId: 1,
     topicId: 1,
+    sources: 1,
+    chatworthyNoteId: 1,
+    chatworthyChatId: 1,
+    chatworthyChatTitle: 1,
+    chatworthyFileName: 1,
+    chatworthyTurnIndex: 1,
+    chatworthyTotalTurns: 1,
+    sourceType: 1,
+    sourceChatId: 1,
+    importBatchId: 1,
+    markdown: 1,
+    links: 1,
+    backlinks: 1,
+    slug: 1,
   };
 
   const topicNotes = await NoteModel.find(baseFilter, projection)
@@ -201,6 +235,7 @@ export async function createNote(req: Request, res: Response) {
     status,   // 🔹 NEW
     tags,
     relations,
+    importedAt: new Date(),
     order: topOrder,
   });
 
@@ -291,6 +326,7 @@ export async function patchNote(req: Request, res: Response) {
   const patch = { ...(req.body ?? {}) } as any;
   delete patch._id;
   delete patch.createdAt;
+  delete patch.importedAt;
   delete patch.backlinks; // still server-managed
 
   // 🔹 NEW: drop incomplete relations (no targetId)

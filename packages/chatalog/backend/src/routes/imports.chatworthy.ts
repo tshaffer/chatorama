@@ -869,6 +869,8 @@ router.post('/chatworthy/apply', async (req, res, next) => {
         // source metadata
         sourceType: 'chatworthy',
         sourceChatId: row.chatworthyChatId,
+
+        importedAt: new Date(),
       });
 
       createdNotes.push(doc);
