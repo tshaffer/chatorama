@@ -12,7 +12,8 @@ import type { ExportTurn, ExportNoteMetadata } from '@chatorama/chat-md-core';
  *  - Relabels "You/ChatGPT" -> "Prompt/Response"
  *  - Works even when the page lacks data-message-author-role (uses our own tags)
  *  - Click an item in the list to scroll to that Prompt
- *  - NEW: Selected list item highlights on click + follows scrolling
+ *  - Selected list item highlights on click + follows scrolling
+ *  - NEW: Draggable floating UI with persisted position
  * ------------------------------------------------------------
  */
 
@@ -25,9 +26,11 @@ const EXPORT_BTN_ID = 'chatworthy-export-btn';
 const TOGGLE_BTN_ID = 'chatworthy-toggle-btn';
 const ALL_BTN_ID = 'chatworthy-all-btn';
 const NONE_BTN_ID = 'chatworthy-none-btn';
+const DRAG_HANDLE_ID = 'chatworthy-drag-handle';
 
 const OBSERVER_THROTTLE_MS = 200;
 const COLLAPSE_LS_KEY = 'chatworthy:collapsed';
+const POS_LS_KEY = 'chatworthy:position';
 
 // ---- List selection / scroll-follow state ------------------
 
@@ -90,7 +93,6 @@ function scheduleIoPick(scroller: HTMLElement, offset: number) {
 
     for (const [idx, el] of ioIntersecting.entries()) {
       const r = el.getBoundingClientRect();
-      // Prefer the prompt closest to the “reading line” (top of viewport below header)
       const dist = Math.abs(r.top - rootTop);
       if (dist < bestDist) {
         bestDist = dist;
@@ -106,13 +108,9 @@ function setupPromptVisibilityTracking() {
   disconnectPromptVisibilityTracking();
 
   const tuples = getMessageTuples();
-  const userTuples = tuples
-    .map((t, idx) => ({ t, idx }))
-    .filter(x => x.t.role === 'user');
-
+  const userTuples = tuples.map((t, idx) => ({ t, idx })).filter(x => x.t.role === 'user');
   if (userTuples.length === 0) return;
 
-  // Determine scroll container from the first prompt element
   const scroller = findScrollContainer(userTuples[0].t.el);
   const offset = getLocalHeaderOffset(scroller);
 
@@ -139,8 +137,164 @@ function setupPromptVisibilityTracking() {
     }
   );
 
-  for (const { t } of userTuples) {
-    io.observe(t.el);
+  for (const { t } of userTuples) io.observe(t.el);
+}
+
+// ---- Drag + persisted position -----------------------------
+
+type CwPos = { left: number; top: number };
+
+function readSavedPosition(): CwPos | null {
+  try {
+    const raw = localStorage.getItem(POS_LS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CwPos>;
+    if (typeof parsed.left !== 'number' || typeof parsed.top !== 'number') return null;
+    if (!Number.isFinite(parsed.left) || !Number.isFinite(parsed.top)) return null;
+    return { left: parsed.left, top: parsed.top };
+  } catch {
+    return null;
+  }
+}
+
+function savePosition(pos: CwPos) {
+  try {
+    localStorage.setItem(POS_LS_KEY, JSON.stringify(pos));
+  } catch {
+    /* ignore */
+  }
+}
+
+function clampPosition(left: number, top: number, root: HTMLElement): CwPos {
+  const margin = 8;
+  const w = root.offsetWidth || 320;
+  const h = root.offsetHeight || 200;
+
+  const maxLeft = Math.max(margin, window.innerWidth - w - margin);
+  const maxTop = Math.max(margin, window.innerHeight - h - margin);
+
+  const clampedLeft = Math.min(Math.max(left, margin), maxLeft);
+  const clampedTop = Math.min(Math.max(top, margin), maxTop);
+
+  return { left: clampedLeft, top: clampedTop };
+}
+
+function applyPosition(root: HTMLElement) {
+  // If we have a saved position, use it. Otherwise default to previous right/top values.
+  const saved = readSavedPosition();
+  if (saved) {
+    // switch to left/top positioning if saved
+    root.style.right = 'auto';
+    root.style.left = `${saved.left}px`;
+    root.style.top = `${saved.top}px`;
+    return;
+  }
+
+  // Default initial placement
+  if (!root.style.top) root.style.top = '80px';
+  if (!root.style.right) root.style.right = '16px';
+  // Ensure left is not set unless user dragged
+  if (!root.style.left) root.style.left = 'auto';
+}
+
+function makeDraggable(root: HTMLDivElement) {
+  const handle = root.querySelector<HTMLDivElement>(`#${DRAG_HANDLE_ID}`);
+  if (!handle) return;
+
+  // Avoid double-binding
+  if (handle.getAttribute('data-cw-drag-wired') === '1') return;
+  handle.setAttribute('data-cw-drag-wired', '1');
+
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let startLeft = 0;
+  let startTop = 0;
+
+  const getCurrentLeftTop = (): CwPos => {
+    const rect = root.getBoundingClientRect();
+    return { left: rect.left, top: rect.top };
+  };
+
+  const onPointerMove = (e: PointerEvent) => {
+    if (!dragging) return;
+    e.preventDefault();
+
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    const nextLeft = startLeft + dx;
+    const nextTop = startTop + dy;
+
+    const clamped = clampPosition(nextLeft, nextTop, root);
+
+    // Ensure left/top are active (not right)
+    root.style.right = 'auto';
+    root.style.left = `${clamped.left}px`;
+    root.style.top = `${clamped.top}px`;
+  };
+
+  const onPointerUp = () => {
+    if (!dragging) return;
+    dragging = false;
+
+    try {
+      handle.releasePointerCapture?.(1);
+    } catch {
+      /* ignore */
+    }
+
+    // Persist final position
+    const rect = root.getBoundingClientRect();
+    const clamped = clampPosition(rect.left, rect.top, root);
+    root.style.left = `${clamped.left}px`;
+    root.style.top = `${clamped.top}px`;
+    savePosition(clamped);
+
+    window.removeEventListener('pointermove', onPointerMove, true);
+    window.removeEventListener('pointerup', onPointerUp, true);
+  };
+
+  handle.addEventListener('pointerdown', (e: PointerEvent) => {
+    // only left click / primary pointer
+    if (e.button !== 0) return;
+
+    dragging = true;
+    lastManualSelectAt = Date.now(); // also pause scroll-follow briefly during drag
+
+    const cur = getCurrentLeftTop();
+
+    startX = e.clientX;
+    startY = e.clientY;
+    startLeft = cur.left;
+    startTop = cur.top;
+
+    // Ensure we’re in left/top mode
+    root.style.right = 'auto';
+    root.style.left = `${cur.left}px`;
+    root.style.top = `${cur.top}px`;
+
+    // Prevent text selection while dragging
+    e.preventDefault();
+
+    window.addEventListener('pointermove', onPointerMove, true);
+    window.addEventListener('pointerup', onPointerUp, true);
+  });
+
+  // If window resizes, clamp the saved position so it stays visible
+  const onResize = () => {
+    const rect = root.getBoundingClientRect();
+    const clamped = clampPosition(rect.left, rect.top, root);
+    root.style.right = 'auto';
+    root.style.left = `${clamped.left}px`;
+    root.style.top = `${clamped.top}px`;
+    savePosition(clamped);
+  };
+
+  // Avoid double-binding resize
+  if (root.getAttribute('data-cw-resize-wired') !== '1') {
+    root.setAttribute('data-cw-resize-wired', '1');
+    window.addEventListener('resize', onResize);
   }
 }
 
@@ -153,7 +307,6 @@ function startRepairLoop() {
   repairTimer = window.setInterval(() => {
     try {
       ensureFloatingUI();
-      // stop once the list exists
       if (document.getElementById(LIST_ID)) {
         clearInterval(repairTimer!);
         repairTimer = null;
@@ -184,16 +337,7 @@ function startRepairLoop() {
   if (w.__chatworthy_init__) return;
   w.__chatworthy_init__ = true;
 
-  // Expose for quick console debugging
   (window as any).cw_getMessageTuples = getMessageTuples;
-
-  (window as any).cw_debugTuples = () => {
-    const t = getMessageTuples();
-    const users = t.filter(x => x.role === 'user').length;
-    const asst = t.filter(x => x.role === 'assistant').length;
-    void users;
-    void asst;
-  };
 
   if (window.top !== window) return;
 
@@ -236,19 +380,14 @@ function getSelectedPromptIndexes(): number[] {
     .sort((a, b) => a - b);
 }
 
-// Remove our injected bits before reading text/HTML
 function cloneWithoutInjected(el: HTMLElement): HTMLElement {
   const clone = el.cloneNode(true) as HTMLElement;
   clone.querySelectorAll('.cw-role-label, [data-cw-hidden="1"]').forEach(n => n.remove());
   return clone;
 }
 
-// ---- Message discovery (works with your DOM) ---------------
+// ---- Message discovery -------------------------------------
 
-/**
- * Returns ordered tuples of { el, role } for visible messages,
- * tagging each element with data-cw-role="user|assistant" for stable CSS.
- */
 function getMessageTuples(): Array<{ el: HTMLElement; role: 'user' | 'assistant' }> {
   const chosen: Array<{ el: HTMLElement; role: 'user' | 'assistant' }> = [];
   const seen = new Set<HTMLElement>();
@@ -283,15 +422,11 @@ function getMessageTuples(): Array<{ el: HTMLElement; role: 'user' | 'assistant'
 
     const role = roleOf(root);
     root.setAttribute('data-cw-role', role);
-
-    // Keep a stable-ish index label for mapping list rows <-> prompts.
-    // We intentionally overwrite this each run to stay consistent with the current tuple ordering.
     root.setAttribute('data-cw-msgid', String(chosen.length));
 
     chosen.push({ el: root, role });
   }
 
-  // Safety net sweep
   if (!chosen.some(c => c.role === 'assistant')) {
     const extras = Array.from(document.querySelectorAll<HTMLElement>('.markdown, .prose, [data-testid="markdown"]'));
     for (const md of extras) {
@@ -634,8 +769,6 @@ function ensureFloatingUI() {
       root.id = ROOT_ID;
 
       root.style.position = 'fixed';
-      root.style.right = '16px';
-      root.style.top = '80px';
       root.style.zIndex = '2147483647';
       root.style.background = 'rgba(255,255,255,0.95)';
       root.style.padding = '8px';
@@ -647,8 +780,28 @@ function ensureFloatingUI() {
       root.style.maxWidth = '420px';
 
       (d.body || d.documentElement).appendChild(root);
+
+      // Apply persisted (or default) position
+      applyPosition(root);
+
+      // default collapsed state
       setCollapsed(getInitialCollapsed());
+    } else {
+      // Ensure position is applied (if the script hot-reloads / DOM changes)
+      applyPosition(root);
     }
+
+    // 1b) Drag handle (create once)
+    let dragHandle = root.querySelector<HTMLDivElement>(`#${DRAG_HANDLE_ID}`);
+    if (!dragHandle) {
+      dragHandle = d.createElement('div');
+      dragHandle.id = DRAG_HANDLE_ID;
+      dragHandle.textContent = 'Chatworthy';
+      root.prepend(dragHandle);
+    }
+
+    // Wire drag behavior (idempotent)
+    makeDraggable(root);
 
     // 2) Controls
     let controls = d.getElementById(CONTROLS_ID) as HTMLDivElement | null;
@@ -738,7 +891,6 @@ function ensureFloatingUI() {
     // 4) Populate list from tuples
     list.innerHTML = '';
 
-    // Reset list mapping each rebuild
     listItemByTupleIndex = new Map();
     setSelectedListItem(null);
 
@@ -808,7 +960,6 @@ function ensureFloatingUI() {
     updateControlsState();
     relabelAndRestyleMessages();
 
-    // Track which prompt is visible and update selected list item while scrolling
     setupPromptVisibilityTracking();
   } finally {
     suspendObservers(false);
@@ -822,6 +973,22 @@ function ensureStyles() {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
+  /* Drag handle */
+  #${ROOT_ID} #${DRAG_HANDLE_ID} {
+    cursor: grab;
+    user-select: none;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.2;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(0,0,0,0.04);
+    border: 1px solid rgba(0,0,0,0.10);
+  }
+  #${ROOT_ID} #${DRAG_HANDLE_ID}:active {
+    cursor: grabbing;
+  }
+
   /* Floating UI buttons */
   #${ROOT_ID} button {
     padding: 4px 8px;
