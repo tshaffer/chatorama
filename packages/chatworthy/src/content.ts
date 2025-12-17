@@ -2,10 +2,7 @@
 
 import { getChatTitleAndProject } from './domExtractors';
 import { buildMarkdownExport } from '@chatorama/chat-md-core';
-import type {
-  ExportTurn,
-  ExportNoteMetadata
-} from "@chatorama/chat-md-core";
+import type { ExportTurn, ExportNoteMetadata } from '@chatorama/chat-md-core';
 
 /**
  * ------------------------------------------------------------
@@ -14,7 +11,8 @@ import type {
  *  - Robust observer for new messages
  *  - Relabels "You/ChatGPT" -> "Prompt/Response"
  *  - Works even when the page lacks data-message-author-role (uses our own tags)
- *  - NEW: Click an item in the list to scroll to that Prompt
+ *  - Click an item in the list to scroll to that Prompt
+ *  - NEW: Selected list item highlights on click + follows scrolling
  * ------------------------------------------------------------
  */
 
@@ -31,7 +29,122 @@ const NONE_BTN_ID = 'chatworthy-none-btn';
 const OBSERVER_THROTTLE_MS = 200;
 const COLLAPSE_LS_KEY = 'chatworthy:collapsed';
 
+// ---- List selection / scroll-follow state ------------------
+
 let selectedListItem: HTMLDivElement | null = null;
+let listItemByTupleIndex = new Map<number, HTMLDivElement>();
+
+let io: IntersectionObserver | null = null;
+let ioIntersecting = new Map<number, HTMLElement>(); // tupleIndex -> prompt element
+let ioUpdateScheduled = false;
+
+let lastManualSelectAt = 0;
+const MANUAL_GRACE_MS = 800;
+
+function setSelectedListItem(next: HTMLDivElement | null) {
+  if (selectedListItem === next) return;
+
+  if (selectedListItem) {
+    selectedListItem.classList.remove('chatworthy-item--selected');
+  }
+  selectedListItem = next;
+
+  if (selectedListItem) {
+    selectedListItem.classList.add('chatworthy-item--selected');
+  }
+}
+
+function setSelectedByTupleIndex(tupleIndex: number) {
+  const item = listItemByTupleIndex.get(tupleIndex) || null;
+  if (item) setSelectedListItem(item);
+}
+
+function disconnectPromptVisibilityTracking() {
+  if (io) {
+    try {
+      io.disconnect();
+    } catch {
+      /* ignore */
+    }
+  }
+  io = null;
+  ioIntersecting = new Map();
+  ioUpdateScheduled = false;
+}
+
+function scheduleIoPick(scroller: HTMLElement, offset: number) {
+  if (ioUpdateScheduled) return;
+  ioUpdateScheduled = true;
+
+  requestAnimationFrame(() => {
+    ioUpdateScheduled = false;
+
+    if (Date.now() - lastManualSelectAt < MANUAL_GRACE_MS) return;
+    if (ioIntersecting.size === 0) return;
+
+    const scRect = scroller.getBoundingClientRect();
+    const rootTop = scRect.top + offset;
+
+    let bestIdx: number | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+
+    for (const [idx, el] of ioIntersecting.entries()) {
+      const r = el.getBoundingClientRect();
+      // Prefer the prompt closest to the “reading line” (top of viewport below header)
+      const dist = Math.abs(r.top - rootTop);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = idx;
+      }
+    }
+
+    if (bestIdx != null) setSelectedByTupleIndex(bestIdx);
+  });
+}
+
+function setupPromptVisibilityTracking() {
+  disconnectPromptVisibilityTracking();
+
+  const tuples = getMessageTuples();
+  const userTuples = tuples
+    .map((t, idx) => ({ t, idx }))
+    .filter(x => x.t.role === 'user');
+
+  if (userTuples.length === 0) return;
+
+  // Determine scroll container from the first prompt element
+  const scroller = findScrollContainer(userTuples[0].t.el);
+  const offset = getLocalHeaderOffset(scroller);
+
+  const rootForIO =
+    scroller === (document.scrollingElement || document.documentElement) ? null : scroller;
+
+  io = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        const el = e.target as HTMLElement;
+        const raw = el.getAttribute('data-cw-msgid');
+        const tupleIndex = raw != null ? Number(raw) : NaN;
+        if (!Number.isFinite(tupleIndex)) continue;
+
+        if (e.isIntersecting) ioIntersecting.set(tupleIndex, el);
+        else ioIntersecting.delete(tupleIndex);
+      }
+
+      scheduleIoPick(scroller, offset);
+    },
+    {
+      root: rootForIO,
+      threshold: [0.01, 0.1, 0.25, 0.5],
+    }
+  );
+
+  for (const { t } of userTuples) {
+    io.observe(t.el);
+  }
+}
+
+// ---- Repair loop -------------------------------------------
 
 let repairTimer: number | null = null;
 
@@ -45,7 +158,9 @@ function startRepairLoop() {
         clearInterval(repairTimer!);
         repairTimer = null;
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, 1500);
 }
 
@@ -62,10 +177,13 @@ function startRepairLoop() {
       console.warn('[chatworthy] Disabled by kill switch');
       return;
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   if (w.__chatworthy_init__) return;
   w.__chatworthy_init__ = true;
+
   // Expose for quick console debugging
   (window as any).cw_getMessageTuples = getMessageTuples;
 
@@ -73,8 +191,8 @@ function startRepairLoop() {
     const t = getMessageTuples();
     const users = t.filter(x => x.role === 'user').length;
     const asst = t.filter(x => x.role === 'assistant').length;
-    // console.log(`[chatworthy] tuples: ${t.length} (user=${users}, assistant=${asst})`);
-    // console.log(t.map((x, i) => ({ i, role: x.role, text: (x.el.textContent || '').trim().slice(0, 60) })));
+    void users;
+    void asst;
   };
 
   if (window.top !== window) return;
@@ -91,7 +209,11 @@ function getTitle(): string {
 }
 
 function filenameBase(): string {
-  const t = getTitle().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
+  const t = getTitle()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
   const d = new Date();
   const stamp = [
     d.getFullYear(),
@@ -117,22 +239,8 @@ function getSelectedPromptIndexes(): number[] {
 // Remove our injected bits before reading text/HTML
 function cloneWithoutInjected(el: HTMLElement): HTMLElement {
   const clone = el.cloneNode(true) as HTMLElement;
-  // Remove our Prompt/Response labels + any nodes we previously hid
   clone.querySelectorAll('.cw-role-label, [data-cw-hidden="1"]').forEach(n => n.remove());
   return clone;
-}
-
-function setSelectedListItem(next: HTMLDivElement | null) {
-  if (selectedListItem === next) return;
-
-  if (selectedListItem) {
-    selectedListItem.classList.remove('chatworthy-item--selected');
-  }
-  selectedListItem = next;
-
-  if (selectedListItem) {
-    selectedListItem.classList.add('chatworthy-item--selected');
-  }
 }
 
 // ---- Message discovery (works with your DOM) ---------------
@@ -145,18 +253,15 @@ function getMessageTuples(): Array<{ el: HTMLElement; role: 'user' | 'assistant'
   const chosen: Array<{ el: HTMLElement; role: 'user' | 'assistant' }> = [];
   const seen = new Set<HTMLElement>();
 
-  // Prefer full "turn" containers; fall back to nodes that carry the role attribute.
-  const candidates = Array.from(document.querySelectorAll<HTMLElement>([
-    '[data-testid="conversation-turn"]',
-    '[data-message-id]',
-    '[data-message-author-role]'
-  ].join(',')));
+  const candidates = Array.from(document.querySelectorAll<HTMLElement>(
+    ['[data-testid="conversation-turn"]', '[data-message-id]', '[data-message-author-role]'].join(',')
+  ));
 
   const pickRoot = (n: HTMLElement): HTMLElement =>
-    n.closest<HTMLElement>('[data-testid="conversation-turn"]')
-    || n.closest<HTMLElement>('[data-message-id]')
-    || n.closest<HTMLElement>('article, li, section')
-    || n;
+    n.closest<HTMLElement>('[data-testid="conversation-turn"]') ||
+    n.closest<HTMLElement>('[data-message-id]') ||
+    n.closest<HTMLElement>('article, li, section') ||
+    n;
 
   const roleOf = (root: HTMLElement): 'user' | 'assistant' => {
     const attrNode = root.matches('[data-message-author-role]')
@@ -179,9 +284,10 @@ function getMessageTuples(): Array<{ el: HTMLElement; role: 'user' | 'assistant'
     const role = roleOf(root);
     root.setAttribute('data-cw-role', role);
 
-    if (!root.hasAttribute('data-cw-msgid')) {
-      root.setAttribute('data-cw-msgid', String(chosen.length));
-    }
+    // Keep a stable-ish index label for mapping list rows <-> prompts.
+    // We intentionally overwrite this each run to stay consistent with the current tuple ordering.
+    root.setAttribute('data-cw-msgid', String(chosen.length));
+
     chosen.push({ el: root, role });
   }
 
@@ -195,9 +301,7 @@ function getMessageTuples(): Array<{ el: HTMLElement; role: 'user' | 'assistant'
       if (seen.has(root)) continue;
       seen.add(root);
       root.setAttribute('data-cw-role', 'assistant');
-      if (!root.hasAttribute('data-cw-msgid')) {
-        root.setAttribute('data-cw-msgid', String(chosen.length));
-      }
+      root.setAttribute('data-cw-msgid', String(chosen.length));
       chosen.push({ el: root, role: 'assistant' });
     }
   }
@@ -217,14 +321,12 @@ function buildSelectedPayload(): { turns: ExportTurn[]; htmlBodies: string[] } {
 
   const raw = getSelectedPromptIndexes();
   let selected = raw
-    .map(n => typeof n === 'string' ? parseInt(n, 10) : Number(n))
+    .map(n => (typeof n === 'string' ? parseInt(n, 10) : Number(n)))
     .filter(n => Number.isFinite(n))
     .filter((n, i, arr) => arr.indexOf(n) === i)
     .sort((a, b) => a - b);
 
-  // only user turns are valid “start” indices
   selected = selected.filter(idx => idx >= 0 && idx < allTurns.length && allTurns[idx].role === 'user');
-
   if (selected.length === 0) return { turns: [], htmlBodies: [] };
 
   const turns: ExportTurn[] = [];
@@ -233,20 +335,13 @@ function buildSelectedPayload(): { turns: ExportTurn[]; htmlBodies: string[] } {
   for (let i = 0; i < selected.length; i++) {
     const uIdx = selected[i];
 
-    // hard boundary: first user turn after uIdx (or end if none)
     const nextUserAfter = allTurns.findIndex((t, k) => k > uIdx && t.role === 'user');
     const userBoundary = nextUserAfter === -1 ? allTurns.length : nextUserAfter;
 
-    // soft boundary: start of the next *selected* user (keeps ranges if multiple are checked)
-    const nextSelectedStart = (i + 1 < selected.length) ? selected[i + 1] : userBoundary;
-
-    // actual end: whichever comes first
+    const nextSelectedStart = i + 1 < selected.length ? selected[i + 1] : userBoundary;
     const end = Math.min(userBoundary, nextSelectedStart);
 
-    // safety: always include at least the selected user turn (and at most its immediate assistant if present)
-    const start = uIdx;
-
-    for (let j = start; j < end; j++) {
+    for (let j = uIdx; j < end; j++) {
       const el = allEls[j];
       const cleanEl = cloneWithoutInjected(el);
       turns.push(allTurns[j]);
@@ -256,6 +351,7 @@ function buildSelectedPayload(): { turns: ExportTurn[]; htmlBodies: string[] } {
 
   return { turns, htmlBodies };
 }
+
 function getSelectionStats(): { total: number; selected: number } {
   const root = document.getElementById(ROOT_ID);
   if (!root) return { total: 0, selected: 0 };
@@ -299,12 +395,7 @@ function normalizeTopic(chatTitle?: string, subject?: string): string | undefine
   if (!chatTitle) return undefined;
   if (!subject) return chatTitle.trim();
 
-  // Match "<subject> –/—/-/: " at the start (handles spaces).
-  const re = new RegExp(
-    `^\\s*${escapeRegex(subject)}\\s*(?:–|—|-|:)\\s*`,
-    'iu' // i = case-insensitive, u = unicode
-  );
-
+  const re = new RegExp(`^\\s*${escapeRegex(subject)}\\s*(?:–|—|-|:)\\s*`, 'iu');
   const stripped = chatTitle.replace(re, '').trim();
   return stripped || chatTitle.trim();
 }
@@ -315,22 +406,10 @@ function getSubjectTopicAndChatTitle() {
   const subject = (projectName || (chatTitle?.split(/ - |:|–|—/)[0]?.trim() ?? '')).trim() || '';
   const topic = normalizeTopic(chatTitle, subject) || 'Untitled Conversation';
 
-  // console.log('subject', subject);
-  // console.log('topic', topic);
-  // console.log('chatTitle', chatTitle);
-
-  return {
-    subject,
-    topic,
-    chatTitle,
-  };
+  return { subject, topic, chatTitle };
 }
 
-function buildExportFromTurns(
-  turns: ExportTurn[],
-  htmlBodies?: string[]
-): string {
-
+function buildExportFromTurns(turns: ExportTurn[], htmlBodies?: string[]): string {
   const { subject, topic, chatTitle } = getSubjectTopicAndChatTitle();
 
   const meta = {
@@ -357,24 +436,12 @@ function buildExportFromTurns(
     visibility: 'private',
   } satisfies ExportNoteMetadata;
 
-  const markdownExport: string = buildMarkdownExport(
-    meta,
-    turns,
-    {
-      title: meta.chatTitle,
-      freeformNotes: '',
-      includeFrontMatter: true,
-      htmlBodies
-    }
-  );
-
-  // console.log('Inputs to buildMarkdownExport:');
-  // console.log('meta:', meta);
-  // console.log('turns:', turns);
-  // console.log('htmlBodies:', htmlBodies);
-  // console.log('Generated Markdown:\n', markdownExport);
-
-  return markdownExport;
+  return buildMarkdownExport(meta, turns, {
+    title: meta.chatTitle,
+    freeformNotes: '',
+    includeFrontMatter: true,
+    htmlBodies,
+  });
 }
 
 function downloadExport(filename: string, data: string | Blob) {
@@ -399,12 +466,19 @@ function getInitialCollapsed(): boolean {
     const raw = localStorage.getItem(COLLAPSE_LS_KEY);
     if (raw === '0') return false;
     if (raw === '1') return true;
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return true;
 }
 
 function setCollapsed(v: boolean) {
-  try { localStorage.setItem(COLLAPSE_LS_KEY, v ? '1' : '0'); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(COLLAPSE_LS_KEY, v ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+
   const root = document.getElementById(ROOT_ID);
   const listEl = document.getElementById(LIST_ID) as HTMLDivElement | null;
   const toggleBtn = document.getElementById(TOGGLE_BTN_ID) as HTMLButtonElement | null;
@@ -465,7 +539,7 @@ function hideNativeRoleLabels(container: HTMLElement) {
     if (prev && /header/i.test(prev.tagName)) {
       prev.querySelectorAll<HTMLElement>('span,div,[data-testid]').forEach(node => {
         const txt = (node.textContent || '').trim();
-        if ((txt.toLowerCase() === 'you' || txt.toLowerCase() === 'chatgpt')) {
+        if (txt.toLowerCase() === 'you' || txt.toLowerCase() === 'chatgpt') {
           node.style.display = 'none';
           node.setAttribute('data-cw-hidden', '1');
           hidden++;
@@ -481,7 +555,6 @@ function relabelAndRestyleMessages() {
   for (const { el, role } of tuples) {
     hideNativeRoleLabels(el);
 
-    // Insert our label once
     let label = el.querySelector(':scope > .cw-role-label') as HTMLDivElement | null;
     if (!label) {
       label = document.createElement('div');
@@ -496,7 +569,6 @@ function relabelAndRestyleMessages() {
 
 // ---- Jump-to-turn helpers ----------------------------------
 
-// Find the nearest ancestor that actually scrolls (overflow-y: auto/scroll and scrollHeight > clientHeight)
 function findScrollContainer(start: HTMLElement | null): HTMLElement {
   let el: HTMLElement | null = start;
   while (el) {
@@ -507,31 +579,26 @@ function findScrollContainer(start: HTMLElement | null): HTMLElement {
     if (canScroll) return el;
     el = el.parentElement;
   }
-  // Fallback to the document scroller
   return (document.scrollingElement || document.documentElement) as HTMLElement;
 }
 
-// Try to detect a fixed/sticky header inside the same scroll container
 function getLocalHeaderOffset(scrollEl: HTMLElement): number {
   const rect = scrollEl.getBoundingClientRect();
   const headerCandidates = Array.from(scrollEl.querySelectorAll<HTMLElement>('*')).filter(n => {
     const cs = getComputedStyle(n);
     if (!(cs.position === 'fixed' || cs.position === 'sticky')) return false;
     const r = n.getBoundingClientRect();
-    // Treat as a top header if it “hugs” the container’s top edge
     return r.top <= rect.top + 8 && r.height >= 40 && r.height <= 140;
   });
   const h = headerCandidates.reduce((m, n) => Math.max(m, n.getBoundingClientRect().height), 0);
-  return (h || 80) + 12; // default safety headroom
+  return (h || 80) + 12;
 }
 
-// Visual ping
 function highlightPrompt(el: HTMLElement) {
   el.classList.add('cw-jump-highlight');
   setTimeout(() => el.classList.remove('cw-jump-highlight'), 1200);
 }
 
-// Scroll inside the right container (not window)
 function scrollPromptIntoViewByIndex(tupleIndex: number) {
   const tuples = getMessageTuples();
   const t = tuples[tupleIndex];
@@ -556,6 +623,7 @@ function scrollPromptIntoViewByIndex(tupleIndex: number) {
 function ensureFloatingUI() {
   ensureStyles();
   suspendObservers(true);
+
   try {
     const d = document;
 
@@ -565,7 +633,6 @@ function ensureFloatingUI() {
       root = d.createElement('div');
       root.id = ROOT_ID;
 
-      // Layout & position
       root.style.position = 'fixed';
       root.style.right = '16px';
       root.style.top = '80px';
@@ -580,11 +647,10 @@ function ensureFloatingUI() {
       root.style.maxWidth = '420px';
 
       (d.body || d.documentElement).appendChild(root);
-      // default collapsed state
       setCollapsed(getInitialCollapsed());
     }
 
-    // 2) Controls — (re)create if missing and (re)wire handlers
+    // 2) Controls
     let controls = d.getElementById(CONTROLS_ID) as HTMLDivElement | null;
     if (!controls) {
       controls = d.createElement('div');
@@ -599,7 +665,7 @@ function ensureFloatingUI() {
       const toggleBtn = d.createElement('button');
       toggleBtn.id = TOGGLE_BTN_ID;
       toggleBtn.type = 'button';
-      toggleBtn.textContent = (root.getAttribute('data-collapsed') === '1') ? 'Show List' : 'Hide List';
+      toggleBtn.textContent = root.getAttribute('data-collapsed') === '1' ? 'Show List' : 'Hide List';
       toggleBtn.style.fontWeight = '600';
       toggleBtn.onclick = () => {
         const isCollapsed = root!.getAttribute('data-collapsed') !== '0';
@@ -650,15 +716,15 @@ function ensureFloatingUI() {
       root.appendChild(controls);
     } else {
       const toggle = controls.querySelector('#' + TOGGLE_BTN_ID) as HTMLButtonElement | null;
-      if (toggle) toggle.textContent = (root.getAttribute('data-collapsed') === '1') ? 'Show List' : 'Hide List';
+      if (toggle) toggle.textContent = root.getAttribute('data-collapsed') === '1' ? 'Show List' : 'Hide List';
     }
 
-    // 3) List — (re)create if missing
+    // 3) List
     let list = d.getElementById(LIST_ID) as HTMLDivElement | null;
     if (!list) {
       list = d.createElement('div');
       list.id = LIST_ID;
-      list.style.display = (root.getAttribute('data-collapsed') === '1') ? 'none' : 'block';
+      list.style.display = root.getAttribute('data-collapsed') === '1' ? 'none' : 'block';
       list.style.overflow = 'auto';
       list.style.maxHeight = '50vh';
       list.style.minWidth = '220px';
@@ -666,14 +732,17 @@ function ensureFloatingUI() {
       root.appendChild(list);
     }
 
-    // 🔑 Make sure roles/labels are in place BEFORE we build the list
+    // Ensure role tags exist
     relabelAndRestyleMessages();
 
     // 4) Populate list from tuples
     list.innerHTML = '';
-    selectedListItem = null;
-    const tuples = getMessageTuples();
 
+    // Reset list mapping each rebuild
+    listItemByTupleIndex = new Map();
+    setSelectedListItem(null);
+
+    const tuples = getMessageTuples();
     const userTuples: Array<{ idx: number; el: HTMLElement }> = [];
     tuples.forEach((t, idx) => {
       if (t.role === 'user') userTuples.push({ idx, el: t.el });
@@ -687,7 +756,7 @@ function ensureFloatingUI() {
       list.appendChild(empty);
     } else {
       for (const { idx, el: node } of userTuples) {
-        const item = d.createElement('div');               // use <div>, not <label>
+        const item = d.createElement('div');
         item.className = 'chatworthy-item';
         item.style.display = 'flex';
         item.style.alignItems = 'flex-start';
@@ -701,7 +770,6 @@ function ensureFloatingUI() {
         cb.type = 'checkbox';
         cb.dataset.uindex = String(idx);
         cb.addEventListener('change', updateControlsState);
-        // Prevent row click from firing when clicking the checkbox itself
         cb.addEventListener('click', (e) => e.stopPropagation());
         cb.addEventListener('keydown', (e) => e.stopPropagation());
 
@@ -712,16 +780,20 @@ function ensureFloatingUI() {
         span.textContent = (clone.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
         span.style.lineHeight = '1.2';
 
-        // Guarded handlers: clicking row scrolls; clicking checkbox only toggles
+        listItemByTupleIndex.set(idx, item);
+
         item.addEventListener('click', (e) => {
           const target = e.target as HTMLElement;
-          if (target.tagName.toLowerCase() === 'input') return; // clicked the checkbox
+          if (target.tagName.toLowerCase() === 'input') return;
+          lastManualSelectAt = Date.now();
           setSelectedListItem(item);
           scrollPromptIntoViewByIndex(idx);
         });
+
         item.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
+            lastManualSelectAt = Date.now();
             setSelectedListItem(item);
             scrollPromptIntoViewByIndex(idx);
           }
@@ -734,8 +806,10 @@ function ensureFloatingUI() {
     }
 
     updateControlsState();
-
     relabelAndRestyleMessages();
+
+    // Track which prompt is visible and update selected list item while scrolling
+    setupPromptVisibilityTracking();
   } finally {
     suspendObservers(false);
   }
@@ -762,23 +836,13 @@ function ensureStyles() {
     cursor: not-allowed;
     filter: grayscale(100%);
   }
-  #${ROOT_ID} .chatworthy-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.2;
-    margin-left: 4px;
-    white-space: nowrap;
-  }
-  #${ROOT_ID} .chatworthy-toggle input { transform: translateY(0.5px); }
 
   /* Row + checkbox cursors */
   #${ROOT_ID} .chatworthy-item { cursor: pointer; }
   #${ROOT_ID} .chatworthy-item input[type="checkbox"] { cursor: pointer; margin-left: 2px; }
 
-  #chatworthy-root .chatworthy-item--selected .chatworthy-item-text {
+  /* Selected list item */
+  #${ROOT_ID} .chatworthy-item--selected .chatworthy-item-text {
     color: rgba(59,130,246,1);
     font-weight: 600;
   }
@@ -810,7 +874,9 @@ let observersSuspended = false;
 let lastObserverRun = 0;
 let scheduled = false;
 
-function suspendObservers(v: boolean) { observersSuspended = v; }
+function suspendObservers(v: boolean) {
+  observersSuspended = v;
+}
 
 function makeObserver(): MutationObserver {
   return new MutationObserver((mutationList) => {
@@ -820,7 +886,7 @@ function makeObserver(): MutationObserver {
     if (root) {
       for (const m of mutationList) {
         const target = m.target as Node;
-        if (root.contains(target)) return; // ignore our own UI mutations
+        if (root.contains(target)) return;
       }
     }
 
@@ -840,19 +906,25 @@ function startObserving() {
   if (!target) return;
 
   if (!mo) mo = makeObserver();
-  try { mo.disconnect(); } catch { /* ignore */ }
+  try {
+    mo.disconnect();
+  } catch {
+    /* ignore */
+  }
   mo.observe(target, { childList: true, subtree: true });
 }
 
 function scheduleEnsure() {
   if (scheduled) return;
   scheduled = true;
+
   requestAnimationFrame(() => {
     const run = () => {
       scheduled = false;
       ensureFloatingUI();
       relabelAndRestyleMessages();
     };
+
     if ('requestIdleCallback' in window) {
       (window as any).requestIdleCallback(run, { timeout: 1500 });
     } else {
