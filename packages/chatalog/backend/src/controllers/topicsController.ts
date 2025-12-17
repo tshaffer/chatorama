@@ -12,6 +12,17 @@ export async function listTopics(req: Request, res: Response) {
   res.json(docs.map((d) => d.toJSON()));
 }
 
+export async function getTopicNoteCount(req: Request, res: Response) {
+  try {
+    const { topicId } = req.params;
+    const noteCount = await NoteModel.countDocuments({ topicId });
+    return res.json({ topicId, noteCount });
+  } catch (err) {
+    console.error('getTopicNoteCount error', err);
+    return res.status(500).json({ error: 'Failed to get topic note count' });
+  }
+}
+
 export async function listTopicsForSubjectId(
   req: Request,
   res: Response,

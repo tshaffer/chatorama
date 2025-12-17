@@ -86,6 +86,13 @@ export const subjectsApi = baseApi.injectEndpoints({
       ],
     }),
 
+    getTopicNoteCount: build.query<{ topicId: string; noteCount: number }, string>({
+      query: (topicId) => ({
+        url: `topics/${topicId}/note-count`,
+        method: 'GET',
+      }),
+    }),
+
     createSubject: build.mutation<Subject, { name: string }>({
       query: (body) => ({ url: 'subjects', method: 'POST', body }),
       invalidatesTags: [{ type: 'Subject', id: 'LIST' }],
@@ -235,6 +242,7 @@ export const {
   useRenameTopicMutation,
   useGetSubjectRelationsSummaryQuery,
   useGetTopicRelationsSummaryQuery,
+  useGetTopicNoteCountQuery,
   // NEW hooks:
   useReorderSubjectsMutation,
   useReorderTopicsMutation,

@@ -13,9 +13,15 @@ import {
   TextField,
   Button,
   Tooltip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
+import { skipToken } from '@reduxjs/toolkit/query';
 import {
   useGetSubjectsQuery,
   useGetTopicsForSubjectQuery,
@@ -27,6 +33,7 @@ import {
   useRenameTopicMutation,
   useReorderSubjectsMutation,
   useReorderTopicsMutation,
+  useGetTopicNoteCountQuery,
 } from '../features/subjects/subjectsApi';
 import type { Topic } from '@chatorama/chatalog-shared';
 import InlineEditableName from '../components/InlineEditableName';
@@ -193,6 +200,13 @@ const SubjectCard = memo(function SubjectCard(props: {
   const [createTopic, { isLoading: creatingTopic }] = useCreateTopicMutation();
   const [deleteTopic] = useDeleteTopicMutation();
   const [renameTopic] = useRenameTopicMutation();
+  const [topicPendingDeletion, setTopicPendingDeletion] = useState<{ id: string; name: string } | null>(null);
+
+  const {
+    data: topicNoteCountData,
+    isFetching: isTopicNoteCountLoading,
+    isError: isTopicNoteCountError,
+  } = useGetTopicNoteCountQuery(topicPendingDeletion?.id ?? skipToken);
 
   // local state for creating a topic
   const [newTopicName, setNewTopicName] = useState('');
@@ -248,6 +262,26 @@ const SubjectCard = memo(function SubjectCard(props: {
     }).unwrap();
     setReorderTopicsOpen(false);
   };
+
+  const handleCloseDeleteTopicDialog = () => setTopicPendingDeletion(null);
+  const handleConfirmDeleteTopic = async () => {
+    if (!topicPendingDeletion) return;
+    await deleteTopic({
+      subjectId: props.subjectId,
+      topicId: topicPendingDeletion.id,
+    }).unwrap();
+    setTopicPendingDeletion(null);
+  };
+
+  const topicNoteCountMessage =
+    topicPendingDeletion &&
+    (isTopicNoteCountLoading
+      ? 'Calculating notes that will be deleted…'
+      : topicNoteCountData
+        ? `This will also delete ${topicNoteCountData.noteCount} ${topicNoteCountData.noteCount === 1 ? 'note' : 'notes'} in this topic.`
+        : isTopicNoteCountError
+          ? 'Note count unavailable (notes will still be deleted).'
+          : '');
 
   return (
     <Card
@@ -384,9 +418,7 @@ const SubjectCard = memo(function SubjectCard(props: {
                       clearTimeout(timer);
                       chipTimersRef.current[tid] = null;
                     }
-                    if (confirm(`Delete topic “${t.name}”?`)) {
-                      await deleteTopic({ subjectId: props.subjectId, topicId: tid }).unwrap();
-                    }
+                    setTopicPendingDeletion({ id: tid, name: t.name });
                   }}
                   sx={{ mr: 0.5, mb: 0.5 }}
                 />
@@ -431,6 +463,28 @@ const SubjectCard = memo(function SubjectCard(props: {
         />
 
       </CardContent>
+
+      <Dialog open={Boolean(topicPendingDeletion)} onClose={handleCloseDeleteTopicDialog}>
+        <DialogTitle>
+          Delete topic “{topicPendingDeletion?.name}”?
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 1 }}>
+            This will delete the topic and all notes it contains.
+          </DialogContentText>
+          {topicNoteCountMessage && (
+            <Typography variant="body2" color="text.secondary">
+              {topicNoteCountMessage}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDeleteTopicDialog}>Cancel</Button>
+          <Button color="error" variant="contained" onClick={handleConfirmDeleteTopic}>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Card>
   );
 });
