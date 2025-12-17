@@ -31,6 +31,8 @@ const NONE_BTN_ID = 'chatworthy-none-btn';
 const OBSERVER_THROTTLE_MS = 200;
 const COLLAPSE_LS_KEY = 'chatworthy:collapsed';
 
+let selectedListItem: HTMLDivElement | null = null;
+
 let repairTimer: number | null = null;
 
 function startRepairLoop() {
@@ -118,6 +120,19 @@ function cloneWithoutInjected(el: HTMLElement): HTMLElement {
   // Remove our Prompt/Response labels + any nodes we previously hid
   clone.querySelectorAll('.cw-role-label, [data-cw-hidden="1"]').forEach(n => n.remove());
   return clone;
+}
+
+function setSelectedListItem(next: HTMLDivElement | null) {
+  if (selectedListItem === next) return;
+
+  if (selectedListItem) {
+    selectedListItem.classList.remove('chatworthy-item--selected');
+  }
+  selectedListItem = next;
+
+  if (selectedListItem) {
+    selectedListItem.classList.add('chatworthy-item--selected');
+  }
 }
 
 // ---- Message discovery (works with your DOM) ---------------
@@ -358,7 +373,7 @@ function buildExportFromTurns(
   // console.log('turns:', turns);
   // console.log('htmlBodies:', htmlBodies);
   // console.log('Generated Markdown:\n', markdownExport);
-  
+
   return markdownExport;
 }
 
@@ -656,6 +671,7 @@ function ensureFloatingUI() {
 
     // 4) Populate list from tuples
     list.innerHTML = '';
+    selectedListItem = null;
     const tuples = getMessageTuples();
 
     const userTuples: Array<{ idx: number; el: HTMLElement }> = [];
@@ -700,11 +716,13 @@ function ensureFloatingUI() {
         item.addEventListener('click', (e) => {
           const target = e.target as HTMLElement;
           if (target.tagName.toLowerCase() === 'input') return; // clicked the checkbox
+          setSelectedListItem(item);
           scrollPromptIntoViewByIndex(idx);
         });
         item.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
+            setSelectedListItem(item);
             scrollPromptIntoViewByIndex(idx);
           }
         });
@@ -759,6 +777,11 @@ function ensureStyles() {
   /* Row + checkbox cursors */
   #${ROOT_ID} .chatworthy-item { cursor: pointer; }
   #${ROOT_ID} .chatworthy-item input[type="checkbox"] { cursor: pointer; margin-left: 2px; }
+
+  #chatworthy-root .chatworthy-item--selected .chatworthy-item-text {
+    color: rgba(59,130,246,1);
+    font-weight: 600;
+  }
 
   /* Label spacing on turns */
   [data-cw-role] > .cw-role-label {
