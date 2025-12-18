@@ -41,9 +41,6 @@ export default function QuickNotesPage() {
         }}
       >
         <Typography variant="h4">Quick Notes</Typography>
-        <Typography variant="body2" color="text.secondary">
-          Created via Quick Capture (⌘/Ctrl+Shift+N)
-        </Typography>
       </Stack>
 
       <Divider sx={{ mb: 2 }} />

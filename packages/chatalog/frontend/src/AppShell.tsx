@@ -1,6 +1,6 @@
 // chatalog/frontend/src/AppShell.tsx
 import React, { useEffect, useState } from 'react';
-import { Outlet, Link, useLocation, useParams, useMatch } from 'react-router-dom';
+import { Outlet, Link, useLocation, useMatch } from 'react-router-dom';
 import { AppBar, Toolbar, Typography, Button, Stack, Box, alpha, IconButton, Tooltip } from '@mui/material';
 import ImportChatworthyButton from './features/imports/ImportChatworthyButton';
 import { fetchJSON } from './lib/api';
@@ -55,7 +55,6 @@ function TopNavButton({ to, children, icon }: TopNavButtonProps) {
 
 export default function AppShell() {
   const { pathname } = useLocation();
-  const { subjectSlug, topicSlug } = useParams();
   const [qcOpen, setQcOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -63,17 +62,6 @@ export default function AppShell() {
     fetchJSON<{ ok: boolean }>('/health')
       .then(x => console.log('Health:', x))
       .catch(err => console.error('Health failed:', err));
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'n') {
-        e.preventDefault();
-        setQcOpen(true);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   // NOTE: isActive is unused now but keeping in case you re-use it later
@@ -122,7 +110,7 @@ export default function AppShell() {
             <ImportAiClassificationButton mode="icon" />
 
             {/* Quick Capture as an action icon */}
-            <Tooltip title="Quick Capture (⌘/Ctrl+Shift+N)">
+            <Tooltip title="Quick Capture">
               <IconButton
                 size="small"
                 onClick={() => setQcOpen(true)}

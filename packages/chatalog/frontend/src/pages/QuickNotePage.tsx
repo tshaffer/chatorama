@@ -321,7 +321,15 @@ export default function QuickNotePage() {
     isConverting || !subjectLabel.trim() || !topicLabel.trim();
 
   return (
-    <Box sx={{ p: 2 }}>
+    <Box
+      sx={{
+        p: 2,
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+      }}
+    >
       <Stack spacing={1.5} sx={{ mb: 2 }}>
         <Breadcrumbs aria-label="breadcrumb">
           <Link component={RouterLink} to="/quick-notes" underline="hover" color="inherit">
@@ -410,35 +418,57 @@ export default function QuickNotePage() {
         )}
       </Stack>
 
+      {/* Scroll region */}
       <Box
         sx={{
-          mt: 2,
-          p: 2,
-          borderRadius: 1,
-          border: 1,
-          borderColor: 'divider',
-          backgroundColor: 'background.paper',
-          maxWidth: '80ch',
+          flex: '1 1 auto',
+          minHeight: 0,
+          overflow: 'auto',
+          pb: 2,
         }}
       >
-        {isEditing ? (
-          <Stack spacing={1} alignItems="flex-end">
-            <TextField
-              label="Body (Markdown)"
-              value={editMarkdown}
-              onChange={e => setEditMarkdown(e.target.value)}
-              fullWidth
-              multiline
-              minRows={10}
-              inputRef={markdownInputRef}
-            />
-            <Button size="small" onClick={openInsertLinkDialog}>
-              Insert link
-            </Button>
-          </Stack>
-        ) : (
-          <MarkdownBody markdown={note.markdown ?? ''} />
-        )}
+        {/* content card */}
+        <Box
+          sx={{
+            mt: 2,
+            p: 2,
+            borderRadius: 1,
+            border: 1,
+            borderColor: 'divider',
+            backgroundColor: 'background.paper',
+            width: '100%',
+          }}
+        >
+          {isEditing ? (
+            <Stack spacing={1} alignItems="flex-end" sx={{ height: '100%' }}>
+              <TextField
+                label="Body (Markdown)"
+                value={editMarkdown}
+                onChange={e => setEditMarkdown(e.target.value)}
+                fullWidth
+                multiline
+                inputRef={markdownInputRef}
+                sx={{
+                  flex: 1,
+                  minHeight: 0,
+                  '& .MuiInputBase-root': {
+                    alignItems: 'stretch',
+                  },
+                  '& textarea': {
+                    flex: 1,
+                    minHeight: 0,
+                    overflow: 'auto',
+                  },
+                }}
+              />
+              <Button size="small" onClick={openInsertLinkDialog}>
+                Insert link
+              </Button>
+            </Stack>
+          ) : (
+            <MarkdownBody markdown={note.markdown ?? ''} />
+          )}
+        </Box>
       </Box>
 
       <Dialog open={linkDialogOpen} onClose={() => setLinkDialogOpen(false)}>
