@@ -8,7 +8,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "seed": "tsx scripts/seedFromData.ts",
-    "seed:reset": "RESET_DB=1 tsx scripts/seedFromData.ts"
+    "seed:reset": "RESET_DB=1 tsx scripts/seedFromData.ts",
+    "audit:downloads": "tsx src/scripts/auditChatworthyDownloads.ts"
   },
   "dependencies": {
     "@chatorama/chat-md-core": "file:../../chat-md-core",
@@ -20,6 +21,7 @@
     "gray-matter": "^4.0.3",
     "mongoose": "^8.19.2",
     "multer": "^2.0.2",
+    "fast-glob": "^3.3.3",
     "unzipper": "^0.12.3"
   },
   "devDependencies": {

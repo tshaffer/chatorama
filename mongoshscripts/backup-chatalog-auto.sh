@@ -3,47 +3,29 @@
 # backup-chatalog-auto.sh
 #
 # Usage:
-#   MONGO_URI='mongodb+srv://pizza:password@cluster0.ihsik.mongodb.net/chatalog_dev?retryWrites=true&w=majority' \
-#     ./backup-chatalog-auto.sh
+#   MONGO_URI='mongodb+srv://...' 
+#   ./backup-chatalog-auto.sh
 #
-# This script:
-#   - Computes a backup directory of the form:
-#       /Users/tedshaffer/Documents/MongoDBBackups/chatorama/backup-<month>-<day>-<n>
-#   - Where:
-#       <month> is 1-based (1..12, no leading zero)
-#       <day>   is day of month (1..31, no leading zero)
-#       <n>     is 0 for the first backup today, or (last backup index + 1)
-#   - Then calls backup-chatalog.sh with that directory.
+# Creates snapshot directories:
+#   /Users/tedshaffer/Documents/MongoDBBackups/chatorama/backup-<month>-<day>-<n>
+# And maintains:
+#   /Users/tedshaffer/Documents/MongoDBBackups/chatorama/latest -> backup-...
 
 set -euo pipefail
 
-# Base directory where all backups live
 BASE_DIR="/Users/tedshaffer/Documents/MongoDBBackups/chatorama"
-
-# Make sure base dir exists
 mkdir -p "$BASE_DIR"
 
-# Get month/day as 1-based, no leading zeros
-month="$(date +%-m)"  # e.g. 11
-day="$(date +%-d)"    # e.g. 22
-
-# Pattern prefix for today's backups
+month="$(date +%-m)"
+day="$(date +%-d)"
 prefix="backup-${month}-${day}-"
 
-# Find the highest existing index N for today
 max_index=-1
-
-# Enable nullglob so that the loop doesn't literally use the pattern when no matches
 shopt -s nullglob
 for path in "${BASE_DIR}/${prefix}"*; do
-  # Only consider directories
   [[ -d "$path" ]] || continue
-
-  name="${path##*/}"  # e.g. "backup-11-22-3"
-  # Strip the prefix to isolate the numeric suffix
+  name="${path##*/}"
   suffix="${name#${prefix}}"
-
-  # If suffix is all digits, consider it
   if [[ "$suffix" =~ ^[0-9]+$ ]]; then
     if (( suffix > max_index )); then
       max_index="$suffix"
@@ -52,7 +34,6 @@ for path in "${BASE_DIR}/${prefix}"*; do
 done
 shopt -u nullglob
 
-# Decide the new index
 if (( max_index < 0 )); then
   index=0
 else
@@ -60,11 +41,11 @@ else
 fi
 
 TARGET_DIR="${BASE_DIR}/${prefix}${index}"
+LATEST_LINK="${BASE_DIR}/latest"
 
-echo "Computed backup directory: $TARGET_DIR"
+echo "Computed snapshot directory: $TARGET_DIR"
 echo
 
-# Location of this script (mongoshscripts dir)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKUP_SCRIPT="${SCRIPT_DIR}/backup-chatalog.sh"
 
@@ -73,5 +54,40 @@ if [[ ! -x "$BACKUP_SCRIPT" ]]; then
   exit 1
 fi
 
-# Call the existing backup script with the computed directory
-"$BACKUP_SCRIPT" "$TARGET_DIR"
+# Determine previous snapshot (if latest exists)
+PREV_SNAPSHOT=""
+if [[ -L "$LATEST_LINK" ]]; then
+  PREV_SNAPSHOT="$(readlink "$LATEST_LINK")"
+fi
+
+# Temp directory for the fresh full export
+TMP_DIR="${BASE_DIR}/.tmp-${prefix}${index}-$$"
+mkdir -p "$TMP_DIR"
+
+echo "Step 1: Create fresh export in temp dir:"
+echo "  $TMP_DIR"
+echo
+
+"$BACKUP_SCRIPT" "$TMP_DIR"
+
+echo
+echo "Step 2: Create snapshot using rsync hard-linking unchanged files"
+if [[ -n "$PREV_SNAPSHOT" && -d "$PREV_SNAPSHOT" ]]; then
+  echo "  Using --link-dest=$PREV_SNAPSHOT"
+  rsync -a --delete \
+    --link-dest="$PREV_SNAPSHOT" \
+    "$TMP_DIR/" "$TARGET_DIR/"
+else
+  echo "  No previous snapshot found; first snapshot will be a full copy"
+  rsync -a --delete "$TMP_DIR/" "$TARGET_DIR/"
+fi
+
+# Remove temp dir
+rm -rf "$TMP_DIR"
+
+# Update latest symlink
+ln -sfn "$TARGET_DIR" "$LATEST_LINK"
+
+echo
+echo "✔ Snapshot complete: $TARGET_DIR"
+echo "latest -> $(readlink "$LATEST_LINK")"
