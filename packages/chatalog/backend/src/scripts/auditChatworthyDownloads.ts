@@ -3,7 +3,6 @@ import path from 'path';
 import os from 'os';
 import matter from 'gray-matter';
 import fg from 'fast-glob';
-import { diffLines } from 'diff';
 
 import { NoteModel } from '../models/Note';
 import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
@@ -99,83 +98,10 @@ function showInvisibles(s: string, max = 280): string {
     .replace(/ /g, '·');
 }
 
-// let __DEBUG_DB_TURN5_RESPONSE: string | null = null;
-
-// async function xdumpDbTurn(noteId: string, turnIndex: number) {
-//   const n = await NoteModel.findById(noteId, { markdown: 1, title: 1 }).lean().exec();
-//   if (!n) {
-//     console.log('DEBUG DB: note not found', noteId);
-//     return;
-//   }
-//   const turns = extractPromptResponseTurns((n as any).markdown ?? '');
-//   const t = turns.find(x => (x.turnIndex ?? -1) === turnIndex) ?? turns[turnIndex];
-//   console.log('\nDEBUG DB note:', { noteId, title: (n as any).title, extractedTurns: turns.length });
-//   if (!t) {
-//     console.log('DEBUG DB: could not find turn', turnIndex);
-//     return;
-//   }
-//   __DEBUG_DB_TURN5_RESPONSE = t.response ?? '';
-//   dumpTurn(`DB turn ${turnIndex} (from note.markdown)`, t.prompt ?? '', t.response ?? '');
-// }
-
-async function dumpRawNoteSnippet(noteId: string, needle: string, contextLines = 8) {
-  const n = await NoteModel.findById(noteId, { markdown: 1, title: 1 }).lean().exec();
-  if (!n) return;
-
-  const md = String((n as any).markdown ?? '');
-  const idx = md.indexOf(needle);
-
-  console.log('\n=== RAW NOTE SNIPPET ===');
-  console.log({ noteId, title: (n as any).title, found: idx >= 0, idx });
-
-  if (idx < 0) return;
-
-  // show a few lines around the first occurrence
-  const lines = md.split('\n');
-  let lineNo = 0;
-  let seen = 0;
-  for (let i = 0; i < lines.length; i++) {
-    if (seen === 0 && lines[i].includes(needle)) {
-      lineNo = i;
-      seen = 1;
-      break;
-    }
-  }
-
-  const start = Math.max(0, lineNo - 3);
-  const end = Math.min(lines.length, lineNo + contextLines);
-  const snippet = lines.slice(start, end).join('\n');
-  console.log(snippet.replace(/\r/g, '␍').replace(/\t/g, '␉'));
-}
-
-async function dumpDbTurn(noteId: string, turnIndex: number): Promise<{ prompt: string; response: string } | null> {
-  const n = await NoteModel.findById(noteId, { markdown: 1, title: 1 }).lean().exec();
-  if (!n) return null;
-
-  const turns = extractPromptResponseTurns((n as any).markdown ?? '');
-  const t = turns.find(x => (x.turnIndex ?? -1) === turnIndex) ?? turns[turnIndex];
-  if (!t) return null;
-
-  dumpTurn(`DB turn ${turnIndex} (from note.markdown)`, t.prompt ?? '', t.response ?? '');
-  return { prompt: t.prompt ?? '', response: t.response ?? '' };
-}
-
 function firstDiffIndex(a: string, b: string): number {
   const n = Math.min(a.length, b.length);
   for (let i = 0; i < n; i++) if (a[i] !== b[i]) return i;
   return a.length === b.length ? -1 : n;
-}
-
-function dumpTurn(label: string, prompt: string, response: string) {
-  const h1 = hashPromptResponsePair(prompt, response, 1);
-  const h2 = hashPromptResponsePair(prompt, response, 2);
-  console.log(`\n=== ${label} ===`);
-  console.log(`prompt.len=${prompt.length} response.len=${response.length}`);
-  console.log(`hash.v1=${h1}`);
-  console.log(`hash.v2=${h2}`);
-  console.log(`prompt.head:\n${showInvisibles(prompt)}`);
-  console.log(`response.head:\n${showInvisibles(response)}`);
-  console.log(`response.tail:\n${showInvisibles(response.slice(Math.max(0, response.length - 280)))}`);
 }
 
 function isSubset(a: Set<string>, b: Set<string>): boolean {
@@ -419,20 +345,6 @@ async function loadMarkdownIndexForChatId(chatId: string): Promise<Map<string, D
     const turns = extractPromptResponseTurns((n as any).markdown ?? '');
     turns.forEach((t) => {
 
-      if (
-        chatId === '6946aff7-db30-8325-b6f0-b5a4bf7be152' &&
-        t.turnIndex === 5
-      ) {
-        console.log('=== DB TURN 5 RAW ===');
-        console.log(JSON.stringify({
-          prompt: t.prompt,
-          response: t.response,
-          promptLen: t.prompt.length,
-          responseLen: t.response.length,
-        }, null, 2));
-      }
-
-
       const pairHashV2 = hashPromptResponsePair(t.prompt, t.response, 2);
       const pairHashV1 = hashPromptResponsePair(t.prompt, t.response, 1);
       const base = noteMetaCache.get(noteId)!;
@@ -489,54 +401,6 @@ async function scanMarkdownFiles(downloadsDir: string): Promise<FileScan[]> {
         : content;
 
       const logicalTurns = extractPromptResponseTurns(cleaned);
-
-      if (
-        path.basename(filePath).includes(
-          'programmatic-extraction-options-from-export-data-202512200723'
-        )
-      ) {
-        const t = logicalTurns.find((x) => (x.turnIndex ?? -1) === 5) ?? logicalTurns[5];
-
-        console.log('\n=== FILE TURN 5 ===');
-        console.log('prompt.len=', t?.prompt?.length);
-        console.log('response.len=', t?.response?.length);
-        console.log('hash.v1=', hashPromptResponsePair(t.prompt, t.response, 1));
-        console.log('hash.v2=', hashPromptResponsePair(t.prompt, t.response, 2));
-        console.log('prompt.head:\n', JSON.stringify(t?.prompt?.slice(0, 120)));
-        console.log('response.head:\n', JSON.stringify(t?.response?.slice(0, 300)));
-        console.log('response.tail:\n', JSON.stringify(t?.response?.slice(-300)));
-
-        if (dbTurn5 && t?.response) {
-          const a = dbTurn5.response;
-          const b = t.response;
-
-          const i = firstDiffIndex(a, b);
-          console.log('\n=== FIRST DIFF INDEX ===', i);
-          if (i >= 0) {
-            const start = Math.max(0, i - 120);
-            const end = Math.min(Math.max(a.length, b.length), i + 120);
-
-            console.log('\n=== DB CONTEXT ===');
-            console.log(showInvisibles(a.slice(start, end), 10_000));
-
-            console.log('\n=== FILE CONTEXT ===');
-            console.log(showInvisibles(b.slice(start, end), 10_000));
-          }
-        }
-
-        // // 🔍 ONE-TIME VERIFICATION DIFF
-        // if (__DEBUG_DB_TURN5_RESPONSE && t?.response) {
-        //   console.log('\n=== RESPONSE DIFF (DB vs FILE) ===');
-        //   const diffs = diffLines(__DEBUG_DB_TURN5_RESPONSE, t.response);
-        //   diffs.forEach(part => {
-        //     const mark = part.added ? '+' : part.removed ? '-' : ' ';
-        //     process.stdout.write(
-        //       mark + part.value.replace(/\n/g, '␊\n')
-        //     );
-        //   });
-        //   console.log('\n=== END OF RESPONSE DIFF (DB vs FILE) ===');
-        // }
-      }
 
       const turns: FileTurn[] = logicalTurns.map((t, idx) => ({
         fileTurnIndex: typeof t.turnIndex === 'number' ? t.turnIndex : idx,
@@ -793,8 +657,6 @@ function uniqDbMatches(matches: DbTurnMatch[]): DbTurnMatch[] {
   return out;
 }
 
-let dbTurn5: any;
-
 async function main() {
   ensureMongoUri();
 
@@ -802,13 +664,6 @@ async function main() {
 
   const db = await import('../db/mongoose');
   await db.connectToDatabase();
-
-  console.log('dumpRawNoteSnippet tests:');
-  await dumpRawNoteSnippet('6947444168f062d4d2c90eb7', 'source: chatgpt-export');
-  await dumpRawNoteSnippet('6947444168f062d4d2c90eb7', 'chatUrl: https://chatgpt.com/c/');
-  console.log('--- end of dumpRawNoteSnippet tests ---\n');
-  
-  dbTurn5 = await dumpDbTurn('6947444168f062d4d2c90eb7', 5);
 
   try {
     const generatedAt = new Date().toISOString();
@@ -1102,12 +957,6 @@ async function main() {
     console.log(`\nReport written to ${outPath}`);
     console.log(`Delete commands written to ${deleteOutPath}`);
     console.log(`Review links written to ${reviewOutPath} (open in Chrome)`);
-
-    // Better v1/v2 sanity: this SHOULD differ if v2 is active
-    console.log(
-      'sanity v1/v2 differ? (expected true)',
-      hashPromptResponsePair('a', 'x\n\n\nz', 1) !== hashPromptResponsePair('a', 'x\n\n\nz', 2)
-    );
   } finally {
     await db.disconnectFromDatabase();
   }

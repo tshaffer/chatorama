@@ -12,7 +12,7 @@ import { TopicModel } from '../models/Topic';
 import type { NoteDoc } from '../models/Note';
 import { slugifyStandard, type ApplyImportRequest, type ApplyNoteImportCommand, type ApplyImportResponse, type CleanupNeededItem } from '@chatorama/chatalog-shared';
 import { ImportBatchModel } from '../models/ImportBatch';
-import { normalizeText, hashPromptResponsePair, extractPromptResponseTurns } from '../utils/textHash';
+import { hashPromptResponsePair, extractPromptResponseTurns } from '../utils/textHash';
 import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
 
 const router = Router();
