@@ -36,6 +36,38 @@ type StripOpts = {
   fmTitle?: string;
 };
 
+function removeExporterMetaRowsOutsideFences(md: string): string {
+  // Normalize CRLF early so our line scanning is predictable.
+  const lines = md.replace(/\r\n/g, '\n').split('\n');
+  const out: string[] = [];
+
+  let inFence = false;
+
+  for (const line of lines) {
+    // Toggle on any fenced code block marker line.
+    // (This matches ```lang as well.)
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      out.push(line);
+      continue;
+    }
+
+    if (!inFence) {
+      // Only strip the exact exporter meta rows we generate.
+      // IMPORTANT: "Source:" requires a URL so we don't accidentally delete YAML examples like:
+      //   source: chatgpt-export
+      if (/^Source:\s+https?:\/\/\S+\s*$/.test(line)) continue;
+
+      // Exported line can be non-URL; keep it exact to the exporter meta row format.
+      if (/^Exported:\s+.+\s*$/.test(line)) continue;
+    }
+
+    out.push(line);
+  }
+
+  return out.join('\n');
+}
+
 /** Remove ToC block, anchors, meta rows, and a duplicate first H1 title. */
 function stripForChatalog(md: string, opts: StripOpts = {}): string {
   let out = md;
@@ -49,9 +81,8 @@ function stripForChatalog(md: string, opts: StripOpts = {}): string {
   // 2) Remove standalone anchor lines like <a id="p-2"></a>
   out = out.replace(/^\s*<a id="p-\d+"><\/a>\s*$(?:\r?\n)?/gmi, '');
 
-  // 3) Remove exporter meta rows
-  out = out.replace(/^Source:\s.*$\r?\n?/gmi, '');
-  out = out.replace(/^Exported:\s.*$\r?\n?/gmi, '');
+  // 3) Remove exporter meta rows (but NEVER inside fenced code blocks)
+  out = removeExporterMetaRowsOutsideFences(out);
 
   // 3.5) Remove a duplicate top-level H1 that matches our computed title(s).
   const candidates: string[] = [];
@@ -506,11 +537,14 @@ async function summarizeDuplicateTurns(previews: PreviewNoteInfo[], combinedNote
   const turnFingerprints = allPreviews.flatMap((preview) => {
     const turns = extractPromptResponseTurns(preview.body || '');
     return turns.map((turn) => ({
-      pairHash: hashPromptResponsePair(turn.prompt, turn.response),
+      pairHashV2: hashPromptResponsePair(turn.prompt, turn.response, 2),
+      pairHashV1: hashPromptResponsePair(turn.prompt, turn.response, 1),
     }));
   });
 
-  const pairHashes = Array.from(new Set(turnFingerprints.map((t) => t.pairHash)));
+  const pairHashesV2 = turnFingerprints.map((t) => t.pairHashV2);
+  const pairHashesV1 = turnFingerprints.map((t) => t.pairHashV1);
+  const pairHashes = Array.from(new Set([...pairHashesV2, ...pairHashesV1]));
 
   if (!pairHashes.length) {
     return { hasDuplicateTurns: false, duplicateTurnCount: 0 };
@@ -530,7 +564,7 @@ async function summarizeDuplicateTurns(previews: PreviewNoteInfo[], combinedNote
 
   let duplicateTurnCount = 0;
   for (const t of turnFingerprints) {
-    const count = existingByHash.get(t.pairHash) ?? 0;
+    const count = (existingByHash.get(t.pairHashV2) ?? 0) + (existingByHash.get(t.pairHashV1) ?? 0);
     if (count > 0) duplicateTurnCount += 1;
   }
 
@@ -548,12 +582,17 @@ async function attachTurnConflicts(previews: PreviewNoteInfo[], combinedNote?: P
     const turns = extractPromptResponseTurns(preview.body || '');
     const hashes = turns.map((turn) => ({
       turnIndex: turn.turnIndex,
-      pairHash: hashPromptResponsePair(turn.prompt, turn.response),
+      pairHashV2: hashPromptResponsePair(turn.prompt, turn.response, 2),
+      pairHashV1: hashPromptResponsePair(turn.prompt, turn.response, 1),
     }));
     return { preview, turns, hashes };
   });
 
-  const allHashes = Array.from(new Set(perPreview.flatMap((p) => p.hashes.map((h) => h.pairHash))));
+  const allHashes = Array.from(
+    new Set(
+      perPreview.flatMap((p) => p.hashes.flatMap((h) => [h.pairHashV2, h.pairHashV1])),
+    ),
+  );
   if (!allHashes.length) {
     return allPreviews.map((p) => ({
       ...p,
@@ -606,8 +645,17 @@ async function attachTurnConflicts(previews: PreviewNoteInfo[], combinedNote?: P
   return perPreview.map(({ preview, turns, hashes }) => {
     const conflicts: any[] = [];
     hashes.forEach((h) => {
-      const fps = fingerprintsByHash.get(h.pairHash) || [];
-      fps.forEach((fp) => {
+      const fpsForTurn = [
+        ...(fingerprintsByHash.get(h.pairHashV2) ?? []),
+        ...(fingerprintsByHash.get(h.pairHashV1) ?? []),
+      ];
+      const deduped = new Map<string, any>();
+      fpsForTurn.forEach((fp) => {
+        const id = String(fp._id);
+        if (!deduped.has(id)) deduped.set(id, fp);
+      });
+
+      deduped.forEach((fp) => {
         const existing = noteById.get(String(fp.noteId));
         if (!existing) return;
         const subj = existing.subjectId ? subjectById.get(String(existing.subjectId)) : null;
@@ -876,7 +924,9 @@ router.post('/chatworthy/apply', async (req, res, next) => {
       createdNotes.push(doc);
 
       const turns = extractPromptResponseTurns(row.body);
-      const pairHashes = turns.map((turn) => hashPromptResponsePair(turn.prompt, turn.response));
+      const pairHashesV2 = turns.map((turn) => hashPromptResponsePair(turn.prompt, turn.response, 2));
+      const pairHashesV1 = turns.map((turn) => hashPromptResponsePair(turn.prompt, turn.response, 1));
+      const pairHashes = Array.from(new Set([...pairHashesV2, ...pairHashesV1]));
 
       const existingFps = pairHashes.length
         ? await TurnFingerprintModel.find({ pairHash: { $in: pairHashes } }).lean().exec()
@@ -893,24 +943,37 @@ router.post('/chatworthy/apply', async (req, res, next) => {
 
       for (let idx = 0; idx < turns.length; idx += 1) {
         const turn = turns[idx];
-        const pairHash = pairHashes[idx];
-        const conflicts = fpsByHash.get(pairHash) || [];
-    if (!conflicts.length) {
-      fingerprints.push({
-        sourceType: 'chatworthy',
-        pairHash,
-        noteId: doc._id,
-            chatId: row.chatworthyChatId,
-            turnIndex: turn.turnIndex,
-            createdAt: new Date(),
-          });
+        const pairHashV2 = hashPromptResponsePair(turn.prompt, turn.response, 2);
+        const pairHashV1 = hashPromptResponsePair(turn.prompt, turn.response, 1);
+        const baseFingerprint = {
+          sourceType: 'chatworthy',
+          noteId: doc._id,
+          chatId: row.chatworthyChatId,
+          turnIndex: turn.turnIndex,
+          createdAt: new Date(),
+        };
+        const conflicts = [
+          ...(fpsByHash.get(pairHashV2) ?? []),
+          ...(fpsByHash.get(pairHashV1) ?? []),
+        ];
+        const uniqueConflicts = new Map<string, any>();
+        conflicts.forEach((fp) => {
+          const id = String(fp._id);
+          if (!uniqueConflicts.has(id)) uniqueConflicts.set(id, fp);
+        });
+        const dedupedConflicts = Array.from(uniqueConflicts.values());
+        if (!dedupedConflicts.length) {
+          fingerprints.push(
+            { ...baseFingerprint, pairHash: pairHashV2, hashVersion: 2 },
+            { ...baseFingerprint, pairHash: pairHashV1, hashVersion: 1 },
+          );
           continue;
         }
 
         if (decision === 'replace') {
           const action = turnActions[turn.turnIndex] ?? 'useImported';
           if (action === 'useImported') {
-            const target = conflicts[0];
+            const target = dedupedConflicts[0];
             const existingNoteId = String(target.noteId);
             const fpCount = await TurnFingerprintModel.countDocuments({ noteId: existingNoteId }).exec();
             await TurnFingerprintModel.updateOne(
@@ -923,6 +986,13 @@ router.post('/chatworthy/apply', async (req, res, next) => {
                 },
               },
             ).exec();
+            const targetHashVersion = target.hashVersion ?? 1;
+            if (targetHashVersion !== 2) {
+              fingerprints.push({ ...baseFingerprint, pairHash: pairHashV2, hashVersion: 2 });
+            }
+            if (targetHashVersion !== 1) {
+              fingerprints.push({ ...baseFingerprint, pairHash: pairHashV1, hashVersion: 1 });
+            }
             if (fpCount === 1) {
               await NoteModel.findByIdAndDelete(existingNoteId).exec();
             } else if (fpCount > 1 && !cleanupNeededNoteIds.has(existingNoteId)) {
@@ -970,18 +1040,18 @@ router.post('/chatworthy/apply', async (req, res, next) => {
       );
     }
 
-  if (fingerprints.length) {
-    await TurnFingerprintModel.insertMany(fingerprints, { ordered: false });
-  }
+    if (fingerprints.length) {
+      await TurnFingerprintModel.insertMany(fingerprints, { ordered: false });
+    }
 
-  const responseBody: ApplyImportResponse = {
-    created: createdNotes.length,
-    noteIds: createdNotes.map((n) => n.id),
-    importBatchId: batchId,
-    cleanupNeeded,
-  };
+    const responseBody: ApplyImportResponse = {
+      created: createdNotes.length,
+      noteIds: createdNotes.map((n) => n.id),
+      importBatchId: batchId,
+      cleanupNeeded,
+    };
 
-  res.status(200).json(responseBody);
+    res.status(200).json(responseBody);
   } catch (err) {
     next(err);
   }

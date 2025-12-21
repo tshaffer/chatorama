@@ -1,20 +1,69 @@
 import * as crypto from 'crypto';
 
-/** Normalize text for stable hashing. */
+export type PairHashVersion = 1 | 2;
+
+// Optional: leave this on temporarily while debugging module resolution.
+// Remove once you’re confident.
+console.log('[textHash] loaded from', __filename);
+
+/**
+ * Legacy normalization (v1 behavior).
+ * Keep this stable to avoid changing existing parsing/UX behavior.
+ */
 export function normalizeText(text: string): string {
   if (!text) return '';
   return text
-    .replace(/\r\n/g, '\n') // CRLF -> LF
-    .replace(/[ \t]+\n/g, '\n') // trim trailing spaces/tabs per line
+    .replace(/\r\n/g, '\n')      // CRLF -> LF
+    .replace(/[ \t]+\n/g, '\n')  // trim trailing spaces/tabs per line
     .trim();
 }
 
 /**
- * Compute a SHA-256 hash for a prompt/response pair after normalization.
+ * Canonicalization for v2 pair hashing.
+ * Goal: fix hash drift caused by:
+ * - extra blank lines (e.g. \n\n\n vs \n\n)
+ * - unicode normalization differences
+ *
+ * IMPORTANT: keep conservative; do not change semantic content.
  */
-export function hashPromptResponsePair(prompt: string, response: string): string {
-  const normalizedPrompt = normalizeText(prompt);
-  const normalizedResponse = normalizeText(response);
+function canonicalizeForPairHashV2(s: string): string {
+  // Start from the trusted legacy normalization.
+  let t = normalizeText(s ?? '');
+
+  // Collapse excessive blank lines: \n\n\n... -> \n\n
+  t = t.replace(/\n{3,}/g, '\n\n');
+
+  // Normalize Unicode (conservative for prose).
+  // NFC avoids “looks same, hashes different”.
+  if (typeof (t as any).normalize === 'function') {
+    t = t.normalize('NFC');
+  }
+
+  return t;
+}
+
+function canonicalizeForPairHashV1(s: string): string {
+  // Must remain exactly legacy behavior
+  return normalizeText(s ?? '');
+}
+
+/**
+ * Stable prompt/response pair hash.
+ *
+ * v1: legacy behavior
+ * v2: canonicalized to reduce hash drift
+ */
+export function hashPromptResponsePair(
+  prompt: string,
+  response: string,
+  version: PairHashVersion = 2,
+): string {
+  const normalizedPrompt =
+    version === 2 ? canonicalizeForPairHashV2(prompt) : canonicalizeForPairHashV1(prompt);
+
+  const normalizedResponse =
+    version === 2 ? canonicalizeForPairHashV2(response) : canonicalizeForPairHashV1(response);
+
   const combined = `${normalizedPrompt}\n\n---\n\n${normalizedResponse}`;
   return crypto.createHash('sha256').update(combined, 'utf8').digest('hex');
 }
@@ -26,14 +75,19 @@ export type LogicalTurn = {
 };
 
 /**
- * Attempt to extract logical prompt/response pairs from markdown that uses
- * repeated "## Prompt" / "## Response" headings. Falls back to a single
- * pair with the whole body as the response when no pairs are detected.
+ * Extract logical prompt/response turns from markdown that uses
+ * repeated "**Prompt**" / "**Response**" markers.
+ *
+ * - Returns [] only if markdown is empty or non-string.
+ * - If no turns are detected, returns a single turn with empty prompt
+ *   and the whole body as response.
  */
 export function extractPromptResponseTurns(markdown: string): LogicalTurn[] {
   if (!markdown || typeof markdown !== 'string') return [];
 
+  // Normalize line endings once for parsing consistency
   const text = markdown.replace(/\r\n/g, '\n');
+
   const promptRe = /\*\*Prompt\*\*/gi;
   const responseRe = /\*\*Response\*\*/gi;
 
@@ -47,15 +101,11 @@ export function extractPromptResponseTurns(markdown: string): LogicalTurn[] {
     // Find the Response after this Prompt
     responseRe.lastIndex = promptStart;
     const responseMatch = responseRe.exec(text);
-    if (!responseMatch) {
-      // No Response after this Prompt → stop parsing further
-      break;
-    }
+    if (!responseMatch) break;
 
     const responseStart = responseMatch.index + responseMatch[0].length;
 
-    // IMPORTANT: use a *separate* regex instance to find the NEXT Prompt
-    // so we don't disturb `promptRe`'s lastIndex used by the outer loop.
+    // Find the next Prompt after this Response (use a separate regex instance)
     const nextPromptRe = /\*\*Prompt\*\*/gi;
     nextPromptRe.lastIndex = responseStart;
     const nextPromptMatch = nextPromptRe.exec(text);
@@ -70,15 +120,13 @@ export function extractPromptResponseTurns(markdown: string): LogicalTurn[] {
         .map((line) => line.replace(/^\s*>\s?/, '')) // strip leading blockquote markers
         .join('\n'),
     );
+
     const response = normalizeText(rawResponse);
 
     if (prompt || response) {
       turns.push({ prompt, response, turnIndex });
       turnIndex += 1;
     }
-
-    // DO NOT modify promptRe.lastIndex here; let the while loop's
-    // next promptRe.exec(text) find the next actual Prompt.
   }
 
   if (!turns.length) {

@@ -1,9 +1,9 @@
 import fs from 'fs/promises';
-import crypto from 'crypto';
 import path from 'path';
 import os from 'os';
 import matter from 'gray-matter';
 import fg from 'fast-glob';
+import { diffLines } from 'diff';
 
 import { NoteModel } from '../models/Note';
 import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
@@ -13,7 +13,8 @@ import { extractPromptResponseTurns, hashPromptResponsePair } from '../utils/tex
 
 type FileTurn = {
   fileTurnIndex: number;
-  pairHash: string;
+  pairHashV2: string;
+  pairHashV1: string;
 };
 
 type DbTurnMatch = {
@@ -35,6 +36,7 @@ type DbTurnMatch = {
 type MatchedTurnDetail = {
   fileTurnIndex: number;
   pairHash: string;
+  pairHashV1?: string;
   dbMatches: DbTurnMatch[];
 };
 
@@ -87,6 +89,94 @@ type DuplicateGroup = {
   safeDeleteFiles?: string[];
   keepFiles?: string[];
 };
+
+function showInvisibles(s: string, max = 280): string {
+  const head = s.slice(0, max);
+  return head
+    .replace(/\r/g, '␍')
+    .replace(/\n/g, '␊\n')
+    .replace(/\t/g, '␉')
+    .replace(/ /g, '·');
+}
+
+// let __DEBUG_DB_TURN5_RESPONSE: string | null = null;
+
+// async function xdumpDbTurn(noteId: string, turnIndex: number) {
+//   const n = await NoteModel.findById(noteId, { markdown: 1, title: 1 }).lean().exec();
+//   if (!n) {
+//     console.log('DEBUG DB: note not found', noteId);
+//     return;
+//   }
+//   const turns = extractPromptResponseTurns((n as any).markdown ?? '');
+//   const t = turns.find(x => (x.turnIndex ?? -1) === turnIndex) ?? turns[turnIndex];
+//   console.log('\nDEBUG DB note:', { noteId, title: (n as any).title, extractedTurns: turns.length });
+//   if (!t) {
+//     console.log('DEBUG DB: could not find turn', turnIndex);
+//     return;
+//   }
+//   __DEBUG_DB_TURN5_RESPONSE = t.response ?? '';
+//   dumpTurn(`DB turn ${turnIndex} (from note.markdown)`, t.prompt ?? '', t.response ?? '');
+// }
+
+async function dumpRawNoteSnippet(noteId: string, needle: string, contextLines = 8) {
+  const n = await NoteModel.findById(noteId, { markdown: 1, title: 1 }).lean().exec();
+  if (!n) return;
+
+  const md = String((n as any).markdown ?? '');
+  const idx = md.indexOf(needle);
+
+  console.log('\n=== RAW NOTE SNIPPET ===');
+  console.log({ noteId, title: (n as any).title, found: idx >= 0, idx });
+
+  if (idx < 0) return;
+
+  // show a few lines around the first occurrence
+  const lines = md.split('\n');
+  let lineNo = 0;
+  let seen = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (seen === 0 && lines[i].includes(needle)) {
+      lineNo = i;
+      seen = 1;
+      break;
+    }
+  }
+
+  const start = Math.max(0, lineNo - 3);
+  const end = Math.min(lines.length, lineNo + contextLines);
+  const snippet = lines.slice(start, end).join('\n');
+  console.log(snippet.replace(/\r/g, '␍').replace(/\t/g, '␉'));
+}
+
+async function dumpDbTurn(noteId: string, turnIndex: number): Promise<{ prompt: string; response: string } | null> {
+  const n = await NoteModel.findById(noteId, { markdown: 1, title: 1 }).lean().exec();
+  if (!n) return null;
+
+  const turns = extractPromptResponseTurns((n as any).markdown ?? '');
+  const t = turns.find(x => (x.turnIndex ?? -1) === turnIndex) ?? turns[turnIndex];
+  if (!t) return null;
+
+  dumpTurn(`DB turn ${turnIndex} (from note.markdown)`, t.prompt ?? '', t.response ?? '');
+  return { prompt: t.prompt ?? '', response: t.response ?? '' };
+}
+
+function firstDiffIndex(a: string, b: string): number {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) if (a[i] !== b[i]) return i;
+  return a.length === b.length ? -1 : n;
+}
+
+function dumpTurn(label: string, prompt: string, response: string) {
+  const h1 = hashPromptResponsePair(prompt, response, 1);
+  const h2 = hashPromptResponsePair(prompt, response, 2);
+  console.log(`\n=== ${label} ===`);
+  console.log(`prompt.len=${prompt.length} response.len=${response.length}`);
+  console.log(`hash.v1=${h1}`);
+  console.log(`hash.v2=${h2}`);
+  console.log(`prompt.head:\n${showInvisibles(prompt)}`);
+  console.log(`response.head:\n${showInvisibles(response)}`);
+  console.log(`response.tail:\n${showInvisibles(response.slice(Math.max(0, response.length - 280)))}`);
+}
 
 function isSubset(a: Set<string>, b: Set<string>): boolean {
   if (a.size > b.size) return false;
@@ -152,9 +242,7 @@ function extractChatId(data: Record<string, any>): string | null {
   const keys = ['chatworthyChatId', 'sourceChatId', 'chatId', 'chat_id'];
   for (const key of keys) {
     const value = data[key];
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
+    if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return null;
 }
@@ -163,9 +251,7 @@ function extractChatTitle(data: Record<string, any>): string | null {
   const keys = ['chatworthyChatTitle', 'chatTitle', 'chat_title'];
   for (const key of keys) {
     const value = data[key];
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
+    if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return null;
 }
@@ -185,10 +271,7 @@ function sanitizeChatworthyExportContent(content: string): string {
   s = s.replace(/^\s*<a\s+id="p-\d+"\s*><\/a>\s*\n/gm, '');
   s = s.replace(/^\s*Source:\s+https?:\/\/\S+\s*\n/gm, '');
   s = s.replace(/^\s*Exported:\s+.+\s*\n/gm, '');
-  s = s.replace(
-    /^\s*##\s+Table of Contents[\s\S]*?(?=^\s*\*\*Prompt\*\*|\s*$)/gm,
-    '',
-  );
+  s = s.replace(/^\s*##\s+Table of Contents[\s\S]*?(?=^\s*\*\*Prompt\*\*|\s*$)/gm, '');
   s = s.replace(/\n{3,}/g, '\n\n');
   return s.trim();
 }
@@ -198,17 +281,7 @@ function shouldSanitizeChatworthyExport(content: string): boolean {
   if (/\n\s*##\s+Table of Contents\s*\n/i.test(content)) return true;
   if (/<a\s+id="p-\d+"\s*><\/a>/i.test(content)) return true;
   const promptCount = (content.match(/\*\*Prompt\*\*/gi) ?? []).length;
-  if (promptCount >= 2) return true;
-  return false;
-}
-
-function sha256(text: string): string {
-  return crypto.createHash('sha256').update(text ?? '', 'utf8').digest('hex');
-}
-
-function clip(s: string, n = 300): string {
-  const t = (s ?? '').replace(/\r\n/g, '\n');
-  return t.length <= n ? t : t.slice(0, n) + '…';
+  return promptCount >= 2;
 }
 
 async function chatIdHasAnyDbNotes(chatId: string): Promise<boolean> {
@@ -282,7 +355,7 @@ async function hydrateNoteMeta(noteIds: string[]): Promise<void> {
     tops.forEach((t: any) => topicNameCache.set(String(t._id), t.name ?? ''));
   }
 
-  for (const [id, meta] of noteMetaCache.entries()) {
+  for (const [, meta] of noteMetaCache.entries()) {
     if (meta.subjectId && subjectNameCache.has(meta.subjectId)) {
       meta.subjectName = subjectNameCache.get(meta.subjectId)!;
     }
@@ -316,6 +389,7 @@ async function loadFingerprintIndex(): Promise<Map<string, FingerprintOcc[]>> {
 }
 
 async function loadMarkdownIndexForChatId(chatId: string): Promise<Map<string, DbTurnMatch[]>> {
+
   if (markdownIndexByChatIdCache.has(chatId)) return markdownIndexByChatIdCache.get(chatId)!;
 
   const notes = await NoteModel.find(
@@ -344,8 +418,25 @@ async function loadMarkdownIndexForChatId(chatId: string): Promise<Map<string, D
     const noteId = n._id.toString();
     const turns = extractPromptResponseTurns((n as any).markdown ?? '');
     turns.forEach((t) => {
-      const pairHash = hashPromptResponsePair(t.prompt, t.response);
+
+      if (
+        chatId === '6946aff7-db30-8325-b6f0-b5a4bf7be152' &&
+        t.turnIndex === 5
+      ) {
+        console.log('=== DB TURN 5 RAW ===');
+        console.log(JSON.stringify({
+          prompt: t.prompt,
+          response: t.response,
+          promptLen: t.prompt.length,
+          responseLen: t.response.length,
+        }, null, 2));
+      }
+
+
+      const pairHashV2 = hashPromptResponsePair(t.prompt, t.response, 2);
+      const pairHashV1 = hashPromptResponsePair(t.prompt, t.response, 1);
       const base = noteMetaCache.get(noteId)!;
+
       const match: DbTurnMatch = {
         ...base,
         matchSource: 'markdown',
@@ -353,8 +444,11 @@ async function loadMarkdownIndexForChatId(chatId: string): Promise<Map<string, D
         dbTurnIndex: typeof t.turnIndex === 'number' ? t.turnIndex : null,
         chatId,
       };
-      if (!index.has(pairHash)) index.set(pairHash, []);
-      index.get(pairHash)!.push(match);
+
+      [pairHashV2, pairHashV1].forEach((h) => {
+        if (!index.has(h)) index.set(h, []);
+        index.get(h)!.push(match);
+      });
     });
   }
 
@@ -363,8 +457,7 @@ async function loadMarkdownIndexForChatId(chatId: string): Promise<Map<string, D
 }
 
 async function scanMarkdownFiles(downloadsDir: string): Promise<FileScan[]> {
-  const pattern = '*.md';
-  const files = await fg(pattern, { cwd: downloadsDir, absolute: true, onlyFiles: true });
+  const files = await fg('*.md', { cwd: downloadsDir, absolute: true, onlyFiles: true });
   const results: FileScan[] = [];
 
   for (const filePath of files) {
@@ -378,7 +471,7 @@ async function scanMarkdownFiles(downloadsDir: string): Promise<FileScan[]> {
         const gm = matter(raw);
         fm = (gm.data ?? {}) as Record<string, any>;
         content = gm.content ?? raw;
-      } catch (e) {
+      } catch {
         const { frontMatterRaw, content: stripped } = stripFrontMatter(raw);
         fm = parseFrontMatterLoosely(frontMatterRaw);
         content = stripped;
@@ -394,22 +487,64 @@ async function scanMarkdownFiles(downloadsDir: string): Promise<FileScan[]> {
       const cleaned = shouldSanitizeChatworthyExport(content)
         ? sanitizeChatworthyExportContent(content)
         : content;
-      const logicalTurns = extractPromptResponseTurns(cleaned);
-      if (path.basename(filePath).includes('programmatic-extraction-options-from-export-data-202512200723')) {
-        const t = logicalTurns.find((x) => (x.turnIndex ?? -1) === 5) ?? logicalTurns[5];
-        console.log('DEBUG FILE turn5 prompt:', JSON.stringify(t?.prompt));
-        console.log('DEBUG FILE turn5 response:', JSON.stringify(t?.response));
-        console.log('prompt length:', t?.prompt?.length);
-        console.log('response length:', t?.response?.length);
 
+      const logicalTurns = extractPromptResponseTurns(cleaned);
+
+      if (
+        path.basename(filePath).includes(
+          'programmatic-extraction-options-from-export-data-202512200723'
+        )
+      ) {
+        const t = logicalTurns.find((x) => (x.turnIndex ?? -1) === 5) ?? logicalTurns[5];
+
+        console.log('\n=== FILE TURN 5 ===');
+        console.log('prompt.len=', t?.prompt?.length);
+        console.log('response.len=', t?.response?.length);
+        console.log('hash.v1=', hashPromptResponsePair(t.prompt, t.response, 1));
+        console.log('hash.v2=', hashPromptResponsePair(t.prompt, t.response, 2));
+        console.log('prompt.head:\n', JSON.stringify(t?.prompt?.slice(0, 120)));
+        console.log('response.head:\n', JSON.stringify(t?.response?.slice(0, 300)));
+        console.log('response.tail:\n', JSON.stringify(t?.response?.slice(-300)));
+
+        if (dbTurn5 && t?.response) {
+          const a = dbTurn5.response;
+          const b = t.response;
+
+          const i = firstDiffIndex(a, b);
+          console.log('\n=== FIRST DIFF INDEX ===', i);
+          if (i >= 0) {
+            const start = Math.max(0, i - 120);
+            const end = Math.min(Math.max(a.length, b.length), i + 120);
+
+            console.log('\n=== DB CONTEXT ===');
+            console.log(showInvisibles(a.slice(start, end), 10_000));
+
+            console.log('\n=== FILE CONTEXT ===');
+            console.log(showInvisibles(b.slice(start, end), 10_000));
+          }
+        }
+
+        // // 🔍 ONE-TIME VERIFICATION DIFF
+        // if (__DEBUG_DB_TURN5_RESPONSE && t?.response) {
+        //   console.log('\n=== RESPONSE DIFF (DB vs FILE) ===');
+        //   const diffs = diffLines(__DEBUG_DB_TURN5_RESPONSE, t.response);
+        //   diffs.forEach(part => {
+        //     const mark = part.added ? '+' : part.removed ? '-' : ' ';
+        //     process.stdout.write(
+        //       mark + part.value.replace(/\n/g, '␊\n')
+        //     );
+        //   });
+        //   console.log('\n=== END OF RESPONSE DIFF (DB vs FILE) ===');
+        // }
       }
+
       const turns: FileTurn[] = logicalTurns.map((t, idx) => ({
         fileTurnIndex: typeof t.turnIndex === 'number' ? t.turnIndex : idx,
-        pairHash: hashPromptResponsePair(t.prompt, t.response),
+        pairHashV2: hashPromptResponsePair(t.prompt, t.response, 2),
+        pairHashV1: hashPromptResponsePair(t.prompt, t.response, 1),
       }));
-      const turnCount = turns.length;
 
-      const matchedTurnIndices: number[] = [];
+      const turnCount = turns.length;
 
       results.push({
         filePath,
@@ -419,7 +554,7 @@ async function scanMarkdownFiles(downloadsDir: string): Promise<FileScan[]> {
         chatUrl,
         turnCount,
         turns,
-        matchedTurnIndices,
+        matchedTurnIndices: [],
         unmatchedTurnIndices: [],
         matchedCount: 0,
         unmatchedCount: turnCount,
@@ -431,7 +566,6 @@ async function scanMarkdownFiles(downloadsDir: string): Promise<FileScan[]> {
       });
     } catch (err) {
       console.warn(`[warn] Skipping ${path.basename(filePath)} due to error:`, err);
-      continue;
     }
   }
 
@@ -443,19 +577,20 @@ function buildDuplicateGroups(
   fingerprintIndex: Map<string, FingerprintOcc[]>
 ): DuplicateGroup[] {
   const byChatId = new Map<string, FileScan[]>();
-  files.forEach((file) => {
-    if (!file.chatId) return;
+  for (const file of files) {
+    if (!file.chatId) continue;
     if (!byChatId.has(file.chatId)) byChatId.set(file.chatId, []);
     byChatId.get(file.chatId)!.push(file);
-  });
+  }
 
   const groups: DuplicateGroup[] = [];
+
   for (const [chatId, members] of byChatId.entries()) {
-    if (!members.length || members.length < 2) continue;
+    if (members.length < 2) continue;
 
     const summaries = members.map((f) => ({
       file: f,
-      fileSet: new Set(f.turns.map((t) => t.pairHash)),
+      fileSet: new Set(f.turns.map((t) => t.pairHashV2)),
       summary: {
         fileName: f.fileName,
         filePath: f.filePath,
@@ -481,8 +616,7 @@ function buildDuplicateGroups(
 
       if (!supersets.length) return;
 
-      const sortedSupersets = supersets.sort((a, b) => a.file.turnCount - b.file.turnCount);
-      const chosen = sortedSupersets[0];
+      const chosen = supersets.sort((a, b) => a.file.turnCount - b.file.turnCount)[0];
 
       entry.summary.subsetOfFileName = chosen?.file.fileName ?? null;
       entry.summary.subsetOfCount = supersets.length;
@@ -491,33 +625,42 @@ function buildDuplicateGroups(
       entry.summary.recommendedAction = 'SAFE_DELETE_DUPLICATE';
 
       if (chosen) {
-        const missing = chosen.file.turns
-          .filter((t) => !entry.fileSet.has(t.pairHash))
-          .map((t) => t.fileTurnIndex ?? t.turnIndex ?? 0);
-        entry.summary.missingTurnIndicesFromClosestSuperset = missing;
+        // Indices that exist in the closest superset but are absent from this file.
+        const missingIndices = chosen.file.turns
+          .filter((t) => !entry.fileSet.has(t.pairHashV2))
+          .map((t) => t.fileTurnIndex);
+        entry.summary.missingTurnIndicesFromClosestSuperset = missingIndices;
       }
     });
 
     const filesSummary = summaries.map((s) => s.summary);
 
-    const unionHashes = new Set<string>();
-    members.forEach((f) => f.turns.forEach((t) => unionHashes.add(t.pairHash)));
+    // unionHashes: key=v2, value=v1
+    const unionHashes = new Map<string, string>();
+    for (const f of members) {
+      for (const t of f.turns) {
+        if (!unionHashes.has(t.pairHashV2)) unionHashes.set(t.pairHashV2, t.pairHashV1);
+      }
+    }
 
     const unionMatched = new Set<string>();
-    unionHashes.forEach((h) => {
-      if (fingerprintIndex.has(h)) {
-        unionMatched.add(h);
-      } else if (chatId && markdownIndexByChatIdCache.has(chatId)) {
-        const mdIdx = markdownIndexByChatIdCache.get(chatId)!;
-        if (mdIdx.has(h)) unionMatched.add(h);
+
+    // ✅ FIX: Map.forEach is (value, key) => (v1, v2)
+    unionHashes.forEach((v1, v2) => {
+      if (fingerprintIndex.has(v2) || fingerprintIndex.has(v1)) {
+        unionMatched.add(v2);
+        return;
+      }
+
+      const mdIdx = markdownIndexByChatIdCache.get(chatId);
+      if (mdIdx && (mdIdx.has(v2) || mdIdx.has(v1))) {
+        unionMatched.add(v2);
       }
     });
 
     const unionTurnCount = unionHashes.size;
     const unionMatchedCount = unionMatched.size;
-    const unionCoverage = unionTurnCount
-      ? `${unionMatchedCount}/${unionTurnCount}`
-      : '0/0';
+    const unionCoverage = unionTurnCount ? `${unionMatchedCount}/${unionTurnCount}` : '0/0';
 
     let recommendedAction: 'DELETE_ALL' | 'REVIEW_AND_IMPORT' | 'REVIEW';
     if (unionMatchedCount === unionTurnCount) recommendedAction = 'DELETE_ALL';
@@ -526,17 +669,17 @@ function buildDuplicateGroups(
 
     const recommendedImportCandidate =
       recommendedAction === 'REVIEW_AND_IMPORT'
-        ? [...members]
-          .sort((a, b) => {
-            if (b.unmatchedCount !== a.unmatchedCount) return b.unmatchedCount - a.unmatchedCount;
-            if (b.turnCount !== a.turnCount) return b.turnCount - a.turnCount;
-            return b.fileName.localeCompare(a.fileName);
-          })[0]?.fileName ?? null
+        ? [...members].sort((a, b) => {
+          if (b.unmatchedCount !== a.unmatchedCount) return b.unmatchedCount - a.unmatchedCount;
+          if (b.turnCount !== a.turnCount) return b.turnCount - a.turnCount;
+          return b.fileName.localeCompare(a.fileName);
+        })[0]?.fileName ?? null
         : null;
 
     const safeDeleteFiles = filesSummary
       .filter((f) => f.recommendedAction === 'SAFE_DELETE_DUPLICATE')
       .map((f) => f.fileName);
+
     const keepFiles = filesSummary
       .filter((f) => f.recommendedAction !== 'SAFE_DELETE_DUPLICATE')
       .map((f) => f.fileName);
@@ -619,12 +762,8 @@ function printSummary(files: FileScan[], duplicateGroups: DuplicateGroup[]): voi
       console.log(
         `- chatId=${g.chatId} unionCoverage=${g.unionCoverage} action=${g.recommendedAction} candidate=${g.recommendedImportCandidate ?? '—'}`
       );
-      if (g.keepFiles?.length) {
-        console.log(`  keepFiles: ${g.keepFiles.join(', ')}`);
-      }
-      if (g.safeDeleteFiles?.length) {
-        console.log(`  safeDeleteFiles: ${g.safeDeleteFiles.join(', ')}`);
-      }
+      if (g.keepFiles?.length) console.log(`  keepFiles: ${g.keepFiles.join(', ')}`);
+      if (g.safeDeleteFiles?.length) console.log(`  safeDeleteFiles: ${g.safeDeleteFiles.join(', ')}`);
     });
   }
 }
@@ -639,18 +778,41 @@ function uniqSorted(arr: string[]): string[] {
 }
 
 function shellSingleQuote(p: string): string {
-  // Wrap in single quotes; escape any embedded single quote safely for bash.
   return `'${p.replace(/'/g, `'\\''`)}'`;
 }
 
+function uniqDbMatches(matches: DbTurnMatch[]): DbTurnMatch[] {
+  const seen = new Set<string>();
+  const out: DbTurnMatch[] = [];
+  for (const m of matches) {
+    const k = `${m.noteId}:${m.dbTurnIndex ?? ''}:${m.matchSource}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(m);
+  }
+  return out;
+}
+
+let dbTurn5: any;
+
 async function main() {
   ensureMongoUri();
+
   const downloadsDir = resolveDownloadsDir();
 
   const db = await import('../db/mongoose');
   await db.connectToDatabase();
 
+  console.log('dumpRawNoteSnippet tests:');
+  await dumpRawNoteSnippet('6947444168f062d4d2c90eb7', 'source: chatgpt-export');
+  await dumpRawNoteSnippet('6947444168f062d4d2c90eb7', 'chatUrl: https://chatgpt.com/c/');
+  console.log('--- end of dumpRawNoteSnippet tests ---\n');
+  
+  dbTurn5 = await dumpDbTurn('6947444168f062d4d2c90eb7', 5);
+
   try {
+    const generatedAt = new Date().toISOString();
+
     const fingerprintIndex = await loadFingerprintIndex();
     const files = await scanMarkdownFiles(downloadsDir);
 
@@ -660,17 +822,22 @@ async function main() {
 
       const noteIdsToHydrate = new Set<string>();
       file.turns.forEach((ft) => {
-        const occs = fingerprintIndex.get(ft.pairHash) ?? [];
+        const occs = fingerprintIndex.get(ft.pairHashV2) ?? fingerprintIndex.get(ft.pairHashV1) ?? [];
         occs.forEach((o) => noteIdsToHydrate.add(o.noteId));
       });
       await hydrateNoteMeta([...noteIdsToHydrate]);
 
       for (const ft of file.turns) {
-        const occs = fingerprintIndex.get(ft.pairHash) ?? [];
+        const occs =
+          fingerprintIndex.get(ft.pairHashV2) ??
+          fingerprintIndex.get(ft.pairHashV1) ??
+          [];
+
         if (!occs.length) continue;
 
         matchedIdx.add(ft.fileTurnIndex);
-        const dbMatches: DbTurnMatch[] = occs.map((o) => {
+
+        const dbMatchesRaw: DbTurnMatch[] = occs.map((o) => {
           const base = noteMetaCache.get(o.noteId);
           return {
             ...(base ?? {
@@ -686,9 +853,13 @@ async function main() {
             chatId: o.chatId ?? file.chatId ?? null,
           };
         });
+
+        const dbMatches = uniqDbMatches(dbMatchesRaw);
+
         matchedTurns.push({
           fileTurnIndex: ft.fileTurnIndex,
-          pairHash: ft.pairHash,
+          pairHash: ft.pairHashV2,
+          pairHashV1: ft.pairHashV1,
           dbMatches,
         });
       }
@@ -698,14 +869,18 @@ async function main() {
         if (hasChatNotes) {
           file.usedFallback = true;
           file.fallbackReason = 'no fingerprint matches';
+
           const mdIndex = await loadMarkdownIndexForChatId(file.chatId);
           for (const ft of file.turns) {
-            const hits = mdIndex.get(ft.pairHash) ?? [];
+            const hitsRaw = mdIndex.get(ft.pairHashV2) ?? mdIndex.get(ft.pairHashV1) ?? [];
+            const hits = uniqDbMatches(hitsRaw);
             if (!hits.length) continue;
+
             matchedIdx.add(ft.fileTurnIndex);
             matchedTurns.push({
               fileTurnIndex: ft.fileTurnIndex,
-              pairHash: ft.pairHash,
+              pairHash: ft.pairHashV2,
+              pairHashV1: ft.pairHashV1,
               dbMatches: hits,
             });
           }
@@ -719,30 +894,10 @@ async function main() {
       file.matchedCount = file.matchedTurnIndices.length;
       file.unmatchedCount = file.unmatchedTurnIndices.length;
       file.coverage = `${file.matchedCount}/${file.turnCount}`;
-      if (file.matchedCount === 0) file.status = 'NONE';
-      else if (file.matchedCount === file.turnCount) file.status = 'FULL';
-      else file.status = 'PARTIAL';
-
-      // ✅ add debug block here (now unmatchedTurnIndices exists)
-      if (file.fileName.includes('programmatic-extraction-options-from-export-data-202512200723')) {
-        const unmatched = file.turns.filter((t) =>
-          file.unmatchedTurnIndices.includes(t.fileTurnIndex)
-        );
-        console.log('DEBUG unmatched turns:', {
-          file: file.fileName,
-          chatId: file.chatId,
-          unmatchedTurnIndices: file.unmatchedTurnIndices,
-          unmatched,
-        });
-      }
+      file.status = file.matchedCount === 0 ? 'NONE' : file.matchedCount === file.turnCount ? 'FULL' : 'PARTIAL';
     }
 
     const duplicateGroups = buildDuplicateGroups(files, fingerprintIndex);
-
-    // ---- Build actionable outputs: delete commands + review links ----
-
-    const fileByName = new Map<string, FileScan>();
-    for (const f of files) fileByName.set(f.fileName, f);
 
     const importCandidatesToReview = new Set<string>();
     for (const g of duplicateGroups) {
@@ -754,35 +909,26 @@ async function main() {
     const deletePaths: string[] = [];
     const reviewPaths: string[] = [];
 
-    // 1) From group recommendations
     for (const g of duplicateGroups) {
       if (g.recommendedAction === 'DELETE_ALL') {
         for (const f of g.files) deletePaths.push(f.filePath);
         continue;
       }
 
-      // Otherwise, group requires review
       for (const f of g.files) reviewPaths.push(f.filePath);
 
-      // Plus any "safe delete duplicate" within the group goes to delete list
       for (const f of g.files) {
-        if (f.recommendedAction === 'SAFE_DELETE_DUPLICATE') {
-          deletePaths.push(f.filePath);
-        }
+        if (f.recommendedAction === 'SAFE_DELETE_DUPLICATE') deletePaths.push(f.filePath);
       }
     }
 
-    // 2) From per-file statuses (for files not already covered by group logic)
     const alreadyMentioned = new Set<string>([...deletePaths, ...reviewPaths]);
 
     for (const f of files) {
       if (alreadyMentioned.has(f.filePath)) continue;
 
-      if (f.status === 'FULL' && !importCandidatesToReview.has(f.fileName)) {
-        deletePaths.push(f.filePath);
-      } else {
-        reviewPaths.push(f.filePath);
-      }
+      if (f.status === 'FULL' && !importCandidatesToReview.has(f.fileName)) deletePaths.push(f.filePath);
+      else reviewPaths.push(f.filePath);
     }
 
     const deletePathsFinal = uniqSorted(deletePaths);
@@ -793,7 +939,7 @@ async function main() {
     const partialOverlapFiles = files.filter((f) => f.status === 'PARTIAL');
 
     const report = {
-      generatedAt: new Date().toISOString(),
+      generatedAt,
       downloadsDir,
       summary: {
         totalFiles: files.length,
@@ -810,17 +956,22 @@ async function main() {
     const outPath = path.join(process.cwd(), 'audit-chatworthy-downloads.json');
     const deleteOutPath = path.join(process.cwd(), 'audit-chatworthy-delete-commands.txt');
     const reviewOutPath = path.join(process.cwd(), 'audit-chatworthy-review-links.html');
+
     const deleteLines =
       deletePathsFinal.map((p) => `rm ${shellSingleQuote(p)}`).join('\n') +
       (deletePathsFinal.length ? '\n' : '');
-    const reportId = `audit:${new Date().toISOString()}:${downloadsDir}`;
+
+    const reportId = `audit:${generatedAt}:${downloadsDir}`;
     const safeJson = (v: any) => JSON.stringify(v).replace(/</g, '\\u003c');
+
+    // ✅ include rmCmd with proper quoting for weird filenames
     const reviewItems = reviewPathsFinal.map((p) => ({
       path: p,
       name: path.basename(p),
       url: toFileUrl(p),
+      rmCmd: `rm ${shellSingleQuote(p)}`,
     }));
-    const deleteItems = deletePathsFinal.map((p) => ({ path: p }));
+
     const reviewLines =
       '<!doctype html>\n' +
       '<html>\n<head>\n' +
@@ -839,13 +990,12 @@ async function main() {
       '    tr.reviewed a { text-decoration: line-through; }\n' +
       '    .path { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; color: #444; }\n' +
       '    .hidden { display: none; }\n' +
-      '    .controls { display: flex; gap: 10px; align-items: center; }\n' +
       '    td.ctrl { text-align: center; }\n' +
       '    input[type="radio"] { transform: scale(1.05); }\n' +
       '  </style>\n' +
       '</head>\n<body>\n' +
-      `  <h2>Files to review</h2>\n` +
-      `  <div class="muted">This checklist persists in your browser (localStorage). Report key: <span id="reportKey"></span></div>\n` +
+      '  <h2>Files to review</h2>\n' +
+      '  <div class="muted">This checklist persists in your browser (localStorage). Report key: <span id="reportKey"></span></div>\n' +
       '  <div class="bar">\n' +
       '    <button id="btnMarkAll">Mark all reviewed</button>\n' +
       '    <button id="btnClear">Clear all marks</button>\n' +
@@ -868,180 +1018,96 @@ async function main() {
       '    </thead>\n' +
       '    <tbody id="rows"></tbody>\n' +
       '  </table>\n' +
-      '\n' +
-      `  <script>\n` +
+      '  <script>\n' +
       `    const REPORT_ID = ${safeJson(reportId)};\n` +
       `    const reviewItems = ${safeJson(reviewItems)};\n` +
       `    const REVIEWED_KEY = "chatworthy_reviewed:" + REPORT_ID;\n` +
       `    const DISPO_KEY = "chatworthy_dispo:" + REPORT_ID;\n` +
       `    const HIDE_KEY = "chatworthy_hideReviewed:" + REPORT_ID;\n` +
-      `\n` +
       `    document.getElementById("reportKey").textContent = REVIEWED_KEY;\n` +
-      `\n` +
       `    function loadJson(key, fallback) {\n` +
-      `      try {\n` +
-      `        const raw = localStorage.getItem(key);\n` +
-      `        return raw ? JSON.parse(raw) : fallback;\n` +
-      `      } catch {\n` +
-      `        return fallback;\n` +
-      `      }\n` +
+      `      try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }\n` +
+      `      catch { return fallback; }\n` +
       `    }\n` +
-      `\n` +
-      `    function saveJson(key, val) {\n` +
-      `      localStorage.setItem(key, JSON.stringify(val));\n` +
-      `    }\n` +
-      `\n` +
-      `    function loadHide() {\n` +
-      `      return localStorage.getItem(HIDE_KEY) === "1";\n` +
-      `    }\n` +
-      `\n` +
-      `    function saveHide(v) {\n` +
-      `      localStorage.setItem(HIDE_KEY, v ? "1" : "0");\n` +
-      `    }\n` +
-      `\n` +
+      `    function saveJson(key, val) { localStorage.setItem(key, JSON.stringify(val)); }\n` +
+      `    function loadHide() { return localStorage.getItem(HIDE_KEY) === "1"; }\n` +
+      `    function saveHide(v) { localStorage.setItem(HIDE_KEY, v ? "1" : "0"); }\n` +
       `    const reviewedState = loadJson(REVIEWED_KEY, {});\n` +
       `    const dispoState = loadJson(DISPO_KEY, {});\n` +
       `    const tbody = document.getElementById("rows");\n` +
       `    const chkHide = document.getElementById("chkHideReviewed");\n` +
-      `\n` +
       `    function render() {\n` +
       `      tbody.innerHTML = "";\n` +
       `      const hideReviewed = chkHide.checked;\n` +
       `      let reviewedCount = 0;\n` +
       `      let removeCount = 0;\n` +
-      `\n` +
       `      for (const item of reviewItems) {\n` +
       `        const dispo = dispoState[item.path] || "import";\n` +
       `        const isRemove = dispo === "remove";\n` +
       `        const isDone = !!reviewedState[item.path];\n` +
       `        if (isRemove) removeCount++;\n` +
       `        if (isDone) reviewedCount++;\n` +
-      `\n` +
       `        const tr = document.createElement("tr");\n` +
       `        if (isDone) tr.classList.add("reviewed");\n` +
       `        if (hideReviewed && isDone) tr.classList.add("hidden");\n` +
-      `\n` +
-      `        const tdReviewed = document.createElement("td");\n` +
-      `        tdReviewed.className = "ctrl";\n` +
-      `        const cb = document.createElement("input");\n` +
-      `        cb.type = "checkbox";\n` +
-      `        cb.checked = isDone;\n` +
-      `        cb.addEventListener("change", () => {\n` +
-      `          reviewedState[item.path] = cb.checked;\n` +
-      `          if (!cb.checked) delete reviewedState[item.path];\n` +
-      `          saveJson(REVIEWED_KEY, reviewedState);\n` +
-      `          render();\n` +
-      `        });\n` +
+      `        const tdReviewed = document.createElement("td"); tdReviewed.className = "ctrl";\n` +
+      `        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = isDone;\n` +
+      `        cb.addEventListener("change", () => { reviewedState[item.path] = cb.checked; if (!cb.checked) delete reviewedState[item.path]; saveJson(REVIEWED_KEY, reviewedState); render(); });\n` +
       `        tdReviewed.appendChild(cb);\n` +
-      `\n` +
-      `        const tdImport = document.createElement("td");\n` +
-      `        tdImport.className = "ctrl";\n` +
-      `        const rImport = document.createElement("input");\n` +
-      `        rImport.type = "radio";\n` +
-      `        rImport.name = "dispo:" + item.path;\n` +
-      `        rImport.checked = dispo === "import";\n` +
-      `        rImport.addEventListener("change", () => {\n` +
-      `          dispoState[item.path] = "import";\n` +
-      `          saveJson(DISPO_KEY, dispoState);\n` +
-      `          render();\n` +
-      `        });\n` +
+      `        const tdImport = document.createElement("td"); tdImport.className = "ctrl";\n` +
+      `        const rImport = document.createElement("input"); rImport.type = "radio"; rImport.name = "dispo:" + item.path; rImport.checked = dispo === "import";\n` +
+      `        rImport.addEventListener("change", () => { dispoState[item.path] = "import"; saveJson(DISPO_KEY, dispoState); render(); });\n` +
       `        tdImport.appendChild(rImport);\n` +
-      `\n` +
-      `        const tdRemove = document.createElement("td");\n` +
-      `        tdRemove.className = "ctrl";\n` +
-      `        const rRemove = document.createElement("input");\n` +
-      `        rRemove.type = "radio";\n` +
-      `        rRemove.name = "dispo:" + item.path;\n` +
-      `        rRemove.checked = dispo === "remove";\n` +
-      `        rRemove.addEventListener("change", () => {\n` +
-      `          dispoState[item.path] = "remove";\n` +
-      `          saveJson(DISPO_KEY, dispoState);\n` +
-      `          render();\n` +
-      `        });\n` +
+      `        const tdRemove = document.createElement("td"); tdRemove.className = "ctrl";\n` +
+      `        const rRemove = document.createElement("input"); rRemove.type = "radio"; rRemove.name = "dispo:" + item.path; rRemove.checked = dispo === "remove";\n` +
+      `        rRemove.addEventListener("change", () => { dispoState[item.path] = "remove"; saveJson(DISPO_KEY, dispoState); render(); });\n` +
       `        tdRemove.appendChild(rRemove);\n` +
-      `\n` +
       `        const tdFile = document.createElement("td");\n` +
-      `        const a = document.createElement("a");\n` +
-      `        a.href = item.url;\n` +
-      `        a.textContent = item.name;\n` +
-      `        a.target = "_blank";\n` +
-      `        a.rel = "noopener noreferrer";\n` +
-      `        tdFile.appendChild(document.createTextNode("review "));\n` +
-      `        tdFile.appendChild(a);\n` +
-      `\n` +
+      `        const a = document.createElement("a"); a.href = item.url; a.textContent = item.name; a.target = "_blank"; a.rel = "noopener noreferrer";\n` +
+      `        tdFile.appendChild(document.createTextNode("review ")); tdFile.appendChild(a);\n` +
       `        const tdPath = document.createElement("td");\n` +
-      `        const div = document.createElement("div");\n` +
-      `        div.className = "path";\n` +
-      `        div.textContent = item.path;\n` +
-      `        tdPath.appendChild(div);\n` +
-      `\n` +
-      `        tr.appendChild(tdReviewed);\n` +
-      `        tr.appendChild(tdImport);\n` +
-      `        tr.appendChild(tdRemove);\n` +
-      `        tr.appendChild(tdFile);\n` +
-      `        tr.appendChild(tdPath);\n` +
+      `        const div = document.createElement("div"); div.className = "path"; div.textContent = item.path; tdPath.appendChild(div);\n` +
+      `        tr.appendChild(tdReviewed); tr.appendChild(tdImport); tr.appendChild(tdRemove); tr.appendChild(tdFile); tr.appendChild(tdPath);\n` +
       `        tbody.appendChild(tr);\n` +
       `      }\n` +
-      `\n` +
-      `      document.getElementById("counts").textContent = \n` +
-      `        "Reviewed: " + reviewedCount + "/" + reviewItems.length +\n` +
-      `        " | Remove: " + removeCount +\n` +
-      `        " | Remaining: " + (reviewItems.length - reviewedCount);\n` +
+      `      document.getElementById("counts").textContent = "Reviewed: " + reviewedCount + "/" + reviewItems.length + " | Remove: " + removeCount + " | Remaining: " + (reviewItems.length - reviewedCount);\n` +
       `    }\n` +
-      `\n` +
-      `    // init hide toggle\n` +
       `    chkHide.checked = loadHide();\n` +
       `    chkHide.addEventListener("change", () => { saveHide(chkHide.checked); render(); });\n` +
-      `\n` +
-      `    document.getElementById("btnMarkAll").addEventListener("click", () => {\n` +
-      `      for (const item of reviewItems) reviewedState[item.path] = true;\n` +
-      `      saveJson(REVIEWED_KEY, reviewedState);\n` +
-      `      render();\n` +
-      `    });\n` +
-      `\n` +
-      `    document.getElementById("btnClear").addEventListener("click", () => {\n` +
-      `      for (const item of reviewItems) delete reviewedState[item.path];\n` +
-      `      saveJson(REVIEWED_KEY, reviewedState);\n` +
-      `      render();\n` +
-      `    });\n` +
-      `\n` +
+      `    document.getElementById("btnMarkAll").addEventListener("click", () => { for (const item of reviewItems) reviewedState[item.path] = true; saveJson(REVIEWED_KEY, reviewedState); render(); });\n` +
+      `    document.getElementById("btnClear").addEventListener("click", () => { for (const item of reviewItems) delete reviewedState[item.path]; saveJson(REVIEWED_KEY, reviewedState); render(); });\n` +
       `    document.getElementById("btnCopyRmRemove").addEventListener("click", async () => {\n` +
       `      const removeList = reviewItems\n` +
       `        .filter(i => (dispoState[i.path] || "import") === "remove")\n` +
-      `        .map(i => "rm " + i.path)\n` +
+      `        .map(i => i.rmCmd)\n` +
       `        .join("\\n");\n` +
-      `      try {\n` +
-      `        await navigator.clipboard.writeText(removeList + (removeList ? "\\n" : ""));\n` +
-      `        alert("Copied rm commands for Remove to clipboard.");\n` +
-      `      } catch (e) {\n` +
-      `        window.prompt("Copy rm commands:", removeList);\n` +
-      `      }\n` +
+      `      try { await navigator.clipboard.writeText(removeList + (removeList ? "\\n" : "")); alert("Copied rm commands for Remove to clipboard."); }\n` +
+      `      catch { window.prompt("Copy rm commands:", removeList); }\n` +
       `    });\n` +
-      `\n` +
       `    document.getElementById("btnClearRemove").addEventListener("click", () => {\n` +
-      `      for (const item of reviewItems) {\n` +
-      `        if (dispoState[item.path] === "remove") {\n` +
-      `          dispoState[item.path] = "import";\n` +
-      `        }\n` +
-      `      }\n` +
-      `      for (const item of reviewItems) {\n` +
-      `        if (dispoState[item.path] === "import") delete dispoState[item.path];\n` +
-      `      }\n` +
+      `      for (const item of reviewItems) { if (dispoState[item.path] === "remove") dispoState[item.path] = "import"; }\n` +
+      `      for (const item of reviewItems) { if (dispoState[item.path] === "import") delete dispoState[item.path]; }\n` +
       `      saveJson(DISPO_KEY, dispoState);\n` +
       `      render();\n` +
       `    });\n` +
-      `\n` +
       `    render();\n` +
-      `  </script>\n` +
+      '  </script>\n' +
       '</body>\n</html>\n';
 
     await fs.writeFile(deleteOutPath, deleteLines, 'utf8');
     await fs.writeFile(reviewOutPath, reviewLines, 'utf8');
     await fs.writeFile(outPath, JSON.stringify(report, null, 2), 'utf8');
+
     printSummary(files, duplicateGroups);
     console.log(`\nReport written to ${outPath}`);
     console.log(`Delete commands written to ${deleteOutPath}`);
     console.log(`Review links written to ${reviewOutPath} (open in Chrome)`);
+
+    // Better v1/v2 sanity: this SHOULD differ if v2 is active
+    console.log(
+      'sanity v1/v2 differ? (expected true)',
+      hashPromptResponsePair('a', 'x\n\n\nz', 1) !== hashPromptResponsePair('a', 'x\n\n\nz', 2)
+    );
   } finally {
     await db.disconnectFromDatabase();
   }

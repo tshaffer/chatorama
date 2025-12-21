@@ -70,7 +70,8 @@ async function main() {
     const dbT = dbTurns.find((x) => (x.turnIndex ?? -1) === turnIndex) ?? dbTurns[turnIndex];
     if (!dbT) throw new Error(`DB turn ${turnIndex} not found (turns=${dbTurns.length})`);
 
-    const dbHash = hashPromptResponsePair(dbT.prompt, dbT.response);
+    const dbHashV1 = hashPromptResponsePair(dbT.prompt, dbT.response, 1);
+    const dbHashV2 = hashPromptResponsePair(dbT.prompt, dbT.response, 2);
 
     // ---- FILE turn ----
     const raw = await fs.readFile(mdFilePath, 'utf8');
@@ -81,12 +82,15 @@ async function main() {
     const fileT = fileTurns.find((x) => (x.turnIndex ?? -1) === turnIndex) ?? fileTurns[turnIndex];
     if (!fileT) throw new Error(`FILE turn ${turnIndex} not found (turns=${fileTurns.length})`);
 
-    const fileHash = hashPromptResponsePair(fileT.prompt, fileT.response);
+    const fileHashV1 = hashPromptResponsePair(fileT.prompt, fileT.response, 1);
+    const fileHashV2 = hashPromptResponsePair(fileT.prompt, fileT.response, 2);
 
     console.log('NOTE title:', (note as any).title);
     console.log('turnIndex:', turnIndex);
-    console.log('DB hash:  ', dbHash);
-    console.log('FILE hash:', fileHash);
+    console.log('DB hash v1:  ', dbHashV1);
+    console.log('DB hash v2:  ', dbHashV2);
+    console.log('FILE hash v1:', fileHashV1);
+    console.log('FILE hash v2:', fileHashV2);
 
     console.log('\n--- PROMPT ---');
     showDiff(fileT.prompt ?? '', dbT.prompt ?? '', 'prompt');

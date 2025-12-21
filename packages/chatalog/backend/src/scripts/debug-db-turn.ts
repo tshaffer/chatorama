@@ -36,7 +36,10 @@ async function main() {
     console.log('DB extracted turnIndex:', t?.turnIndex);
     console.log('DB prompt:', JSON.stringify(t?.prompt));
     console.log('DB response:', JSON.stringify(t?.response));
-    console.log('DB pairHash:', t ? hashPromptResponsePair(t.prompt, t.response) : null);
+    const h1 = t ? hashPromptResponsePair(t.prompt, t.response, 1) : null;
+    const h2 = t ? hashPromptResponsePair(t.prompt, t.response, 2) : null;
+    console.log('DB pairHash v1:', h1);
+    console.log('DB pairHash v2:', h2);
 
     console.log('prompt length:', t?.prompt?.length);
     console.log('response length:', t?.response?.length);
