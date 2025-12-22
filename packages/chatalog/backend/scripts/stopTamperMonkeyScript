@@ -1,0 +1,11 @@
+(() => {
+  const KEY = "bulkUnarchiveQueue_v1";
+  const q = JSON.parse(localStorage.getItem(KEY) || "null");
+  if (q) {
+    q.running = false;
+    localStorage.setItem(KEY, JSON.stringify(q));
+    console.log("Stopped queue runner.");
+  } else {
+    console.log("No queue state found.");
+  }
+})();

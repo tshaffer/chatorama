@@ -1,0 +1,18 @@
+(() => {
+  const KEY = "bulkUnarchiveQueue_v1";
+  const raw = prompt("Paste chat URLs (spaces/commas/newlines ok):");
+  if (!raw) return;
+
+  const urls = raw.split(/[\s,]+/g).map(s => s.trim()).filter(Boolean);
+
+  localStorage.setItem(KEY, JSON.stringify({
+    urls,
+    i: 0,
+    running: true,
+    results: [],
+    triesByUrl: {}
+  }));
+
+  console.log(`Queued ${urls.length} URLs. Starting now…`);
+  location.href = urls[0];
+})();

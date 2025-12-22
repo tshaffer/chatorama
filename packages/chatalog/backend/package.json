@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "seed": "tsx scripts/seedFromData.ts",
     "seed:reset": "RESET_DB=1 tsx scripts/seedFromData.ts",
-    "audit:downloads": "tsx src/scripts/auditChatworthyDownloads.ts"
+    "audit:downloads": "tsx src/scripts/auditChatworthyDownloads.ts",
+    "audit:aberrant": "tsx src/scripts/detectAberrantTurnBlocks.ts --out audit-aberrant-exports.json"
   },
   "dependencies": {
     "@chatorama/chat-md-core": "file:../../chat-md-core",

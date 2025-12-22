@@ -1,0 +1,148 @@
+// ==UserScript==
+// @name         ChatGPT Bulk Unarchive Queue Runner
+// @namespace    ted-unarchive
+// @version      1.3
+// @description  Unarchives chats from a queued URL list stored in localStorage and advances automatically.
+// @match        https://chatgpt.com/*
+// @match        https://chat.openai.com/*
+// @run-at       document-idle
+// @grant        none
+// ==/UserScript==
+
+(function () {
+  const KEY = "bulkUnarchiveQueue_v1";
+  const LOCK_KEY = "bulkUnarchiveQueue_lock_v1";
+
+  const MAX_TRIES_PER_URL = 3;
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const norm = (s) => (s || "").replace(/\s+/g, " ").trim().toLowerCase();
+
+  function loadQueue() {
+    try { return JSON.parse(localStorage.getItem(KEY) || "null"); }
+    catch { return null; }
+  }
+  function saveQueue(q) {
+    localStorage.setItem(KEY, JSON.stringify(q));
+  }
+
+  // Prevent multiple concurrent runs on SPA re-renders / multiple timers
+  function acquireLock() {
+    const now = Date.now();
+    const lock = Number(localStorage.getItem(LOCK_KEY) || "0");
+    if (lock && now - lock < 5000) return false; // lock held <5s ago
+    localStorage.setItem(LOCK_KEY, String(now));
+    return true;
+  }
+  function releaseLock() {
+    localStorage.removeItem(LOCK_KEY);
+  }
+
+  function findUnarchiveButton() {
+    return [...document.querySelectorAll("button")]
+      .find(b => norm(b.innerText) === "unarchive") || null;
+  }
+
+  function archivedBannerLikely() {
+    const body = norm(document.body?.innerText);
+    return body.includes("archived") && body.includes("conversation");
+  }
+
+  function conversationMissingLikely() {
+    const body = norm(document.body?.innerText);
+    return (
+      body.includes("unable to load conversation") ||
+      body.includes("can't load conversation") ||
+      body.includes("cannot load conversation") ||
+      (body.includes("not found") && body.includes("conversation"))
+    );
+  }
+
+  async function advance(q, status) {
+    const target = q.urls[q.i];
+    q.results = q.results || [];
+    q.results.push({ url: target, status, at: new Date().toISOString() });
+    q.i += 1;
+    saveQueue(q);
+
+    const next = q.urls[q.i];
+    console.log(`[unarchive] ${status}. Advancing to ${q.i + 1}/${q.urls.length}`);
+    await sleep(600);
+    location.href = next || "https://chatgpt.com/";
+  }
+
+  async function run() {
+    if (!acquireLock()) return;
+
+    try {
+      const q = loadQueue();
+      if (!q || !Array.isArray(q.urls) || q.urls.length === 0) return;
+      if (q.running !== true) return;
+
+      q.results = q.results || [];
+      q.triesByUrl = q.triesByUrl || {};
+
+      const target = q.urls[q.i];
+      if (!target) {
+        q.running = false;
+        saveQueue(q);
+        console.log("[unarchive] Done. No more URLs.");
+        return;
+      }
+
+      // Cap retries per URL
+      q.triesByUrl[target] = (q.triesByUrl[target] || 0) + 1;
+      const tries = q.triesByUrl[target];
+      saveQueue(q);
+
+      if (tries > MAX_TRIES_PER_URL) {
+        console.warn(`[unarchive] Giving up after ${MAX_TRIES_PER_URL} tries:`, target);
+        await advance(q, "give_up_max_tries");
+        return;
+      }
+
+      // Navigate once to the target
+      if (location.href !== target) {
+        console.log(`[unarchive] Navigating to [${q.i + 1}/${q.urls.length}] (try ${tries})`, target);
+        location.href = target;
+        return;
+      }
+
+      console.log(`[unarchive] On target [${q.i + 1}/${q.urls.length}] (try ${tries})`, target);
+
+      // Let UI settle
+      await sleep(1200);
+
+      // Dead conversation? Skip.
+      if (conversationMissingLikely()) {
+        await advance(q, "not_found");
+        return;
+      }
+
+      // If archived and button exists, click
+      const btn = findUnarchiveButton();
+      if (btn) {
+        console.log("[unarchive] Clicking Unarchive");
+        btn.click();
+        await sleep(1600);
+      }
+
+      // Decide outcome
+      const stillArchived = archivedBannerLikely() || !!findUnarchiveButton();
+      if (stillArchived) {
+        // We'll retry this URL on next load (up to MAX_TRIES_PER_URL)
+        console.warn("[unarchive] Still looks archived; will retry.");
+        // Force a reload to give it another chance without navigating away
+        await sleep(500);
+        location.reload();
+        return;
+      }
+
+      await advance(q, btn ? "unarchived" : "already_unarchived");
+    } finally {
+      releaseLock();
+    }
+  }
+
+  console.log("[unarchive] userscript loaded on", location.href);
+  setTimeout(run, 800);
+})();

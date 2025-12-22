@@ -3,6 +3,7 @@ import path from 'path';
 import os from 'os';
 import matter from 'gray-matter';
 import fg from 'fast-glob';
+import crypto from 'crypto';
 
 import { NoteModel } from '../models/Note';
 import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
@@ -14,6 +15,28 @@ type FileTurn = {
   fileTurnIndex: number;
   pairHashV2: string;
   pairHashV1: string;
+};
+
+type DebugTurn = {
+  fileTurnIndex: number;
+  prompt: string;
+  response: string;
+  pairHashV2: string;
+  pairHashV1: string;
+};
+
+type DebugFile = {
+  filePath: string;
+  fileName: string;
+  chatId: string | null;
+  sanitized: boolean;
+  rawLen: number;
+  contentLen: number;
+  cleanedLen: number;
+  contentHash: string;
+  cleanedHash: string;
+  turnCount: number;
+  turns: DebugTurn[];
 };
 
 type DbTurnMatch = {
@@ -147,6 +170,7 @@ type ScriptOptions = {
   emitFileOverlap: boolean;
   includePartialDetails: boolean;
   includeDuplicateDetails: boolean;
+  explainOverlapPair?: { aPath: string; bPath: string } | null;
 };
 
 function parseArgs(argv: string[]): ScriptOptions {
@@ -155,18 +179,32 @@ function parseArgs(argv: string[]): ScriptOptions {
     emitFileOverlap: false,
     includePartialDetails: true,
     includeDuplicateDetails: true,
+    explainOverlapPair: null,
   };
 
-  for (const a of argv) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i];
     if (a === '--emit-file-overlap') opts.emitFileOverlap = true;
     if (a === '--no-partial-details') opts.includePartialDetails = false;
     if (a === '--no-duplicate-details') opts.includeDuplicateDetails = false;
+    if (a === '--explain-overlap-pair') {
+      const aPath = argv[i + 1];
+      const bPath = argv[i + 2];
+      if (aPath && bPath) {
+        opts.explainOverlapPair = { aPath, bPath };
+        i += 2;
+      }
+    }
   }
 
   return opts;
 }
 
 // ------------------- tiny utils -------------------
+
+function sha256(s: string): string {
+  return crypto.createHash('sha256').update(s, 'utf8').digest('hex');
+}
 
 function showInvisibles(s: string, max = 280): string {
   const head = s.slice(0, max);
@@ -181,6 +219,26 @@ function firstDiffIndex(a: string, b: string): number {
   const n = Math.min(a.length, b.length);
   for (let i = 0; i < n; i++) if (a[i] !== b[i]) return i;
   return a.length === b.length ? -1 : n;
+}
+
+function diffStrings(a: string, b: string) {
+  const idx = firstDiffIndex(a, b);
+  if (idx === -1) return { idx: -1 as const, aSnippet: '', bSnippet: '' };
+
+  const start = Math.max(0, idx - 40);
+  const end = idx + 120;
+
+  return {
+    idx,
+    aSnippet: showInvisibles(a.slice(start, end)),
+    bSnippet: showInvisibles(b.slice(start, end)),
+  };
+}
+
+function setDiff(a: Set<string>, b: Set<string>): string[] {
+  const out: string[] = [];
+  for (const x of a) if (!b.has(x)) out.push(x);
+  return out.sort();
 }
 
 function isSubset(a: Set<string>, b: Set<string>): boolean {
@@ -472,6 +530,55 @@ async function loadMarkdownIndexForChatId(chatId: string): Promise<Map<string, D
   return index;
 }
 
+async function scanOneFileForDebug(filePath: string): Promise<DebugFile> {
+  const raw = await fs.readFile(filePath, 'utf8');
+
+  let fm: Record<string, any> = {};
+  let content = raw;
+
+  try {
+    const gm = matter(raw);
+    fm = (gm.data ?? {}) as Record<string, any>;
+    content = gm.content ?? raw;
+  } catch {
+    const { frontMatterRaw, content: stripped } = stripFrontMatter(raw);
+    fm = parseFrontMatterLoosely(frontMatterRaw);
+    content = stripped;
+  }
+
+  const chatId = extractChatId(fm);
+  const sanitized = shouldSanitizeChatworthyExport(content);
+  const cleaned = sanitized ? sanitizeChatworthyExportContent(content) : content;
+  const logicalTurns = extractPromptResponseTurns(cleaned);
+
+  const turns: DebugTurn[] = logicalTurns.map((t, idx) => {
+    const fileTurnIndex = typeof t.turnIndex === 'number' ? t.turnIndex : idx;
+    const prompt = t.prompt ?? '';
+    const response = t.response ?? '';
+    return {
+      fileTurnIndex,
+      prompt,
+      response,
+      pairHashV2: hashPromptResponsePair(prompt, response, 2),
+      pairHashV1: hashPromptResponsePair(prompt, response, 1),
+    };
+  });
+
+  return {
+    filePath,
+    fileName: path.basename(filePath),
+    chatId,
+    sanitized,
+    rawLen: raw.length,
+    contentLen: content.length,
+    cleanedLen: cleaned.length,
+    contentHash: sha256(content),
+    cleanedHash: sha256(cleaned),
+    turnCount: turns.length,
+    turns,
+  };
+}
+
 async function scanMarkdownFiles(downloadsDir: string): Promise<FileScan[]> {
   const files = await fg('*.md', { cwd: downloadsDir, absolute: true, onlyFiles: true });
   const results: FileScan[] = [];
@@ -694,6 +801,132 @@ function labelOverlap(aSet: Set<string>, bSet: Set<string>): FileOverlapPair['ov
   if (isSubset(aSet, bSet)) return 'A_SUBSET_OF_B';
   if (isSubset(bSet, aSet)) return 'B_SUBSET_OF_A';
   return 'PARTIAL_OVERLAP';
+}
+
+async function explainOverlapPair(opts: ScriptOptions) {
+  if (!opts.explainOverlapPair) return;
+
+  const { aPath, bPath } = opts.explainOverlapPair;
+  const a = await scanOneFileForDebug(aPath);
+  const b = await scanOneFileForDebug(bPath);
+
+  const aSet = new Set(a.turns.map((t) => t.pairHashV2));
+  const bSet = new Set(b.turns.map((t) => t.pairHashV2));
+
+  const inter = intersectionCount(aSet, bSet);
+  const onlyA = setDiff(aSet, bSet);
+  const onlyB = setDiff(bSet, aSet);
+
+  const minTurns = Math.min(a.turns.length, b.turns.length);
+  let firstTurnTextDiff: any = null;
+
+  for (let i = 0; i < minTurns; i += 1) {
+    const ap = a.turns[i].prompt;
+    const bp = b.turns[i].prompt;
+    const ar = a.turns[i].response;
+    const br = b.turns[i].response;
+
+    if (ap !== bp) {
+      firstTurnTextDiff = { turn: i, field: 'prompt', ...diffStrings(ap, bp) };
+      break;
+    }
+    if (ar !== br) {
+      firstTurnTextDiff = { turn: i, field: 'response', ...diffStrings(ar, br) };
+      break;
+    }
+  }
+
+  const explain = {
+    pair: { aPath, bPath },
+    fileA: {
+      fileName: a.fileName,
+      chatId: a.chatId,
+      sanitized: a.sanitized,
+      rawLen: a.rawLen,
+      contentLen: a.contentLen,
+      cleanedLen: a.cleanedLen,
+      contentHash: a.contentHash,
+      cleanedHash: a.cleanedHash,
+      turnCount: a.turnCount,
+    },
+    fileB: {
+      fileName: b.fileName,
+      chatId: b.chatId,
+      sanitized: b.sanitized,
+      rawLen: b.rawLen,
+      contentLen: b.contentLen,
+      cleanedLen: b.cleanedLen,
+      contentHash: b.contentHash,
+      cleanedHash: b.cleanedHash,
+      turnCount: b.turnCount,
+    },
+    overlap: {
+      intersectionCount: inter,
+      onlyACount: onlyA.length,
+      onlyBCount: onlyB.length,
+      jaccard: jaccard(aSet, bSet),
+      overlapLabel: labelOverlap(aSet, bSet),
+    },
+    sanity: {
+      contentExactMatch: a.contentHash === b.contentHash,
+      cleanedExactMatch: a.cleanedHash === b.cleanedHash,
+      sameTurnCount: a.turnCount === b.turnCount,
+      firstTurnTextDiff,
+    },
+    samples: {
+      onlyA_hashes: onlyA.slice(0, 20),
+      onlyB_hashes: onlyB.slice(0, 20),
+    },
+    turnsA: a.turns.map((t) => ({
+      fileTurnIndex: t.fileTurnIndex,
+      pairHashV2: t.pairHashV2,
+      promptLen: t.prompt.length,
+      responseLen: t.response.length,
+      promptPreview: t.prompt.slice(0, 160),
+      responsePreview: t.response.slice(0, 160),
+    })),
+    turnsB: b.turns.map((t) => ({
+      fileTurnIndex: t.fileTurnIndex,
+      pairHashV2: t.pairHashV2,
+      promptLen: t.prompt.length,
+      responseLen: t.response.length,
+      promptPreview: t.prompt.slice(0, 160),
+      responsePreview: t.response.slice(0, 160),
+    })),
+  };
+
+  const jsonPath = path.join(process.cwd(), 'audit-chatworthy-overlap-explain.json');
+  const txtPath = path.join(process.cwd(), 'audit-chatworthy-overlap-explain.txt');
+
+  const lines: string[] = [];
+  lines.push(`A: ${a.filePath}`);
+  lines.push(`B: ${b.filePath}`);
+  lines.push(`A sanitized=${a.sanitized} cleanedHash=${a.cleanedHash} turns=${a.turnCount}`);
+  lines.push(`B sanitized=${b.sanitized} cleanedHash=${b.cleanedHash} turns=${b.turnCount}`);
+  lines.push(
+    `overlap: label=${explain.overlap.overlapLabel} inter=${inter} jaccard=${explain.overlap.jaccard}`,
+  );
+  if (firstTurnTextDiff?.idx >= 0) {
+    lines.push(
+      `first text diff: turn=${firstTurnTextDiff.turn} field=${firstTurnTextDiff.field} idx=${firstTurnTextDiff.idx}`,
+    );
+    lines.push(`A snippet: ${firstTurnTextDiff.aSnippet}`);
+    lines.push(`B snippet: ${firstTurnTextDiff.bSnippet}`);
+  } else {
+    lines.push(`no prompt/response text diff found by index alignment (or turn counts differ)`);
+  }
+  lines.push('');
+  lines.push('onlyA hashes (first 20):');
+  lines.push(...onlyA.slice(0, 20));
+  lines.push('');
+  lines.push('onlyB hashes (first 20):');
+  lines.push(...onlyB.slice(0, 20));
+
+  await fs.writeFile(jsonPath, JSON.stringify(explain, null, 2), 'utf8');
+  await fs.writeFile(txtPath, lines.join('\n'), 'utf8');
+
+  console.log(`\nExplain written to ${jsonPath}`);
+  console.log(`Explain summary written to ${txtPath}`);
 }
 
 /**
@@ -976,8 +1209,11 @@ async function main() {
   try {
     const generatedAt = new Date().toISOString();
 
-    const fingerprintIndex = await loadFingerprintIndex();
     const files = await scanMarkdownFiles(downloadsDir);
+    if (opts.explainOverlapPair) {
+      await explainOverlapPair(opts);
+    }
+    const fingerprintIndex = await loadFingerprintIndex();
 
     for (const file of files) {
       const matchedTurns: MatchedTurnDetail[] = [];

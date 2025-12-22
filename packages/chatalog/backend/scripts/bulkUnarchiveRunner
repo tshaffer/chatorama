@@ -1,0 +1,176 @@
+(async function () {
+  const KEY = "bulkUnarchiveState_v3";
+
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const norm = (s) => (s || "").replace(/\s+/g, " ").trim().toLowerCase();
+
+  // Tunables
+  const cfg = {
+    waitForUiMaxMs: 15000,   // wait up to 15s for page UI to settle
+    pollEveryMs: 300,        // check UI every 300ms
+    postClickWaitMs: 1200,   // after click wait
+    verifyReloadWaitMs: 2500 // after reload wait
+  };
+
+  function loadState() {
+    try { return JSON.parse(localStorage.getItem(KEY) || "null"); }
+    catch { return null; }
+  }
+  function saveState(state) {
+    localStorage.setItem(KEY, JSON.stringify(state));
+  }
+  function clearState() {
+    localStorage.removeItem(KEY);
+  }
+
+  function archivedBannerLikely() {
+    const body = norm(document.body?.innerText);
+    return body.includes("archived") && body.includes("conversation");
+  }
+
+  function findUnarchiveButton() {
+    return [...document.querySelectorAll("button")]
+      .find(b => norm(b.innerText) === "unarchive") || null;
+  }
+
+  async function waitForRelevantUi() {
+    const start = Date.now();
+    while (Date.now() - start < cfg.waitForUiMaxMs) {
+      const btn = findUnarchiveButton();
+      const archived = archivedBannerLikely();
+      if (btn || !archived) return { btn, archived };
+      await sleep(cfg.pollEveryMs);
+    }
+    // Timed out
+    return { btn: findUnarchiveButton(), archived: archivedBannerLikely(), timedOut: true };
+  }
+
+  async function unarchiveWithVerify() {
+    const first = await waitForRelevantUi();
+
+    // If not archived, nothing to do
+    if (!first.archived && !first.btn) return "not_archived";
+
+    // Archived but no button => manual
+    if (first.archived && !first.btn) return first.timedOut ? "needs_manual_timeout" : "needs_manual";
+
+    // Click unarchive
+    first.btn.click();
+    await sleep(cfg.postClickWaitMs);
+
+    // Force reload to verify it "sticks"
+    sessionStorage.setItem("ua_verify_pending", "1");
+    location.reload();
+
+    // After reload, the script continues only if logs preserved;
+    // so we detect the reload using sessionStorage.
+    return "clicked_reloading";
+  }
+
+  async function postReloadVerify() {
+    if (sessionStorage.getItem("ua_verify_pending") !== "1") return null;
+    sessionStorage.removeItem("ua_verify_pending");
+
+    await sleep(cfg.verifyReloadWaitMs);
+    const stillHasBtn = !!findUnarchiveButton();
+    const stillArchived = archivedBannerLikely();
+
+    if (stillHasBtn || stillArchived) return "verify_failed_still_archived";
+    return "verified_unarchived";
+  }
+
+  // -------- Init / Resume --------
+  let state = loadState();
+
+  if (!state) {
+    const raw = prompt(
+      "Paste chat URLs. You can paste:\n" +
+      "• one per line, OR\n" +
+      "• space-separated, OR\n" +
+      "• comma-separated.\n"
+    );
+    if (!raw) return;
+
+    // Split on whitespace OR commas
+    const urls = raw
+      .split(/[\s,]+/g)
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    state = { urls, i: 0, results: [] };
+    saveState(state);
+    console.log(`Saved ${urls.length} URLs. Starting at #1.`);
+  } else {
+    const choice = prompt(
+      `Found saved run:\n` +
+      `• URLs: ${state.urls.length}\n` +
+      `• Next index: ${state.i + 1}\n\n` +
+      `Type "resume" to continue,\n` +
+      `"restart" to start over,\n` +
+      `"clear" to forget state.`,
+      "resume"
+    );
+    if (choice === "clear") { clearState(); console.log("Cleared saved state."); return; }
+    if (choice === "restart") { state.i = 0; state.results = []; saveState(state); }
+  }
+
+  // If we just reloaded for verification, record verification result and continue
+  const verifyStatus = await postReloadVerify();
+  if (verifyStatus) {
+    // Attach verification result to the most recent entry if it was a click
+    const last = state.results[state.results.length - 1];
+    if (last && last.status === "clicked_reloading") last.status = verifyStatus;
+    saveState(state);
+    console.log(`Post-reload verification: ${verifyStatus}`);
+  }
+
+  // -------- Run loop --------
+  for (; state.i < state.urls.length; state.i++) {
+    const url = state.urls[state.i];
+    console.log(`[${state.i + 1}/${state.urls.length}] → ${url}`);
+    saveState(state);
+
+    // Navigate
+    location.href = url;
+
+    // Wait for page to settle + unarchive + verify
+    // We can only proceed after navigation completes, so we just wait and then act.
+    await sleep(2500);
+
+    const status = await unarchiveWithVerify();
+    state.results.push({ url, status, at: new Date().toISOString() });
+    saveState(state);
+
+    console.log(`[${state.i + 1}/${state.urls.length}] status = ${status}`);
+
+    // If we triggered reload for verification, stop this run now.
+    // The script will continue automatically when you paste it again (resume).
+    if (status === "clicked_reloading") {
+      console.log("Reloading to verify... re-run the same script and choose 'resume' to continue.");
+      return;
+    }
+
+    await sleep(800);
+  }
+
+  // -------- Summary --------
+  const counts = state.results.reduce((acc, r) => {
+    acc[r.status] = (acc[r.status] || 0) + 1;
+    return acc;
+  }, {});
+  console.log("DONE. Summary:", counts);
+
+  const needsManual = state.results
+    .filter(r => !["not_archived", "verified_unarchived"].includes(r.status))
+    .map(r => `${r.status}  ${r.url}`)
+    .join("\n");
+
+  if (needsManual) {
+    try {
+      await navigator.clipboard.writeText(needsManual);
+      console.log("Copied non-success URLs to clipboard.");
+    } catch {
+      console.log("Non-success URLs:\n" + needsManual);
+    }
+  }
+})();
