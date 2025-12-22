@@ -89,6 +89,85 @@ type DuplicateGroup = {
   keepFiles?: string[];
 };
 
+type FingerprintOcc = { noteId: string; chatId?: string | null; dbTurnIndex?: number | null };
+
+// ------------------- overlap output types -------------------
+
+type FileOverlapPair = {
+  aFileName: string;
+  bFileName: string;
+
+  aTurnCount: number;
+  bTurnCount: number;
+
+  intersectionCount: number;
+  onlyACount: number;
+  onlyBCount: number;
+
+  jaccard: number; // intersection / union
+
+  aIsSubsetOfB: boolean;
+  bIsSubsetOfA: boolean;
+
+  // helpful “shape” signal
+  overlapLabel:
+    | 'IDENTICAL'
+    | 'A_SUBSET_OF_B'
+    | 'B_SUBSET_OF_A'
+    | 'PARTIAL_OVERLAP'
+    | 'DISJOINT';
+};
+
+type FileOverlapFileSummary = {
+  fileName: string;
+  filePath: string;
+  turnCount: number;
+};
+
+type FileOverlapGroup = {
+  chatId: string;
+  chatTitle?: string | null;
+  chatUrl?: string | null;
+
+  files: FileOverlapFileSummary[];
+
+  // Group-level counts, independent of DB coverage
+  unionTurnCount: number;
+  maxTurnCount: number;
+
+  pairs: FileOverlapPair[];
+
+  // Optional suggested “keep” file purely based on coverage/length (not DB)
+  recommendedKeepCandidate?: string | null;
+};
+
+// ------------------- options -------------------
+
+type ScriptOptions = {
+  emitFileOverlap: boolean;
+  includePartialDetails: boolean;
+  includeDuplicateDetails: boolean;
+};
+
+function parseArgs(argv: string[]): ScriptOptions {
+  // defaults preserve your current behavior
+  const opts: ScriptOptions = {
+    emitFileOverlap: false,
+    includePartialDetails: true,
+    includeDuplicateDetails: true,
+  };
+
+  for (const a of argv) {
+    if (a === '--emit-file-overlap') opts.emitFileOverlap = true;
+    if (a === '--no-partial-details') opts.includePartialDetails = false;
+    if (a === '--no-duplicate-details') opts.includeDuplicateDetails = false;
+  }
+
+  return opts;
+}
+
+// ------------------- tiny utils -------------------
+
 function showInvisibles(s: string, max = 280): string {
   const head = s.slice(0, max);
   return head
@@ -114,13 +193,28 @@ function isStrictSubset(a: Set<string>, b: Set<string>): boolean {
   return a.size < b.size && isSubset(a, b);
 }
 
-type FingerprintOcc = { noteId: string; chatId?: string | null; dbTurnIndex?: number | null };
+function uniqSorted(arr: string[]): string[] {
+  return [...new Set(arr)].sort((a, b) => a.localeCompare(b));
+}
+
+function shellSingleQuote(p: string): string {
+  return `'${p.replace(/'/g, `'\\''`)}'`;
+}
+
+function toFileUrl(filePath: string): string {
+  const normalized = path.resolve(filePath);
+  return encodeURI(`file://${normalized.startsWith('/') ? '' : '/'}${normalized}`);
+}
+
+// ------------------- caches -------------------
 
 const chatIdHasAnyDbNotesCache = new Map<string, boolean>();
 const markdownIndexByChatIdCache = new Map<string, Map<string, DbTurnMatch[]>>();
 const noteMetaCache = new Map<string, DbTurnMatch>();
 const subjectNameCache = new Map<string, string>();
 const topicNameCache = new Map<string, string>();
+
+// ------------------- core helpers -------------------
 
 function ensureMongoUri(): string {
   const uri = process.env.MONGO_URI;
@@ -220,6 +314,18 @@ async function chatIdHasAnyDbNotes(chatId: string): Promise<boolean> {
   return has;
 }
 
+function uniqDbMatches(matches: DbTurnMatch[]): DbTurnMatch[] {
+  const seen = new Set<string>();
+  const out: DbTurnMatch[] = [];
+  for (const m of matches) {
+    const k = `${m.noteId}:${m.dbTurnIndex ?? ''}:${m.matchSource}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(m);
+  }
+  return out;
+}
+
 async function hydrateNoteMeta(noteIds: string[]): Promise<void> {
   const missing = noteIds.filter((id) => !noteMetaCache.has(id));
   if (!missing.length) return;
@@ -315,7 +421,6 @@ async function loadFingerprintIndex(): Promise<Map<string, FingerprintOcc[]>> {
 }
 
 async function loadMarkdownIndexForChatId(chatId: string): Promise<Map<string, DbTurnMatch[]>> {
-
   if (markdownIndexByChatIdCache.has(chatId)) return markdownIndexByChatIdCache.get(chatId)!;
 
   const notes = await NoteModel.find(
@@ -344,7 +449,6 @@ async function loadMarkdownIndexForChatId(chatId: string): Promise<Map<string, D
     const noteId = n._id.toString();
     const turns = extractPromptResponseTurns((n as any).markdown ?? '');
     turns.forEach((t) => {
-
       const pairHashV2 = hashPromptResponsePair(t.prompt, t.response, 2);
       const pairHashV1 = hashPromptResponsePair(t.prompt, t.response, 1);
       const base = noteMetaCache.get(noteId)!;
@@ -436,6 +540,8 @@ async function scanMarkdownFiles(downloadsDir: string): Promise<FileScan[]> {
   return results;
 }
 
+// ---------------- duplicate groups (existing) ----------------
+
 function buildDuplicateGroups(
   files: FileScan[],
   fingerprintIndex: Map<string, FingerprintOcc[]>
@@ -489,7 +595,6 @@ function buildDuplicateGroups(
       entry.summary.recommendedAction = 'SAFE_DELETE_DUPLICATE';
 
       if (chosen) {
-        // Indices that exist in the closest superset but are absent from this file.
         const missingIndices = chosen.file.turns
           .filter((t) => !entry.fileSet.has(t.pairHashV2))
           .map((t) => t.fileTurnIndex);
@@ -509,7 +614,7 @@ function buildDuplicateGroups(
 
     const unionMatched = new Set<string>();
 
-    // ✅ FIX: Map.forEach is (value, key) => (v1, v2)
+    // ✅ Map.forEach is (value, key) => (v1, v2)
     unionHashes.forEach((v1, v2) => {
       if (fingerprintIndex.has(v2) || fingerprintIndex.has(v1)) {
         unionMatched.add(v2);
@@ -566,6 +671,223 @@ function buildDuplicateGroups(
   return groups;
 }
 
+// ---------------- NEW: file-vs-file overlap phase/module ----------------
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  const inter = intersectionCount(a, b);
+  const uni = a.size + b.size - inter;
+  return uni === 0 ? 1 : inter / uni;
+}
+
+function intersectionCount(a: Set<string>, b: Set<string>): number {
+  // iterate smaller
+  const [small, big] = a.size <= b.size ? [a, b] : [b, a];
+  let n = 0;
+  for (const x of small) if (big.has(x)) n++;
+  return n;
+}
+
+function labelOverlap(aSet: Set<string>, bSet: Set<string>): FileOverlapPair['overlapLabel'] {
+  const inter = intersectionCount(aSet, bSet);
+  if (inter === 0) return 'DISJOINT';
+  if (aSet.size === bSet.size && inter === aSet.size) return 'IDENTICAL';
+  if (isSubset(aSet, bSet)) return 'A_SUBSET_OF_B';
+  if (isSubset(bSet, aSet)) return 'B_SUBSET_OF_A';
+  return 'PARTIAL_OVERLAP';
+}
+
+/**
+ * Build purely file-vs-file overlap groups by chatId.
+ * Uses pairHashV2 sets (because v2 is your primary identity),
+ * and does not involve DB coverage at all.
+ */
+function buildFileOverlapGroups(files: FileScan[]): FileOverlapGroup[] {
+  const byChatId = new Map<string, FileScan[]>();
+  for (const f of files) {
+    if (!f.chatId) continue;
+    if (!byChatId.has(f.chatId)) byChatId.set(f.chatId, []);
+    byChatId.get(f.chatId)!.push(f);
+  }
+
+  const out: FileOverlapGroup[] = [];
+
+  for (const [chatId, members] of byChatId.entries()) {
+    if (members.length < 2) continue;
+
+    // deterministic ordering
+    const sorted = [...members].sort((a, b) => a.fileName.localeCompare(b.fileName));
+
+    const sets = new Map<string, Set<string>>();
+    const fileSummaries: FileOverlapFileSummary[] = sorted.map((f) => {
+      const s = new Set(f.turns.map((t) => t.pairHashV2));
+      sets.set(f.fileName, s);
+      return { fileName: f.fileName, filePath: f.filePath, turnCount: f.turnCount };
+    });
+
+    // union count
+    const union = new Set<string>();
+    let maxTurnCount = 0;
+    for (const f of sorted) {
+      const s = sets.get(f.fileName)!;
+      maxTurnCount = Math.max(maxTurnCount, s.size);
+      for (const h of s) union.add(h);
+    }
+
+    const pairs: FileOverlapPair[] = [];
+    for (let i = 0; i < sorted.length; i++) {
+      for (let j = i + 1; j < sorted.length; j++) {
+        const a = sorted[i];
+        const b = sorted[j];
+        const aSet = sets.get(a.fileName)!;
+        const bSet = sets.get(b.fileName)!;
+
+        const inter = intersectionCount(aSet, bSet);
+        const onlyA = aSet.size - inter;
+        const onlyB = bSet.size - inter;
+
+        const aSubset = isSubset(aSet, bSet);
+        const bSubset = isSubset(bSet, aSet);
+
+        pairs.push({
+          aFileName: a.fileName,
+          bFileName: b.fileName,
+          aTurnCount: aSet.size,
+          bTurnCount: bSet.size,
+          intersectionCount: inter,
+          onlyACount: onlyA,
+          onlyBCount: onlyB,
+          jaccard: jaccard(aSet, bSet),
+          aIsSubsetOfB: aSubset,
+          bIsSubsetOfA: bSubset,
+          overlapLabel: labelOverlap(aSet, bSet),
+        });
+      }
+    }
+
+    // A simple “keep candidate” heuristic: biggest unique coverage,
+    // tie-break by filename (latest timestamp often sorts later, but don’t assume)
+    // For now: keep the file with largest set size; ties by lexicographic.
+    const keep = [...sorted]
+      .sort((a, b) => {
+        const asz = sets.get(a.fileName)!.size;
+        const bsz = sets.get(b.fileName)!.size;
+        if (bsz !== asz) return bsz - asz;
+        return b.fileName.localeCompare(a.fileName);
+      })[0]?.fileName ?? null;
+
+    out.push({
+      chatId,
+      chatTitle: sorted.find((m) => m.chatTitle)?.chatTitle ?? null,
+      chatUrl: sorted.find((m) => m.chatUrl)?.chatUrl ?? null,
+      files: fileSummaries,
+      unionTurnCount: union.size,
+      maxTurnCount,
+      pairs,
+      recommendedKeepCandidate: keep,
+    });
+  }
+
+  return out;
+}
+
+function renderFileOverlapHtml(generatedAt: string, downloadsDir: string, groups: FileOverlapGroup[]): string {
+  const safeJson = (v: any) => JSON.stringify(v).replace(/</g, '\\u003c');
+
+  // Sort groups by size desc
+  const sorted = [...groups].sort((a, b) => {
+    if (b.files.length !== a.files.length) return b.files.length - a.files.length;
+    return (a.chatTitle ?? a.chatId).localeCompare(b.chatTitle ?? b.chatId);
+  });
+
+  return (
+    '<!doctype html>\n' +
+    '<html>\n<head>\n' +
+    '  <meta charset="utf-8" />\n' +
+    '  <meta name="viewport" content="width=device-width, initial-scale=1" />\n' +
+    '  <title>Chatworthy file overlap</title>\n' +
+    '  <style>\n' +
+    '    body { font-family: system-ui, -apple-system, sans-serif; padding: 16px; }\n' +
+    '    .muted { color: #666; font-size: 12px; }\n' +
+    '    .group { border: 1px solid #eee; border-radius: 12px; padding: 12px; margin: 14px 0; }\n' +
+    '    .hdr { display:flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }\n' +
+    '    .title { font-weight: 650; }\n' +
+    '    .pill { display:inline-block; font-size: 12px; border: 1px solid #ddd; padding: 3px 8px; border-radius: 999px; margin-right: 6px; }\n' +
+    '    table { border-collapse: collapse; width: 100%; margin-top: 10px; }\n' +
+    '    th, td { border-bottom: 1px solid #eee; padding: 8px; vertical-align: top; }\n' +
+    '    td.mono, th.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; }\n' +
+    '    .k { font-weight: 600; }\n' +
+    '  </style>\n' +
+    '</head>\n<body>\n' +
+    '  <h2>File-vs-file overlap (Chatworthy exports)</h2>\n' +
+    `  <div class="muted">generatedAt: ${generatedAt} &nbsp;|&nbsp; downloadsDir: ${downloadsDir}</div>\n` +
+    `  <div class="muted">Groups: ${sorted.length}</div>\n` +
+    sorted
+      .map((g) => {
+        const chatLink = g.chatUrl ? `<a href="${g.chatUrl}" target="_blank" rel="noopener noreferrer">open chat</a>` : '';
+        const fileRows = g.files
+          .map((f) => {
+            const url = toFileUrl(f.filePath);
+            return `<tr><td class="mono"><a href="${url}" target="_blank" rel="noopener noreferrer">${f.fileName}</a></td><td class="mono">${f.turnCount}</td><td class="mono">${f.filePath}</td></tr>`;
+          })
+          .join('\n');
+
+        const pairRows = g.pairs
+          .sort((a, b) => b.jaccard - a.jaccard)
+          .map((p) => {
+            const j = (Math.round(p.jaccard * 1000) / 1000).toFixed(3);
+            return (
+              `<tr>` +
+              `<td class="mono">${p.aFileName}</td>` +
+              `<td class="mono">${p.bFileName}</td>` +
+              `<td class="mono">${p.overlapLabel}</td>` +
+              `<td class="mono">${p.intersectionCount}</td>` +
+              `<td class="mono">${p.onlyACount}</td>` +
+              `<td class="mono">${p.onlyBCount}</td>` +
+              `<td class="mono">${j}</td>` +
+              `</tr>`
+            );
+          })
+          .join('\n');
+
+        return (
+          `<div class="group">\n` +
+          `  <div class="hdr">\n` +
+          `    <div>\n` +
+          `      <div class="title">${(g.chatTitle ?? '(no chatTitle)')} <span class="muted">(${g.chatId})</span></div>\n` +
+          `      <div class="muted">${chatLink}</div>\n` +
+          `    </div>\n` +
+          `    <div>\n` +
+          `      <span class="pill"><span class="k">files</span>: ${g.files.length}</span>\n` +
+          `      <span class="pill"><span class="k">union</span>: ${g.unionTurnCount}</span>\n` +
+          `      <span class="pill"><span class="k">max</span>: ${g.maxTurnCount}</span>\n` +
+          `      <span class="pill"><span class="k">keep</span>: ${g.recommendedKeepCandidate ?? '—'}</span>\n` +
+          `    </div>\n` +
+          `  </div>\n` +
+          `  <h4 style="margin:10px 0 6px;">Files</h4>\n` +
+          `  <table>\n` +
+          `    <thead><tr><th class="mono">fileName</th><th class="mono">turnCount</th><th class="mono">filePath</th></tr></thead>\n` +
+          `    <tbody>\n${fileRows}\n</tbody>\n` +
+          `  </table>\n` +
+          `  <h4 style="margin:12px 0 6px;">Pairwise overlap</h4>\n` +
+          `  <table>\n` +
+          `    <thead>\n` +
+          `      <tr>\n` +
+          `        <th class="mono">A</th><th class="mono">B</th><th class="mono">label</th>\n` +
+          `        <th class="mono">∩</th><th class="mono">A\\B</th><th class="mono">B\\A</th><th class="mono">jaccard</th>\n` +
+          `      </tr>\n` +
+          `    </thead>\n` +
+          `    <tbody>\n${pairRows}\n</tbody>\n` +
+          `  </table>\n` +
+          `</div>\n`
+        );
+      })
+      .join('\n') +
+    '\n</body>\n</html>\n'
+  );
+}
+
+// ---------------- report shaping ----------------
+
 function minFileForOutput(f: FileScan) {
   return {
     fileName: f.fileName,
@@ -592,7 +914,11 @@ function fullFileWithDiagnostics(f: FileScan) {
   };
 }
 
-function printSummary(files: FileScan[], duplicateGroups: DuplicateGroup[]): void {
+function printSummary(
+  files: FileScan[],
+  duplicateGroups: DuplicateGroup[],
+  opts: ScriptOptions
+): void {
   const full = files.filter((f) => f.status === 'FULL');
   const none = files.filter((f) => f.status === 'NONE');
   const partial = files.filter((f) => f.status === 'PARTIAL');
@@ -609,18 +935,22 @@ function printSummary(files: FileScan[], duplicateGroups: DuplicateGroup[]): voi
       console.log(
         `- ${f.fileName} | coverage=${f.coverage} | matched=${f.matchedTurnIndices.join(',')} | unmatched=${f.unmatchedTurnIndices.join(',')}`
       );
-      f.matchedTurns.slice(0, 2).forEach((mt) => {
-        const firstMatch = mt.dbMatches[0];
-        if (firstMatch) {
-          console.log(
-            `    turn ${mt.fileTurnIndex} -> note ${firstMatch.noteId} (${firstMatch.title ?? ''})`
-          );
-        }
-      });
+
+      // Only show matchedTurns hint if details are enabled
+      if (opts.includePartialDetails) {
+        f.matchedTurns.slice(0, 2).forEach((mt) => {
+          const firstMatch = mt.dbMatches[0];
+          if (firstMatch) {
+            console.log(
+              `    turn ${mt.fileTurnIndex} -> note ${firstMatch.noteId} (${firstMatch.title ?? ''})`
+            );
+          }
+        });
+      }
     });
   }
 
-  if (duplicateGroups.length) {
+  if (opts.includeDuplicateDetails && duplicateGroups.length) {
     console.log('\nDuplicate groups:');
     duplicateGroups.forEach((g) => {
       console.log(
@@ -632,32 +962,10 @@ function printSummary(files: FileScan[], duplicateGroups: DuplicateGroup[]): voi
   }
 }
 
-function toFileUrl(filePath: string): string {
-  const normalized = path.resolve(filePath);
-  return encodeURI(`file://${normalized.startsWith('/') ? '' : '/'}${normalized}`);
-}
-
-function uniqSorted(arr: string[]): string[] {
-  return [...new Set(arr)].sort((a, b) => a.localeCompare(b));
-}
-
-function shellSingleQuote(p: string): string {
-  return `'${p.replace(/'/g, `'\\''`)}'`;
-}
-
-function uniqDbMatches(matches: DbTurnMatch[]): DbTurnMatch[] {
-  const seen = new Set<string>();
-  const out: DbTurnMatch[] = [];
-  for (const m of matches) {
-    const k = `${m.noteId}:${m.dbTurnIndex ?? ''}:${m.matchSource}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(m);
-  }
-  return out;
-}
+// ---------------- main ----------------
 
 async function main() {
+  const opts = parseArgs(process.argv.slice(2));
   ensureMongoUri();
 
   const downloadsDir = resolveDownloadsDir();
@@ -749,10 +1057,17 @@ async function main() {
       file.matchedCount = file.matchedTurnIndices.length;
       file.unmatchedCount = file.unmatchedTurnIndices.length;
       file.coverage = `${file.matchedCount}/${file.turnCount}`;
-      file.status = file.matchedCount === 0 ? 'NONE' : file.matchedCount === file.turnCount ? 'FULL' : 'PARTIAL';
+      file.status =
+        file.matchedCount === 0
+          ? 'NONE'
+          : file.matchedCount === file.turnCount
+            ? 'FULL'
+            : 'PARTIAL';
     }
 
     const duplicateGroups = buildDuplicateGroups(files, fingerprintIndex);
+
+    // ---- derive delete/review decisions (unchanged) ----
 
     const importCandidatesToReview = new Set<string>();
     for (const g of duplicateGroups) {
@@ -793,7 +1108,9 @@ async function main() {
     const noOverlapFiles = files.filter((f) => f.status === 'NONE');
     const partialOverlapFiles = files.filter((f) => f.status === 'PARTIAL');
 
-    const report = {
+    // ---- JSON report (with toggles) ----
+
+    const report: any = {
       generatedAt,
       downloadsDir,
       summary: {
@@ -804,9 +1121,16 @@ async function main() {
       },
       fullyCoveredFiles: fullyCoveredFiles.map(minFileForOutput),
       noOverlapFiles: noOverlapFiles.map(minFileForOutput),
-      partialOverlapFiles: partialOverlapFiles.map(fullFileWithDiagnostics),
-      duplicateGroups,
+      partialOverlapFiles: opts.includePartialDetails
+        ? partialOverlapFiles.map(fullFileWithDiagnostics)
+        : partialOverlapFiles.map(minFileForOutput),
     };
+
+    if (opts.includeDuplicateDetails) {
+      report.duplicateGroups = duplicateGroups;
+    }
+
+    // ---- primary artifacts (unchanged names) ----
 
     const outPath = path.join(process.cwd(), 'audit-chatworthy-downloads.json');
     const deleteOutPath = path.join(process.cwd(), 'audit-chatworthy-delete-commands.txt');
@@ -819,7 +1143,6 @@ async function main() {
     const reportId = `audit:${generatedAt}:${downloadsDir}`;
     const safeJson = (v: any) => JSON.stringify(v).replace(/</g, '\\u003c');
 
-    // ✅ include rmCmd with proper quoting for weird filenames
     const reviewItems = reviewPathsFinal.map((p) => ({
       path: p,
       name: path.basename(p),
@@ -953,7 +1276,27 @@ async function main() {
     await fs.writeFile(reviewOutPath, reviewLines, 'utf8');
     await fs.writeFile(outPath, JSON.stringify(report, null, 2), 'utf8');
 
-    printSummary(files, duplicateGroups);
+    // ---- optional: overlap artifacts ----
+    if (opts.emitFileOverlap) {
+      const overlapGroups = buildFileOverlapGroups(files);
+      const overlapJsonPath = path.join(process.cwd(), 'audit-chatworthy-file-overlap.json');
+      const overlapHtmlPath = path.join(process.cwd(), 'audit-chatworthy-file-overlap.html');
+
+      const overlapReport = {
+        generatedAt,
+        downloadsDir,
+        groupCount: overlapGroups.length,
+        groups: overlapGroups,
+      };
+
+      await fs.writeFile(overlapJsonPath, JSON.stringify(overlapReport, null, 2), 'utf8');
+      await fs.writeFile(overlapHtmlPath, renderFileOverlapHtml(generatedAt, downloadsDir, overlapGroups), 'utf8');
+
+      console.log(`\nFile overlap JSON written to ${overlapJsonPath}`);
+      console.log(`File overlap HTML written to ${overlapHtmlPath} (open in Chrome)`);
+    }
+
+    printSummary(files, duplicateGroups, opts);
     console.log(`\nReport written to ${outPath}`);
     console.log(`Delete commands written to ${deleteOutPath}`);
     console.log(`Review links written to ${reviewOutPath} (open in Chrome)`);
@@ -963,7 +1306,7 @@ async function main() {
 }
 
 main()
-  .then(() => { })
+  .then(() => {})
   .catch((err) => {
     console.error('Error running auditChatworthyDownloads:', err);
     process.exit(1);
