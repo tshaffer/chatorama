@@ -1,5 +1,4 @@
 // backend/src/server.ts
-import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -7,8 +6,7 @@ import fs from 'fs';
 import http from 'http';
 import { createRoutes } from './routes';
 import { connectToDatabase, disconnectFromDatabase, connectionState } from './db/mongoose';
-
-const PORT = Number(process.env.PORT || 8080);
+import { ENV } from './config/env';
 
 async function main() {
   // 1) Connect to Mongo first
@@ -49,11 +47,11 @@ async function main() {
 
   // 7) Start HTTP server
   const server = http.createServer(app);
-  server.listen(PORT, () => {
-    console.log(`✅ Server listening on http://localhost:${PORT}`);
+  server.listen(ENV.PORT, () => {
+    console.log(`✅ Server listening on http://localhost:${ENV.PORT}`);
     if (fs.existsSync(publicDir)) {
       console.log(`✅ Serving frontend from ${publicDir}`);
-      console.log(`➡  Open http://localhost:${PORT}`);
+      console.log(`➡  Open http://localhost:${ENV.PORT}`);
     }
   });
 

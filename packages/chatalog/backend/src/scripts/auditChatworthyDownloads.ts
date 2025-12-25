@@ -312,8 +312,8 @@ function parseFrontMatterLoosely(frontMatterRaw: string | null): Record<string, 
   return data;
 }
 
-function resolveDownloadsDir(): string {
-  return path.join(os.homedir(), 'Downloads');
+function resolveChatalogInboxDir(): string {
+  return path.join(os.homedir(), 'Documents', 'chatalogInbox');
 }
 
 function extractChatId(data: Record<string, any>): string | null {
@@ -1201,7 +1201,7 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   ensureMongoUri();
 
-  const downloadsDir = resolveDownloadsDir();
+  const downloadsDir = resolveChatalogInboxDir();
 
   const db = await import('../db/mongoose');
   await db.connectToDatabase();

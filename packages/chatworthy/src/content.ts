@@ -27,10 +27,15 @@ const TOGGLE_BTN_ID = 'chatworthy-toggle-btn';
 const ALL_BTN_ID = 'chatworthy-all-btn';
 const NONE_BTN_ID = 'chatworthy-none-btn';
 const DRAG_HANDLE_ID = 'chatworthy-drag-handle';
+const STATUS_ROW_ID = 'chatworthy-status-row';
+const STATUS_TOGGLE_ID = 'chatworthy-status-toggle-btn';
+const STATUS_TOGGLE_REVIEW_ID = 'chatworthy-status-review-btn';
 
 const OBSERVER_THROTTLE_MS = 200;
 const COLLAPSE_LS_KEY = 'chatworthy:collapsed';
 const POS_LS_KEY = 'chatworthy:position';
+const STATUS_LS_KEY = 'chatworthy:statusRow';
+const API_BASE = 'http://localhost:8080/api/v1';
 
 // ---- List selection / scroll-follow state ------------------
 
@@ -43,6 +48,23 @@ let ioUpdateScheduled = false;
 
 let lastManualSelectAt = 0;
 const MANUAL_GRACE_MS = 800;
+
+type RegistryStatusState = {
+  backendOk: boolean | null;
+  registryStatus: string | null;
+  lastError: string | null;
+  lastChecked: number | null;
+  lastChatId: string | null;
+};
+
+let statusRowVisible = getInitialStatusRowVisible();
+const registryState: RegistryStatusState = {
+  backendOk: null,
+  registryStatus: null,
+  lastError: null,
+  lastChecked: null,
+  lastChatId: null,
+};
 
 function setSelectedListItem(next: HTMLDivElement | null) {
   if (selectedListItem === next) return;
@@ -210,6 +232,7 @@ function makeDraggable(root: HTMLDivElement) {
   let startY = 0;
   let startLeft = 0;
   let startTop = 0;
+  let activePointerId: number | null = null;
 
   const getCurrentLeftTop = (): CwPos => {
     const rect = root.getBoundingClientRect();
@@ -234,15 +257,18 @@ function makeDraggable(root: HTMLDivElement) {
     root.style.top = `${clamped.top}px`;
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = (e: PointerEvent) => {
     if (!dragging) return;
     dragging = false;
 
     try {
-      handle.releasePointerCapture?.(1);
+      if (activePointerId != null) {
+        handle.releasePointerCapture?.(activePointerId);
+      }
     } catch {
       /* ignore */
     }
+    activePointerId = null;
 
     // Persist final position
     const rect = root.getBoundingClientRect();
@@ -268,6 +294,7 @@ function makeDraggable(root: HTMLDivElement) {
     startY = e.clientY;
     startLeft = cur.left;
     startTop = cur.top;
+    activePointerId = e.pointerId;
 
     // Ensure we’re in left/top mode
     root.style.right = 'auto';
@@ -276,6 +303,12 @@ function makeDraggable(root: HTMLDivElement) {
 
     // Prevent text selection while dragging
     e.preventDefault();
+
+    try {
+      handle.setPointerCapture?.(e.pointerId);
+    } catch {
+      /* ignore */
+    }
 
     window.addEventListener('pointermove', onPointerMove, true);
     window.addEventListener('pointerup', onPointerUp, true);
@@ -541,13 +574,13 @@ function getSubjectTopicAndChatTitle() {
   const subject = (projectName || (chatTitle?.split(/ - |:|–|—/)[0]?.trim() ?? '')).trim() || '';
   const topic = normalizeTopic(chatTitle, subject) || 'Untitled Conversation';
 
-  return { subject, topic, chatTitle };
+  return { subject, topic, chatTitle, projectName };
 }
 
-function buildExportFromTurns(turns: ExportTurn[], htmlBodies?: string[]): string {
-  const { subject, topic, chatTitle } = getSubjectTopicAndChatTitle();
+function createExportMeta(turnCount: number): (ExportNoteMetadata & { projectName?: string | null }) {
+  const { subject, topic, chatTitle, projectName } = getSubjectTopicAndChatTitle();
 
-  const meta = {
+  const meta: ExportNoteMetadata & { projectName?: string | null } = {
     noteId: generateNoteId(),
     source: 'chatgpt',
     chatId: getChatIdFromUrl(location.href),
@@ -564,12 +597,26 @@ function buildExportFromTurns(turns: ExportTurn[], htmlBodies?: string[]): strin
     autoGenerate: { summary: true, tags: true },
 
     noteMode: 'auto',
-    turnCount: turns.length,
+    turnCount,
     splitHints: [],
 
     author: 'me',
     visibility: 'private',
-  } satisfies ExportNoteMetadata;
+  };
+
+  if (projectName) {
+    meta.projectName = projectName;
+  }
+
+  return meta;
+}
+
+function buildExportFromTurns(
+  turns: ExportTurn[],
+  htmlBodies?: string[],
+  metaOverride?: ExportNoteMetadata & { projectName?: string | null }
+): string {
+  const meta = metaOverride ?? createExportMeta(turns.length);
 
   return buildMarkdownExport(meta, turns, {
     title: meta.chatTitle,
@@ -621,6 +668,193 @@ function setCollapsed(v: boolean) {
   if (root) root.setAttribute('data-collapsed', v ? '1' : '0');
   if (listEl) listEl.style.display = v ? 'none' : 'block';
   if (toggleBtn) toggleBtn.textContent = v ? 'Show List' : 'Hide List';
+}
+
+function getInitialStatusRowVisible(): boolean {
+  try {
+    const raw = localStorage.getItem(STATUS_LS_KEY);
+    if (raw === '0') return false;
+    if (raw === '1') return true;
+  } catch {
+    /* ignore */
+  }
+  return true;
+}
+
+function setStatusRowVisible(v: boolean) {
+  statusRowVisible = v;
+  try {
+    localStorage.setItem(STATUS_LS_KEY, v ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+  renderStatusRow();
+  updateStatusToggleButton();
+}
+
+// ---- Registry / status row helpers ------------------------
+
+function renderStatusRow(chatId?: string) {
+  const row = document.getElementById(STATUS_ROW_ID) as HTMLDivElement | null;
+  if (!row) return;
+
+  row.style.display = statusRowVisible ? 'flex' : 'none';
+
+  const backendLabel =
+    registryState.backendOk === true
+      ? 'ok'
+      : registryState.backendOk === false
+        ? 'error'
+        : '…';
+  const backendNote =
+    registryState.backendOk === false && registryState.lastError
+      ? ` (${registryState.lastError})`
+      : '';
+  const registryLabel = registryState.registryStatus ?? '—';
+  const cid = chatId || getChatIdFromUrl(location.href) || 'no chatId';
+
+  row.textContent = `chatId: ${cid} • registry: ${registryLabel} • backend: ${backendLabel}${backendNote}`;
+  updateStatusToggleButton();
+  updateReviewButton();
+}
+
+function updateStatusToggleButton() {
+  const btn = document.getElementById(STATUS_TOGGLE_ID) as HTMLButtonElement | null;
+  if (btn) btn.textContent = statusRowVisible ? 'Hide Status' : 'Show Status';
+}
+
+function updateReviewButton() {
+  const btn = document.getElementById(STATUS_TOGGLE_REVIEW_ID) as HTMLButtonElement | null;
+  if (!btn) return;
+
+  const status = (registryState.registryStatus || '').toUpperCase();
+  const isReviewed = status === 'REVIEWED';
+  btn.textContent = isReviewed ? 'Mark Unreviewed' : 'Mark Reviewed';
+  btn.disabled = registryState.backendOk === false || !registryState.lastChatId;
+}
+
+async function refreshRegistryStatus(chatId?: string) {
+  const cid = chatId || getChatIdFromUrl(location.href);
+  if (!cid) {
+    registryState.registryStatus = 'no chatId';
+    registryState.backendOk = null;
+    renderStatusRow(cid);
+    return;
+  }
+
+  // Avoid spamming the backend
+  if (
+    registryState.lastChatId === cid &&
+    registryState.lastChecked &&
+    Date.now() - registryState.lastChecked < 15000
+  ) {
+    return;
+  }
+
+  registryState.lastChatId = cid;
+  registryState.lastChecked = Date.now();
+
+  try {
+    const res = await fetch(`${API_BASE}/chat-registry/byChatId/${encodeURIComponent(cid)}`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    registryState.backendOk = res.ok || res.status === 404;
+    registryState.lastError = res.ok || res.status === 404 ? null : `status ${res.status}`;
+
+    if (res.ok) {
+      const body = await res.json();
+      registryState.registryStatus = body?.status ?? 'UNREVIEWED';
+    } else if (res.status === 404) {
+      registryState.registryStatus = 'UNREGISTERED';
+    }
+  } catch (err: any) {
+    registryState.backendOk = false;
+    registryState.lastError = err?.message || 'request failed';
+  }
+
+  renderStatusRow(cid);
+}
+
+type RegistryPayload = {
+  chatId?: string;
+  chatTitle?: string | null;
+  projectName?: string | null;
+  subject?: string | null;
+  topic?: string | null;
+  pageUrl?: string | null;
+};
+
+async function upsertChatRegistry(payload: RegistryPayload): Promise<void> {
+  if (!payload.chatId) {
+    renderStatusRow();
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/chat-registry/upsert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ ...payload }),
+    });
+
+    registryState.backendOk = res.ok;
+    if (!res.ok) {
+      registryState.lastError = `status ${res.status}`;
+      renderStatusRow(payload.chatId);
+      return;
+    }
+
+    const body = await res.json();
+    registryState.registryStatus = body?.status ?? 'UNREVIEWED';
+    registryState.lastError = null;
+  } catch (err: any) {
+    registryState.backendOk = false;
+    registryState.lastError = err?.message || 'request failed';
+  }
+
+  registryState.lastChecked = Date.now();
+  registryState.lastChatId = payload.chatId ?? null;
+  renderStatusRow(payload.chatId || undefined);
+}
+
+async function toggleRegistryReviewStatus() {
+  const chatId = getChatIdFromUrl(location.href);
+  if (!chatId) {
+    registryState.lastError = 'no chatId';
+    renderStatusRow();
+    return;
+  }
+
+  const current = (registryState.registryStatus || '').toUpperCase();
+  const next = current === 'REVIEWED' ? 'UNREVIEWED' : 'REVIEWED';
+
+  try {
+    const res = await fetch(`${API_BASE}/chat-registry/${encodeURIComponent(chatId)}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ status: next }),
+    });
+    registryState.backendOk = res.ok;
+    if (!res.ok) {
+      registryState.lastError = `status ${res.status}`;
+      renderStatusRow(chatId);
+      return;
+    }
+    const body = await res.json();
+    registryState.registryStatus = body?.status ?? next;
+    registryState.lastError = null;
+  } catch (err: any) {
+    registryState.backendOk = false;
+    registryState.lastError = err?.message || 'request failed';
+  }
+
+  registryState.lastChatId = chatId;
+  registryState.lastChecked = Date.now();
+  renderStatusRow(chatId);
 }
 
 // ---- Relabel -----------------------------------------------
@@ -803,6 +1037,29 @@ function ensureFloatingUI() {
     // Wire drag behavior (idempotent)
     makeDraggable(root);
 
+    const chatId = getChatIdFromUrl(location.href);
+
+    // 1c) Status row (above controls)
+    let statusRow = d.getElementById(STATUS_ROW_ID) as HTMLDivElement | null;
+    if (!statusRow) {
+    statusRow = d.createElement('div');
+    statusRow.id = STATUS_ROW_ID;
+    statusRow.style.display = statusRowVisible ? 'flex' : 'none';
+    statusRow.style.flexDirection = 'column';
+    statusRow.style.gap = '4px';
+    statusRow.style.fontSize = '11px';
+    statusRow.style.color = '#111';
+    statusRow.style.background = 'rgba(0,0,0,0.03)';
+    statusRow.style.border = '1px solid rgba(0,0,0,0.08)';
+    statusRow.style.borderRadius = '6px';
+    statusRow.style.padding = '6px';
+    root.appendChild(statusRow);
+  } else if (!statusRow.parentElement) {
+    root.appendChild(statusRow);
+  }
+
+  renderStatusRow(chatId);
+
     // 2) Controls
     let controls = d.getElementById(CONTROLS_ID) as HTMLDivElement | null;
     if (!controls) {
@@ -843,6 +1100,20 @@ function ensureFloatingUI() {
         updateControlsState();
       };
 
+      const statusToggle = d.createElement('button');
+      statusToggle.id = STATUS_TOGGLE_ID;
+      statusToggle.type = 'button';
+      statusToggle.textContent = statusRowVisible ? 'Hide Status' : 'Show Status';
+      statusToggle.onclick = () => setStatusRowVisible(!statusRowVisible);
+
+      const reviewToggle = d.createElement('button');
+      reviewToggle.id = STATUS_TOGGLE_REVIEW_ID;
+      reviewToggle.type = 'button';
+      reviewToggle.textContent = 'Mark Reviewed';
+      reviewToggle.onclick = () => {
+        void toggleRegistryReviewStatus();
+      };
+
       const exportBtn = d.createElement('button');
       exportBtn.id = EXPORT_BTN_ID;
       exportBtn.type = 'button';
@@ -854,7 +1125,8 @@ function ensureFloatingUI() {
             alert('Select at least one prompt to export.');
             return;
           }
-          const md = buildExportFromTurns(turns, htmlBodies);
+          const meta = createExportMeta(turns.length);
+          const md = buildExportFromTurns(turns, htmlBodies, meta);
           downloadExport(`${filenameBase()}.md`, md);
         } catch (err) {
           console.error('[chatworthy] export failed:', err);
@@ -865,11 +1137,19 @@ function ensureFloatingUI() {
       controls.appendChild(toggleBtn);
       controls.appendChild(btnAll);
       controls.appendChild(btnNone);
+      controls.appendChild(statusToggle);
+      controls.appendChild(reviewToggle);
       controls.appendChild(exportBtn);
       root.appendChild(controls);
     } else {
       const toggle = controls.querySelector('#' + TOGGLE_BTN_ID) as HTMLButtonElement | null;
       if (toggle) toggle.textContent = root.getAttribute('data-collapsed') === '1' ? 'Show List' : 'Hide List';
+      updateStatusToggleButton();
+      updateReviewButton();
+    }
+
+    if (statusRow && controls) {
+      root.insertBefore(statusRow, controls);
     }
 
     // 3) List
@@ -887,6 +1167,8 @@ function ensureFloatingUI() {
 
     // Ensure role tags exist
     relabelAndRestyleMessages();
+
+    void refreshRegistryStatus(chatId);
 
     // 4) Populate list from tuples
     list.innerHTML = '';
@@ -1019,6 +1301,11 @@ function ensureStyles() {
     display:block !important;
     margin: 0 0 6px 0 !important;
     font-weight:600 !important;
+  }
+
+  /* Status row */
+  #${ROOT_ID} #${STATUS_ROW_ID} {
+    line-height: 1.4;
   }
 
   /* Subtle “jump” highlight on the scrolled-to Prompt */
