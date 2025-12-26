@@ -20,5 +20,11 @@
   "devDependencies": {
     "rimraf": "^6.1.0",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "unified": "11.0.5",
+    "vfile": "6.0.3",
+    "vfile-message": "4.0.3",
+    "remark-slug": "8.0.0"
   }
 }

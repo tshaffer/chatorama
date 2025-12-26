@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import { Types } from 'mongoose';
 import { TopicModel } from '../models/Topic';
 import { NoteModel } from '../models/Note';
 import mongoose from 'mongoose';
@@ -85,6 +86,26 @@ export async function reorderNotesForTopic(req: Request, res: Response) {
       .json({ error: 'noteIdsInOrder must be a non-empty array' });
   }
 
+  // Validate + convert to ObjectIds
+  const objectIds: Types.ObjectId[] = [];
+  for (const id of noteIdsInOrder) {
+    if (!Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: `Invalid subject id: ${id}` });
+    }
+    objectIds.push(new Types.ObjectId(id));
+  }
+
+  // Optional: reject duplicates (recommended)
+  const unique = new Set(noteIdsInOrder);
+  if (unique.size !== noteIdsInOrder.length) {
+    return res.status(400).json({ error: 'noteIdsInOrder must not contain duplicates' });
+  }
+
+
+
+
+
+
   // verify topic exists and belongs to subject
   const topic = await TopicModel.findOne({
     _id: topicId,
@@ -100,17 +121,17 @@ export async function reorderNotesForTopic(req: Request, res: Response) {
 
   // verify all notes belong to this topic
   const count = await NoteModel.countDocuments({
-    _id: { $in: noteIdsInOrder },
+    _id: { $in: objectIds },
     topicId,
   });
-  if (count !== noteIdsInOrder.length) {
+  if (count !== objectIds.length) {
     return res
       .status(400)
       .json({ error: 'All noteIds must belong to the specified topic' });
   }
 
   // compact rewrite 0..N
-  const ops = noteIdsInOrder.map((id, idx) => ({
+  const ops = objectIds.map((id, idx) => ({
     updateOne: {
       filter: { _id: id, topicId },
       update: { $set: { order: idx } },
@@ -183,22 +204,32 @@ export async function reorderTopicsForSubject(req: Request, res: Response) {
       .json({ error: 'orderedTopicIds must be a non-empty array' });
   }
 
+  // Validate + convert to ObjectIds
+  const objectIds: Types.ObjectId[] = [];
+  for (const id of orderedTopicIds) {
+    if (!Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: `Invalid subject id: ${id}` });
+    }
+    objectIds.push(new Types.ObjectId(id));
+  }
+
+
   // verify all topics exist and belong to this subject
   const count = await TopicModel.countDocuments({
-    _id: { $in: orderedTopicIds },
+    _id: { $in: objectIds },
     subjectId,
   }).exec();
 
-  if (count !== orderedTopicIds.length) {
+  if (count !== objectIds.length) {
     return res
       .status(400)
       .json({
         error:
-          'All orderedTopicIds must refer to topics belonging to the specified subject',
+          'All objectIds must refer to topics belonging to the specified subject',
       });
   }
 
-  const ops = orderedTopicIds.map((id, index) => ({
+  const ops = objectIds.map((id, index) => ({
     updateOne: {
       filter: { _id: id, subjectId },
       update: { $set: { order: index } },

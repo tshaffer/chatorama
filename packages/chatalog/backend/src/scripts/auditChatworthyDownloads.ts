@@ -9,7 +9,8 @@ import { NoteModel } from '../models/Note';
 import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
-import { extractPromptResponseTurns, hashPromptResponsePair } from '../utils/textHash';
+import { hashPromptResponsePair } from '../utils/textHash';
+import { extractPromptResponseTurns } from '@chatorama/chatalog-shared';
 
 type FileTurn = {
   fileTurnIndex: number;

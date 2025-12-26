@@ -1,5 +1,6 @@
+import { extractPromptResponseTurns } from '@chatorama/chatalog-shared';
 import { NoteModel } from '../models/Note';
-import { extractPromptResponseTurns, hashPromptResponsePair } from '../utils/textHash';
+import { hashPromptResponsePair } from '../utils/textHash';
 
 function ensureMongoUri(): string {
   const uri = process.env.MONGO_URI;

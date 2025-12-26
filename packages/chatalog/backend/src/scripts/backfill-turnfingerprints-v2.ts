@@ -12,9 +12,10 @@
 //   - Upserts are keyed by (sourceType, noteId, turnIndex, hashVersion=2)
 //   - Only uses $setOnInsert to avoid MongoDB update path conflicts and to avoid changing v2 docs after creation.
 
+import { extractPromptResponseTurns } from '@chatorama/chatalog-shared';
 import { NoteModel } from '../models/Note';
 import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
-import { extractPromptResponseTurns, hashPromptResponsePair } from '../utils/textHash';
+import { hashPromptResponsePair } from '../utils/textHash';
 
 const BATCH_SIZE = 200;
 

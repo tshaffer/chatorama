@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Types } from 'mongoose';
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic'; // <-- ADD THIS
 
@@ -111,20 +112,35 @@ export async function reorderSubjects(req: Request, res: Response) {
       .json({ error: 'orderedIds must be a non-empty array of subject ids' });
   }
 
+  // Validate + convert to ObjectIds
+  const objectIds: Types.ObjectId[] = [];
+  for (const id of orderedIds) {
+    if (!Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: `Invalid subject id: ${id}` });
+    }
+    objectIds.push(new Types.ObjectId(id));
+  }
+
+  // Optional: reject duplicates (recommended)
+  const unique = new Set(orderedIds);
+  if (unique.size !== orderedIds.length) {
+    return res.status(400).json({ error: 'orderedIds must not contain duplicates' });
+  }
+
   // Optional safety: ensure all ids exist
   const count = await SubjectModel.countDocuments({
-    _id: { $in: orderedIds },
+    _id: { $in: objectIds },
   }).exec();
 
-  if (count !== orderedIds.length) {
+  if (count !== objectIds.length) {
     return res
       .status(400)
       .json({ error: 'All orderedIds must refer to existing subjects' });
   }
 
-  const ops = orderedIds.map((id, index) => ({
+  const ops = objectIds.map((oid, index) => ({
     updateOne: {
-      filter: { _id: id },
+      filter: { _id: oid },
       update: { $set: { order: index } },
     },
   }));

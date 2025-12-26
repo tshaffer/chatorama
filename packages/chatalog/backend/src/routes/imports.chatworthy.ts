@@ -10,9 +10,9 @@ import { NoteModel } from '../models/Note';
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
 import type { NoteDoc } from '../models/Note';
-import { slugifyStandard, type ApplyImportRequest, type ApplyNoteImportCommand, type ApplyImportResponse, type CleanupNeededItem } from '@chatorama/chatalog-shared';
+import { slugifyStandard, type ApplyImportRequest, type ApplyNoteImportCommand, type ApplyImportResponse, type CleanupNeededItem, extractPromptResponseTurns } from '@chatorama/chatalog-shared';
 import { ImportBatchModel } from '../models/ImportBatch';
-import { hashPromptResponsePair, extractPromptResponseTurns } from '../utils/textHash';
+import { hashPromptResponsePair } from '../utils/textHash';
 import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
 
 const router = Router();
