@@ -38,6 +38,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
 
 import MarkdownBody from '../../components/MarkdownBody';
 import '../../styles/markdown.css';
@@ -303,9 +304,8 @@ export default function NoteEditor({
 
     const opts: TopicOption[] = (topics as Topic[]).map((t) => ({
       id: t.id,
-      label: `${subjectNameById.get(t.subjectId) ?? 'Unknown subject'} / ${
-        t.name
-      }`,
+      label: `${subjectNameById.get(t.subjectId) ?? 'Unknown subject'} / ${t.name
+        }`,
       subjectId: t.subjectId,
       topicName: t.name,
     }));
@@ -329,9 +329,9 @@ export default function NoteEditor({
   const topicNotesArgs =
     note && (note as Note).subjectId && (note as Note).topicId
       ? {
-          subjectId: (note as Note).subjectId!, // non-null: guarded above
-          topicId: (note as Note).topicId!, // non-null: guarded above
-        }
+        subjectId: (note as Note).subjectId!, // non-null: guarded above
+        topicId: (note as Note).topicId!, // non-null: guarded above
+      }
       : skipToken;
   const { data: topicNotes } = useGetTopicNotesWithRelationsQuery(topicNotesArgs);
 
@@ -419,6 +419,11 @@ export default function NoteEditor({
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastInitNoteIdRef = useRef<string | undefined>(undefined);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToTop = useCallback(() => {
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
   // Ancestors: subject & topic for this note
   const noteSubject = useMemo(
@@ -671,8 +676,8 @@ export default function NoteEditor({
       topicOptions.length > 0
         ? 'topic'
         : subjectOptions.length > 0
-        ? 'subject'
-        : 'note';
+          ? 'subject'
+          : 'note';
 
     setRelations((prev) => {
       const next: NoteRelation[] = prev ? [...prev] : [];
@@ -958,6 +963,18 @@ export default function NoteEditor({
             </Stack>
           )}
 
+          <Tooltip title="Jump to top">
+            <span>
+              <IconButton
+                size="small"
+                onClick={scrollToTop}
+                aria-label="Jump to top"
+              >
+                <VerticalAlignTopIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+
           <Chip
             size="small"
             label={status}
@@ -965,10 +982,10 @@ export default function NoteEditor({
               status === 'Saved'
                 ? 'success'
                 : status === 'Saving...'
-                ? 'warning'
-                : dirty
-                ? 'warning'
-                : 'default'
+                  ? 'warning'
+                  : dirty
+                    ? 'warning'
+                    : 'default'
             }
             variant="outlined"
           />
@@ -1087,6 +1104,7 @@ export default function NoteEditor({
       {/* Main body: edit mode vs preview-only mode */}
       {editing ? (
         <Box
+          ref={scrollContainerRef}
           sx={{
             flex: 1,
             minHeight: 0,
@@ -1449,6 +1467,7 @@ export default function NoteEditor({
         </Box>
       ) : (
         <Box
+          ref={scrollContainerRef}
           sx={{
             flex: 1,
             minHeight: 0,
