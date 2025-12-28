@@ -119,6 +119,33 @@ export interface TopicNotesWithRelations {
   relatedDirectNotes: NotePreview[];
 }
 
+// -------- Assets --------
+
+export type AssetType = 'image';
+
+export type Asset = {
+  id: string;
+  type: AssetType;
+  mimeType: string;
+  byteSize: number;
+  sha256: string;
+  storage: { provider: 'local'; path: string };
+  imageMeta?: { width: number; height: number };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NoteAsset = {
+  id: string;
+  noteId: string;
+  assetId: string;
+  caption?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NoteAssetWithAsset = NoteAsset & { asset: Asset };
+
 // ADD near your Subject/Topic interfaces
 export interface RenameSubjectRequest {
   name: string; // new name

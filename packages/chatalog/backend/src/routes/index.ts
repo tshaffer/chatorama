@@ -9,6 +9,8 @@ import notesMoveRouter from './notes.move';
 import topicsRouter from './topics';
 import importBatchesRouter from './importBatches';
 import chatRegistryRouter from './chatRegistry';
+import assetsRouter from './assets';
+import noteAssetsRouter from './noteAssets';
 
 export function createRoutes(app: Express) {
   const api = Router();
@@ -19,6 +21,8 @@ export function createRoutes(app: Express) {
 
   // Notes CRUD
   api.use('/notes', notesRouter);
+  api.use('/assets', assetsRouter);
+  api.use('/noteAssets', noteAssetsRouter);
 
   // Subjects + nested Topics + topic-notes list
   api.use('/subjects', subjectsRouter);
@@ -35,6 +39,9 @@ export function createRoutes(app: Express) {
   api.use('/chat-registry', chatRegistryRouter);
 
   app.use('/api/v1', notesMoveRouter);
-  
+
+  app.use('/api/assets', assetsRouter);
+  app.use('/api/noteAssets', noteAssetsRouter);
+
   app.use('/api/v1', api);
 }

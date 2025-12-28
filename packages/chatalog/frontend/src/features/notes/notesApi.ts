@@ -8,6 +8,8 @@ import type {
   TopicNotesWithRelations,
   MergeNotesRequest,
   MergeNotesResult,
+  Asset,
+  NoteAssetWithAsset,
 } from '@chatorama/chatalog-shared';
 import { chatalogApi as baseApi } from '../api/chatalogApi';
 import { subjectsApi } from '../subjects/subjectsApi';
@@ -93,6 +95,26 @@ export const notesApi = baseApi.injectEndpoints({
             ...res.map(n => ({ type: 'Note' as const, id: n.id })),
           ]
           : [{ type: 'Note' as const, id: 'REL-LIST' }],
+    }),
+
+    uploadImage: build.mutation<{ asset: Asset }, File>({
+      query: (file) => {
+        const body = new FormData();
+        body.append('file', file);
+        return { url: 'assets/images', method: 'POST', body };
+      },
+    }),
+
+    attachAssetToNote: build.mutation<
+      NoteAssetWithAsset,
+      { noteId: string; assetId: string; caption?: string }
+    >({
+      query: ({ noteId, ...body }) => ({
+        url: `notes/${noteId}/assets`,
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_res, _err, { noteId }) => [{ type: 'Note' as const, id: noteId }],
     }),
 
     createNote: build.mutation<Note, CreateNoteRequest>({
@@ -239,6 +261,8 @@ export const {
   useCreateNoteMutation,
   useUpdateNoteMutation,
   useDeleteNoteMutation,
+  useUploadImageMutation,
+  useAttachAssetToNoteMutation,
   useReorderNotesInTopicMutation,
   useMoveNotesMutation,
   useGetTopicNotesWithRelationsQuery,

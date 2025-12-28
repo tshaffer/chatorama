@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback, type ChangeEvent } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -7,6 +7,8 @@ import {
   useDeleteNoteMutation,
   useGetAllNotesForRelationsQuery,
   useGetTopicNotesWithRelationsQuery, // ⬅️ NEW
+  useUploadImageMutation,
+  useAttachAssetToNoteMutation,
 } from './notesApi';
 import {
   type Note,
@@ -279,6 +281,8 @@ export default function NoteEditor({
 
   const [updateNote, { isLoading: isSaving }] = useUpdateNoteMutation();
   const [deleteNote, { isLoading: isDeleting }] = useDeleteNoteMutation();
+  const [uploadImage] = useUploadImageMutation();
+  const [attachAssetToNote] = useAttachAssetToNoteMutation();
 
   // Data for pickers
   const { data: subjects = [] } = useGetSubjectsQuery();
@@ -420,10 +424,63 @@ export default function NoteEditor({
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastInitNoteIdRef = useRef<string | undefined>(undefined);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const markdownInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const scrollToTop = useCallback(() => {
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
+
+  const insertAtCursor = useCallback(
+    (snippet: string) => {
+      const ta = markdownInputRef.current;
+      const start = ta?.selectionStart ?? markdown.length;
+      const end = ta?.selectionEnd ?? markdown.length;
+
+      setMarkdown((prev) => {
+        const before = prev.slice(0, start);
+        const after = prev.slice(end);
+        return before + snippet + after;
+      });
+      setDirty(true);
+
+      requestAnimationFrame(() => {
+        if (!ta) return;
+        ta.focus();
+        const pos = start + snippet.length;
+        try {
+          ta.setSelectionRange(pos, pos);
+        } catch {
+          // Ignore selection errors (e.g., input not focused)
+        }
+      });
+    },
+    [markdown.length],
+  );
+
+  const handleImageFilePicked = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+      if (!resolvedNoteId) {
+        setSnack({ open: true, msg: 'No note selected', sev: 'error' });
+        return;
+      }
+
+      try {
+        const { asset } = await uploadImage(file).unwrap();
+        await attachAssetToNote({ noteId: resolvedNoteId, assetId: asset.id }).unwrap();
+        const url = `/api/assets/${asset.id}/content`;
+        insertAtCursor(`\n\n![](${url})\n\n`);
+        setSnack({ open: true, msg: 'Image inserted', sev: 'success' });
+      } catch (err) {
+        console.error('Insert image failed', err);
+        setSnack({ open: true, msg: 'Image insert failed', sev: 'error' });
+      }
+    },
+    [resolvedNoteId, uploadImage, attachAssetToNote, insertAtCursor],
+  );
 
   // Ancestors: subject & topic for this note
   const noteSubject = useMemo(
@@ -910,6 +967,13 @@ export default function NoteEditor({
         overflow: 'hidden',
       }}
     >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handleImageFilePicked}
+      />
       {/* Top bar: label + save status + Edit/Done + Prev/Next + Delete */}
       <Stack
         direction="row"
@@ -1003,6 +1067,16 @@ export default function NoteEditor({
               </Button>
             </span>
           </Tooltip>
+          {editing && (
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isLoading || isSaving}
+            >
+              Insert Image...
+            </Button>
+          )}
           <Tooltip title="View note properties">
             <span>
               <Button
@@ -1451,6 +1525,7 @@ export default function NoteEditor({
               setMarkdown(e.target.value);
               setDirty(true);
             }}
+            inputRef={markdownInputRef}
             fullWidth
             multiline
             minRows={10}

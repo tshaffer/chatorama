@@ -131,3 +131,11 @@
 .markdown-body a:hover {
   text-decoration: underline;
 }
+
+/* -----------------------------
+ * Images
+ * ----------------------------- */
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+}
