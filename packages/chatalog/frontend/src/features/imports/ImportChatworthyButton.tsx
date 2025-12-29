@@ -1,5 +1,6 @@
 // frontend/src/features/imports/ImportChatworthyButton.tsx
 import { useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Button,
   CircularProgress,
@@ -13,13 +14,13 @@ import {
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import { useDispatch } from 'react-redux';
 
 import {
   useImportChatworthyMutation,
   type ImportResponse,
   useApplyChatworthyImportMutation,
 } from './importsApi';
+import { notesApi } from '../notes/notesApi';
 import { useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
 import {
   ImportResultsDialog,
@@ -27,6 +28,10 @@ import {
 } from './ImportResultsDialog';
 import { chatalogApi } from '../api/chatalogApi';
 import type { ApplyNoteImportCommand, CleanupNeededItem } from '@chatorama/chatalog-shared';
+import { useAppDispatch } from '../../store';
+
+const slugify = (s: string) =>
+  s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
 type Props = {
   onDone?: () => void;
@@ -44,7 +49,10 @@ export default function ImportChatworthyButton({
   tooltip = 'Import Chatworthy export (ZIP or Markdown)',
   accept = '.zip,.cbz,.tar,.tgz,.gz,.md,.markdown',
 }: Props) {
-  const dispatch = useDispatch();
+  // const dispatch = useDispatch();
+  const dispatch = useAppDispatch();
+
+  const navigate = useNavigate();
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [importChatworthy, { isLoading }] = useImportChatworthyMutation();
@@ -151,6 +159,42 @@ export default function ImportChatworthyButton({
 
       // 🔥 Force all RTK Query data to refetch so new notes show up everywhere
       dispatch(chatalogApi.util.resetApiState());
+
+      const firstNoteId = res.noteIds?.[0];
+      if (firstNoteId) {
+        try {
+          // Fetch the created note so we can find subjectId/topicId
+          const note = await dispatch(
+            notesApi.endpoints.getNote.initiate(firstNoteId, { forceRefetch: true })
+          ).unwrap();
+
+          const subjectId = (note as any).subjectId as string | undefined;
+          const topicId = (note as any).topicId as string | undefined;
+
+          if (subjectId && topicId) {
+            const subject = subjects.find((s: any) => s.id === subjectId);
+            const topic = subject?.topics?.find((t: any) => t.id === topicId);
+
+            if (subject && topic) {
+              const subjectSlug = `${subject.id}-${slugify(subject.name)}`;
+              const topicSlug = `${topic.id}-${slugify(topic.name)}`;
+
+              // Spec: go to TopicNotesPage, then show the new note
+              navigate(`/s/${subjectSlug}/t/${topicSlug}`);
+              navigate(`/n/${firstNoteId}`);
+            } else {
+              // Fallback: at least show the note
+              navigate(`/n/${firstNoteId}`);
+            }
+          } else {
+            // Fallback: at least show the note
+            navigate(`/n/${firstNoteId}`);
+          }
+        } catch {
+          // Fallback: at least show the note
+          navigate(`/n/${firstNoteId}`);
+        }
+      }
 
       // Optional callback for callers (if passed)
       onDone?.();
