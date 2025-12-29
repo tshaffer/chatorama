@@ -25,6 +25,10 @@ type Props = {
   className?: string;
   sx?: any;
   enableToc?: boolean; // defaults to true
+
+  // NEW: allow clickable images that trigger a resize UI in parent
+  enableImageSizingUi?: boolean; // default false
+  onRequestResizeImage?: (args: { src?: string; title?: string; alt?: string }) => void;
 };
 
 type LogicalTurn = {
@@ -60,6 +64,38 @@ function normalizeText(text: string): string {
     .trim();
 }
 
+type ImageSizeSpec = { width?: string; height?: string };
+
+function parseImageSize(title?: string): ImageSizeSpec {
+  const t = (title ?? '').trim();
+  if (!t) return {};
+  const tokens = t.split(/\s+/);
+
+  const out: ImageSizeSpec = {};
+  for (const tok of tokens) {
+    const m = tok.match(/^([a-zA-Z]+)=(.+)$/);
+    if (!m) continue;
+    const key = m[1].toLowerCase();
+    const val = m[2];
+
+    if (key === 'w') {
+      if (val === 'full') out.width = '100%';
+      else if (val === 'sm') out.width = '320px';
+      else if (val === 'md') out.width = '520px';
+      else if (val === 'lg') out.width = '760px';
+      else if (/^\d+$/.test(val)) out.width = `${val}px`;
+      else if (/^\d+px$/.test(val) || /^\d+%$/.test(val)) out.width = val;
+    }
+
+    if (key === 'h') {
+      if (/^\d+$/.test(val)) out.height = `${val}px`;
+      else if (/^\d+px$/.test(val)) out.height = val;
+      else if (val === 'auto') out.height = 'auto';
+    }
+  }
+  return out;
+}
+
 function promptToLabel(prompt: string, fallback: string) {
   const firstLine =
     (prompt ?? '')
@@ -79,7 +115,14 @@ function findById(root: HTMLElement, id: string): HTMLElement | null {
   return root.querySelector(`[id="${escaped}"]`) as HTMLElement | null;
 }
 
-export default function MarkdownBody({ markdown, className, sx, enableToc = true }: Props) {
+export default function MarkdownBody({
+  markdown,
+  className,
+  sx,
+  enableToc = true,
+  enableImageSizingUi = false,
+  onRequestResizeImage,
+}: Props) {
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [tocOpen, setTocOpen] = useState(true);
 
@@ -229,6 +272,36 @@ export default function MarkdownBody({ markdown, className, sx, enableToc = true
               <a {...rest} href={href} target="_blank" rel="noopener noreferrer">
                 {children}
               </a>
+            );
+          },
+
+          img: ({ src, alt, title }) => {
+            const spec = parseImageSize(title);
+            const clickable = !!enableImageSizingUi && !!onRequestResizeImage;
+
+            return (
+              <Box
+                component="img"
+                src={src}
+                alt={alt ?? ''}
+                title={title}
+                sx={{
+                  display: 'block',
+                  maxWidth: '100%',
+                  width: spec.width ?? undefined,
+                  height: spec.height ?? 'auto',
+                  cursor: clickable ? 'pointer' : 'default',
+                }}
+                onClick={
+                  clickable
+                    ? (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onRequestResizeImage?.({ src, title, alt });
+                      }
+                    : undefined
+                }
+              />
             );
           },
         }}

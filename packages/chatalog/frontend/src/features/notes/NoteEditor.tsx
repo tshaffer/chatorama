@@ -32,6 +32,13 @@ import {
   Button,
   Tooltip,
   IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
   MenuItem,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
@@ -139,6 +146,21 @@ function normalizeTurns(md: string): string {
   }
 
   return out;
+}
+
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function upsertImageTitle(md: string, src: string, newTitle: string): string {
+  const srcEsc = escapeRegExp(src);
+  const re = new RegExp(`!\\[([^\\]]*)\\]\\(\\s*${srcEsc}(\\s+"[^"]*")?\\s*\\)`, 'm');
+  const m = md.match(re);
+  if (!m) return md;
+
+  const alt = m[1] ?? '';
+  const replacement = `![${alt}](${src} "${newTitle}")`;
+  return md.replace(re, replacement);
 }
 
 type Turn = { role: string; text: string };
@@ -415,6 +437,14 @@ export default function NoteEditor({
   const [topicLabel, setTopicLabel] = useState('');
   const [dirty, setDirty] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
+  const [resizeOpen, setResizeOpen] = useState(false);
+  const [resizeTarget, setResizeTarget] = useState<{
+    src?: string;
+    title?: string;
+    alt?: string;
+  } | null>(null);
+  const [resizePreset, setResizePreset] = useState<'sm' | 'md' | 'lg' | 'full' | 'custom'>('md');
+  const [resizePx, setResizePx] = useState<string>('520');
   const [snack, setSnack] = useState<{
     open: boolean;
     msg: string;
@@ -429,6 +459,30 @@ export default function NoteEditor({
 
   const scrollToTop = useCallback(() => {
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const handleRequestResizeImage = useCallback((img: { src?: string; title?: string; alt?: string }) => {
+    setResizeTarget(img);
+
+    const t = img.title ?? '';
+    const m = t.match(/\bw=([^\s"]+)/);
+    const w = m?.[1];
+
+    if (w === 'sm' || w === 'md' || w === 'lg' || w === 'full') {
+      setResizePreset(w);
+      setResizePx(w === 'sm' ? '320' : w === 'md' ? '520' : w === 'lg' ? '760' : '520');
+    } else if (w && /^\d+$/.test(w)) {
+      setResizePreset('custom');
+      setResizePx(w);
+    } else if (w && /^\d+px$/.test(w)) {
+      setResizePreset('custom');
+      setResizePx(w.replace(/px$/, ''));
+    } else {
+      setResizePreset('md');
+      setResizePx('520');
+    }
+
+    setResizeOpen(true);
   }, []);
 
   const insertAtCursor = useCallback(
@@ -472,7 +526,7 @@ export default function NoteEditor({
         const { asset } = await uploadImage(file).unwrap();
         await attachAssetToNote({ noteId: resolvedNoteId, assetId: asset.id }).unwrap();
         const url = `/api/assets/${asset.id}/content`;
-        insertAtCursor(`\n\n![](${url})\n\n`);
+        insertAtCursor(`\n\n![](${url} "w=md")\n\n`);
         setSnack({ open: true, msg: 'Image inserted', sev: 'success' });
       } catch (err) {
         console.error('Insert image failed', err);
@@ -950,7 +1004,11 @@ export default function NoteEditor({
       )}
 
       <Box sx={{ mt: 1 }}>
-        <MarkdownBody markdown={previewBody} />
+        <MarkdownBody
+          markdown={previewBody}
+          enableImageSizingUi={editing}
+          onRequestResizeImage={handleRequestResizeImage}
+        />
       </Box>
     </>
   );
@@ -1565,6 +1623,66 @@ export default function NoteEditor({
         subjectName={resolvedSubjectName || noteSubject?.name}
         topicName={resolvedTopicName || noteTopic?.name}
       />
+
+      <Dialog open={resizeOpen} onClose={() => setResizeOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Image size</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <FormControl fullWidth size="small">
+              <InputLabel id="img-size-preset">Width</InputLabel>
+              <Select
+                labelId="img-size-preset"
+                label="Width"
+                value={resizePreset}
+                onChange={(e) => setResizePreset(e.target.value as any)}
+              >
+                <MenuItem value="sm">Small</MenuItem>
+                <MenuItem value="md">Medium</MenuItem>
+                <MenuItem value="lg">Large</MenuItem>
+                <MenuItem value="full">Full</MenuItem>
+                <MenuItem value="custom">Custom (px)</MenuItem>
+              </Select>
+            </FormControl>
+
+            {resizePreset === 'custom' && (
+              <TextField
+                label="Width (px)"
+                size="small"
+                value={resizePx}
+                onChange={(e) => setResizePx(e.target.value)}
+                inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+              />
+            )}
+
+            <Typography variant="caption" color="text.secondary">
+              Tip: click the image again to adjust later. Sizes are stored in markdown as title tokens (e.g. &quot;w=md&quot;).
+            </Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setResizeOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              const src = resizeTarget?.src;
+              if (!src) return;
+
+              let wToken: string = resizePreset;
+              if (resizePreset === 'custom') {
+                const n = parseInt(resizePx, 10);
+                if (!Number.isFinite(n) || n <= 0) return;
+                wToken = String(n);
+              }
+
+              setMarkdown((prev) => upsertImageTitle(prev, src, `w=${wToken}`));
+              setDirty(true);
+              setResizeOpen(false);
+            }}
+          >
+            Apply
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={snack.open}

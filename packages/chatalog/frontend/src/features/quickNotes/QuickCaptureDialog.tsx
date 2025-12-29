@@ -161,7 +161,7 @@ export default function QuickCaptureDialog({
 
       try {
         const { asset } = await uploadImage(file).unwrap();
-        insertAtCursor(`\n\n![](/api/assets/${asset.id}/content)\n\n`);
+        insertAtCursor(`\n\n![](/api/assets/${asset.id}/content "w=md")\n\n`);
         setPendingUploadedAssetIds((prev) => [...prev, asset.id]);
       } catch (err) {
         console.error('Insert image failed', err);

@@ -20,6 +20,10 @@ import {
   TextField,
   Snackbar,
   Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
 
@@ -37,6 +41,21 @@ import { useUploadImageMutation } from '../features/notes/notesApi';
 import { useGetSubjectsWithTopicsQuery } from '../features/subjects/subjectsApi';
 import type { Subject, Topic } from '@chatorama/chatalog-shared';
 import type { QuickNote } from '../types/entities';
+
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function upsertImageTitle(md: string, src: string, newTitle: string): string {
+  const srcEsc = escapeRegExp(src);
+  const re = new RegExp(`!\\[([^\\]]*)\\]\\(\\s*${srcEsc}(\\s+"[^"]*")?\\s*\\)`, 'm');
+  const m = md.match(re);
+  if (!m) return md;
+
+  const alt = m[1] ?? '';
+  const replacement = `![${alt}](${src} "${newTitle}")`;
+  return md.replace(re, replacement);
+}
 
 export default function QuickNotePage() {
   const { quickNoteId } = useParams<{ quickNoteId: string }>();
@@ -66,6 +85,14 @@ export default function QuickNotePage() {
   const [topicLabel, setTopicLabel] = useState('');
   const markdownInputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [resizeOpen, setResizeOpen] = useState(false);
+  const [resizeTarget, setResizeTarget] = useState<{
+    src?: string;
+    title?: string;
+    alt?: string;
+  } | null>(null);
+  const [resizePreset, setResizePreset] = useState<'sm' | 'md' | 'lg' | 'full' | 'custom'>('md');
+  const [resizePx, setResizePx] = useState<string>('520');
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkText, setLinkText] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
@@ -108,6 +135,30 @@ export default function QuickNotePage() {
     },
     [editMarkdown.length],
   );
+
+  const handleRequestResizeImage = useCallback((img: { src?: string; title?: string; alt?: string }) => {
+    setResizeTarget(img);
+
+    const t = img.title ?? '';
+    const m = t.match(/\bw=([^\s"]+)/);
+    const w = m?.[1];
+
+    if (w === 'sm' || w === 'md' || w === 'lg' || w === 'full') {
+      setResizePreset(w);
+      setResizePx(w === 'sm' ? '320' : w === 'md' ? '520' : w === 'lg' ? '760' : '520');
+    } else if (w && /^\d+$/.test(w)) {
+      setResizePreset('custom');
+      setResizePx(w);
+    } else if (w && /^\d+px$/.test(w)) {
+      setResizePreset('custom');
+      setResizePx(w.replace(/px$/, ''));
+    } else {
+      setResizePreset('md');
+      setResizePx('520');
+    }
+
+    setResizeOpen(true);
+  }, []);
 
   // Build options like ImportResultsDialog
   const subjectOptions = useMemo(() => {
@@ -287,7 +338,7 @@ export default function QuickNotePage() {
       try {
         const { asset } = await uploadImage(file).unwrap();
         await addQuickNoteAsset({ quickNoteId: note.id, assetId: asset.id, order: 0 }).unwrap();
-        insertAtCursor(`\n\n![](/api/assets/${asset.id}/content)\n\n`);
+        insertAtCursor(`\n\n![](/api/assets/${asset.id}/content "w=md")\n\n`);
       } catch (err) {
         console.error('Insert image failed', err);
       }
@@ -524,6 +575,14 @@ export default function QuickNotePage() {
                   Insert Image...
                 </Button>
               </Box>
+              <Typography variant="subtitle2" color="text.secondary">
+                Preview
+              </Typography>
+              <MarkdownBody
+                markdown={editMarkdown}
+                enableImageSizingUi
+                onRequestResizeImage={handleRequestResizeImage}
+              />
             </Stack>
           ) : (
             <MarkdownBody markdown={note.markdown ?? ''} />
@@ -558,6 +617,65 @@ export default function QuickNotePage() {
             disabled={!linkUrl.trim()}
           >
             Insert
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={resizeOpen} onClose={() => setResizeOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Image size</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <FormControl fullWidth size="small">
+              <InputLabel id="qn-img-size-preset">Width</InputLabel>
+              <Select
+                labelId="qn-img-size-preset"
+                label="Width"
+                value={resizePreset}
+                onChange={(e) => setResizePreset(e.target.value as any)}
+              >
+                <MenuItem value="sm">Small</MenuItem>
+                <MenuItem value="md">Medium</MenuItem>
+                <MenuItem value="lg">Large</MenuItem>
+                <MenuItem value="full">Full</MenuItem>
+                <MenuItem value="custom">Custom (px)</MenuItem>
+              </Select>
+            </FormControl>
+
+            {resizePreset === 'custom' && (
+              <TextField
+                label="Width (px)"
+                size="small"
+                value={resizePx}
+                onChange={(e) => setResizePx(e.target.value)}
+                inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+              />
+            )}
+
+            <Typography variant="caption" color="text.secondary">
+              Sizes are stored in markdown as image title tokens (e.g. &quot;w=md&quot;).
+            </Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setResizeOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              const src = resizeTarget?.src;
+              if (!src) return;
+
+              let wToken: string = resizePreset;
+              if (resizePreset === 'custom') {
+                const n = parseInt(resizePx, 10);
+                if (!Number.isFinite(n) || n <= 0) return;
+                wToken = String(n);
+              }
+
+              setEditMarkdown((prev) => upsertImageTitle(prev, src, `w=${wToken}`));
+              setResizeOpen(false);
+            }}
+          >
+            Apply
           </Button>
         </DialogActions>
       </Dialog>
