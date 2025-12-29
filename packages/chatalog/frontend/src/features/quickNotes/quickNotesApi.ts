@@ -1,5 +1,5 @@
 import { chatalogApi as baseApi } from '../api/chatalogApi';
-import type { QuickNote } from '../../types/entities';
+import type { QuickNote, QuickNoteAsset } from '../../types/entities';
 
 type ListParams = {
   q?: string;
@@ -24,6 +24,56 @@ export const quickNotesApi = baseApi.injectEndpoints({
         res
           ? [{ type: 'QuickNote' as const, id: 'LIST' }, ...res.map(n => ({ type: 'QuickNote' as const, id: n.id }))]
           : [{ type: 'QuickNote' as const, id: 'LIST' }],
+    }),
+
+    getQuickNoteAssets: build.query<QuickNoteAsset[], string>({
+      query: (quickNoteId) => ({
+        url: `quickNoteAssets?quickNoteId=${quickNoteId}`,
+      }),
+      providesTags: (res, _err, quickNoteId) =>
+        res
+          ? [
+              { type: 'QuickNoteAsset' as const, id: `LIST:${quickNoteId}` },
+              ...res.map((asset) => ({ type: 'QuickNoteAsset' as const, id: asset.id })),
+            ]
+          : [{ type: 'QuickNoteAsset' as const, id: `LIST:${quickNoteId}` }],
+    }),
+
+    addQuickNoteAsset: build.mutation<
+      QuickNoteAsset,
+      { quickNoteId: string; assetId: string; caption?: string; order?: number }
+    >({
+      query: (body) => ({
+        url: 'quickNoteAssets',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_res, _err, { quickNoteId }) => [
+        { type: 'QuickNoteAsset' as const, id: `LIST:${quickNoteId}` },
+      ],
+    }),
+
+    updateQuickNoteAsset: build.mutation<
+      QuickNoteAsset,
+      { id: string; caption?: string; order?: number; quickNoteId: string }
+    >({
+      query: ({ id, quickNoteId: _quickNoteId, ...patch }) => ({
+        url: `quickNoteAssets/${id}`,
+        method: 'PATCH',
+        body: patch,
+      }),
+      invalidatesTags: (_res, _err, { id, quickNoteId }) => [
+        { type: 'QuickNoteAsset' as const, id },
+        { type: 'QuickNoteAsset' as const, id: `LIST:${quickNoteId}` },
+      ],
+    }),
+
+    deleteQuickNoteAsset: build.mutation<{ ok: true } | void, { id: string; quickNoteId: string }>({
+      query: ({ id }) => ({ url: `quickNoteAssets/${id}`, method: 'DELETE' }),
+      invalidatesTags: (_res, _err, { id, quickNoteId }) => [
+        { type: 'QuickNoteAsset' as const, id },
+        { type: 'QuickNoteAsset' as const, id: `LIST:${quickNoteId}` },
+      ],
     }),
 
     addQuickNote: build.mutation<QuickNote, Partial<QuickNote>>({
@@ -74,6 +124,10 @@ export const quickNotesApi = baseApi.injectEndpoints({
 
 export const {
   useGetQuickNotesQuery,
+  useGetQuickNoteAssetsQuery,
+  useAddQuickNoteAssetMutation,
+  useUpdateQuickNoteAssetMutation,
+  useDeleteQuickNoteAssetMutation,
   useAddQuickNoteMutation,
   useUpdateQuickNoteMutation,
   useDeleteQuickNoteMutation,

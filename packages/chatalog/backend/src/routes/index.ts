@@ -11,6 +11,7 @@ import importBatchesRouter from './importBatches';
 import chatRegistryRouter from './chatRegistry';
 import assetsRouter from './assets';
 import noteAssetsRouter from './noteAssets';
+import quickNoteAssetsRouter from './quickNoteAssets';
 
 export function createRoutes(app: Express) {
   const api = Router();
@@ -36,12 +37,14 @@ export function createRoutes(app: Express) {
 
   // QuickNotes CRUD
   api.use('/quicknotes', quicknotesRouter);
+  api.use('/quickNoteAssets', quickNoteAssetsRouter);
   api.use('/chat-registry', chatRegistryRouter);
 
   app.use('/api/v1', notesMoveRouter);
 
   app.use('/api/assets', assetsRouter);
   app.use('/api/noteAssets', noteAssetsRouter);
+  app.use('/api/quickNoteAssets', quickNoteAssetsRouter);
 
   app.use('/api/v1', api);
 }

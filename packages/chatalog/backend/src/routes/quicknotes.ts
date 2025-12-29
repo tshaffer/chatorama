@@ -2,6 +2,8 @@
 import { Router } from 'express';
 import { isValidObjectId, Types } from 'mongoose';
 import { QuickNoteModel } from '../models/QuickNote';
+import { QuickNoteAssetModel } from '../models/QuickNoteAsset';
+import { NoteAssetModel } from '../models/NoteAsset';
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
 import { NoteModel } from '../models/Note';
@@ -268,6 +270,24 @@ router.post('/:id/convert', async (req, res) => {
       sources: [{ type: 'manual' as const }],
       importedAt: new Date(),
     });
+
+    const quickNoteAssets = await QuickNoteAssetModel.find({ quickNoteId: id })
+      .sort({ order: 1, _id: 1 })
+      .lean();
+
+    if (quickNoteAssets.length > 0) {
+      await NoteAssetModel.insertMany(
+        quickNoteAssets.map((rel, idx) => ({
+          noteId: createdNote._id.toString(),
+          assetId: rel.assetId,
+          order: typeof rel.order === 'number' ? rel.order : idx,
+          caption: rel.caption,
+        })),
+        { ordered: false },
+      );
+
+      await QuickNoteAssetModel.deleteMany({ quickNoteId: id });
+    }
 
     await quick.deleteOne();
 

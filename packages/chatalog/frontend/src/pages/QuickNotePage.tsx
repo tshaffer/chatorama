@@ -1,5 +1,5 @@
 // chatalog/frontend/src/pages/QuickNotePage.tsx
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef, useCallback, type ChangeEvent } from 'react';
 import {
   useParams,
   Link as RouterLink,
@@ -31,7 +31,9 @@ import {
   useUpdateQuickNoteMutation,
   useDeleteQuickNoteMutation,
   useConvertQuickNoteMutation,
+  useAddQuickNoteAssetMutation,
 } from '../features/quickNotes/quickNotesApi';
+import { useUploadImageMutation } from '../features/notes/notesApi';
 import { useGetSubjectsWithTopicsQuery } from '../features/subjects/subjectsApi';
 import type { Subject, Topic } from '@chatorama/chatalog-shared';
 import type { QuickNote } from '../types/entities';
@@ -63,6 +65,7 @@ export default function QuickNotePage() {
   const [subjectLabel, setSubjectLabel] = useState('');
   const [topicLabel, setTopicLabel] = useState('');
   const markdownInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkText, setLinkText] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
@@ -77,6 +80,34 @@ export default function QuickNotePage() {
   const [updateQuickNote, { isLoading: isSaving }] = useUpdateQuickNoteMutation();
   const [deleteQuickNote, { isLoading: isDeleting }] = useDeleteQuickNoteMutation();
   const [convertQuickNote, { isLoading: isConverting }] = useConvertQuickNoteMutation();
+  const [uploadImage] = useUploadImageMutation();
+  const [addQuickNoteAsset] = useAddQuickNoteAssetMutation();
+
+  const insertAtCursor = useCallback(
+    (snippet: string) => {
+      const ta = markdownInputRef.current;
+      const start = ta?.selectionStart ?? editMarkdown.length;
+      const end = ta?.selectionEnd ?? editMarkdown.length;
+
+      setEditMarkdown((prev) => {
+        const before = prev.slice(0, start);
+        const after = prev.slice(end);
+        return before + snippet + after;
+      });
+
+      requestAnimationFrame(() => {
+        if (!ta) return;
+        ta.focus();
+        const pos = start + snippet.length;
+        try {
+          ta.setSelectionRange(pos, pos);
+        } catch {
+          // Ignore selection errors
+        }
+      });
+    },
+    [editMarkdown.length],
+  );
 
   // Build options like ImportResultsDialog
   const subjectOptions = useMemo(() => {
@@ -246,6 +277,23 @@ export default function QuickNotePage() {
       }
     });
   };
+
+  const handlePickImage = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file || !note) return;
+
+      try {
+        const { asset } = await uploadImage(file).unwrap();
+        await addQuickNoteAsset({ quickNoteId: note.id, assetId: asset.id, order: 0 }).unwrap();
+        insertAtCursor(`\n\n![](/api/assets/${asset.id}/content)\n\n`);
+      } catch (err) {
+        console.error('Insert image failed', err);
+      }
+    },
+    [note, uploadImage, addQuickNoteAsset, insertAtCursor],
+  );
 
   // ---------- Delete handlers ----------
   const handleConfirmDelete = async () => {
@@ -440,7 +488,7 @@ export default function QuickNotePage() {
           }}
         >
           {isEditing ? (
-            <Stack spacing={1} alignItems="flex-end" sx={{ height: '100%' }}>
+            <Stack spacing={2} alignItems="stretch" sx={{ height: '100%' }}>
               <TextField
                 label="Body (Markdown)"
                 value={editMarkdown}
@@ -461,9 +509,21 @@ export default function QuickNotePage() {
                   },
                 }}
               />
-              <Button size="small" onClick={openInsertLinkDialog}>
-                Insert link
-              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handlePickImage}
+              />
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                <Button size="small" onClick={openInsertLinkDialog}>
+                  Insert link
+                </Button>
+                <Button size="small" onClick={() => fileInputRef.current?.click()}>
+                  Insert Image...
+                </Button>
+              </Box>
             </Stack>
           ) : (
             <MarkdownBody markdown={note.markdown ?? ''} />

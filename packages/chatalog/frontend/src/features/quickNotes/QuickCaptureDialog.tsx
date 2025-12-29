@@ -1,7 +1,8 @@
 // frontend/src/features/quickNotes/QuickCaptureDialog.tsx
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Dialog, DialogTitle, DialogContent, DialogActions, TextField, Stack, Button, FormControl, InputLabel, Select, MenuItem, Box, Typography } from '@mui/material';
-import { useAddQuickNoteMutation } from './quickNotesApi';
+import { useAddQuickNoteMutation, useAddQuickNoteAssetMutation } from './quickNotesApi';
+import { useUploadImageMutation } from '../notes/notesApi';
 import { useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
 import type { Subject, Topic } from '@chatorama/chatalog-shared';
 
@@ -32,10 +33,14 @@ export default function QuickCaptureDialog({
   const [markdown, setMarkdown] = useState('');
   const [subjectId, setSubjectId] = useState<string | undefined>(defaultSubjectId);
   const [topicId, setTopicId] = useState<string | undefined>(defaultTopicId);
+  const [pendingUploadedAssetIds, setPendingUploadedAssetIds] = useState<string[]>([]);
 
   const [addQuickNote, { isLoading, error, data }] = useAddQuickNoteMutation();
+  const [addQuickNoteAsset] = useAddQuickNoteAssetMutation();
+  const [uploadImage, { isLoading: isUploading }] = useUploadImageMutation();
   const { data: subjects = [] } = useGetSubjectsWithTopicsQuery();
   const markdownInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkText, setLinkText] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
@@ -49,6 +54,7 @@ export default function QuickCaptureDialog({
       setMarkdown('');
       setSubjectId(defaultSubjectId);
       setTopicId(defaultTopicId);
+      setPendingUploadedAssetIds([]);
     }
   }, [open, defaultSubjectId, defaultTopicId]);
 
@@ -60,9 +66,20 @@ export default function QuickCaptureDialog({
       subjectId,
       topicId,
     }).unwrap();
+    if (res.id && pendingUploadedAssetIds.length) {
+      await Promise.all(
+        pendingUploadedAssetIds.map((assetId, idx) =>
+          addQuickNoteAsset({
+            quickNoteId: res.id,
+            assetId,
+            order: idx,
+          }).unwrap(),
+        ),
+      );
+    }
     onSaved?.(res.id ?? '');
     onClose();
-  }, [addQuickNote, title, derivedTitle, markdown, subjectId, topicId, onClose, onSaved]);
+  }, [addQuickNote, title, derivedTitle, markdown, subjectId, topicId, onClose, onSaved, pendingUploadedAssetIds, addQuickNoteAsset]);
 
   // Cmd/Ctrl + Enter to save
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -110,6 +127,49 @@ export default function QuickCaptureDialog({
     });
   };
 
+  const insertAtCursor = useCallback(
+    (snippet: string) => {
+      const ta = markdownInputRef.current;
+      const start = ta?.selectionStart ?? markdown.length;
+      const end = ta?.selectionEnd ?? markdown.length;
+
+      setMarkdown((prev) => {
+        const before = prev.slice(0, start);
+        const after = prev.slice(end);
+        return before + snippet + after;
+      });
+
+      requestAnimationFrame(() => {
+        if (!ta) return;
+        ta.focus();
+        const pos = start + snippet.length;
+        try {
+          ta.setSelectionRange(pos, pos);
+        } catch {
+          // Ignore selection errors
+        }
+      });
+    },
+    [markdown.length],
+  );
+
+  const handlePickImage = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+
+      try {
+        const { asset } = await uploadImage(file).unwrap();
+        insertAtCursor(`\n\n![](/api/assets/${asset.id}/content)\n\n`);
+        setPendingUploadedAssetIds((prev) => [...prev, asset.id]);
+      } catch (err) {
+        console.error('Insert image failed', err);
+      }
+    },
+    [uploadImage, insertAtCursor],
+  );
+
   // simple subject→topic select data
   const selectedSubject = subjects.find(s => s.id === subjectId) as (Subject & { topics?: Topic[] }) | undefined;
   const topics = selectedSubject?.topics ?? [];
@@ -138,9 +198,23 @@ export default function QuickCaptureDialog({
             minRows={6}
             inputRef={markdownInputRef}
           />
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={handlePickImage}
+          />
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
             <Button size="small" onClick={openInsertLinkDialog}>
               Insert link
+            </Button>
+            <Button
+              size="small"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+            >
+              Insert Image...
             </Button>
           </Box>
           <Stack direction="row" spacing={2}>
