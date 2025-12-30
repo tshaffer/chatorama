@@ -11,7 +11,8 @@
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
-    "https://chat.openai.com/*"
+    "https://chat.openai.com/*",
+    "https://cooking.nytimes.com/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -28,6 +29,15 @@
       ],
       "css": [
         "injected.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://cooking.nytimes.com/*"
+      ],
+      "js": [
+        "recipeContent.js"
       ],
       "run_at": "document_idle"
     }
