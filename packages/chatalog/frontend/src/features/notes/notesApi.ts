@@ -10,6 +10,7 @@ import type {
   MergeNotesResult,
   Asset,
   NoteAssetWithAsset,
+  CookedEvent,
 } from '@chatorama/chatalog-shared';
 import { chatalogApi as baseApi } from '../api/chatalogApi';
 import { subjectsApi } from '../subjects/subjectsApi';
@@ -115,6 +116,30 @@ export const notesApi = baseApi.injectEndpoints({
         body,
       }),
       invalidatesTags: (_res, _err, { noteId }) => [{ type: 'Note' as const, id: noteId }],
+    }),
+
+    normalizeRecipeIngredients: build.mutation<Note, { noteId: string }>({
+      query: ({ noteId }) => ({
+        url: `recipes/${noteId}/normalize`,
+        method: 'POST',
+      }),
+      invalidatesTags: (_res, _err, { noteId }) => [{ type: 'Note' as const, id: noteId }],
+    }),
+
+    addCookedEvent: build.mutation<Note, { noteId: string } & Partial<CookedEvent>>({
+      query: ({ noteId, ...body }) => ({
+        url: `recipes/${noteId}/cooked`,
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_res, _err, { noteId }) => [{ type: 'Note' as const, id: noteId }],
+    }),
+
+    searchRecipes: build.query<Note[], { query: string; mode?: 'any' | 'all' }>({
+      query: ({ query, mode = 'any' }) => ({
+        url: `recipes/search`,
+        params: { query, mode },
+      }),
     }),
 
     createNote: build.mutation<Note, CreateNoteRequest>({
@@ -263,6 +288,9 @@ export const {
   useDeleteNoteMutation,
   useUploadImageMutation,
   useAttachAssetToNoteMutation,
+  useNormalizeRecipeIngredientsMutation,
+  useAddCookedEventMutation,
+  useSearchRecipesQuery,
   useReorderNotesInTopicMutation,
   useMoveNotesMutation,
   useGetTopicNotesWithRelationsQuery,

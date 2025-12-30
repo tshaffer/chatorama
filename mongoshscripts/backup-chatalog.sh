@@ -30,7 +30,7 @@ echo "Writing backups to: $OUTPUT_DIR"
 echo
 
 # Export these collections as single files (as before)
-collections=("subjects" "topics" "quicknotes" "turnfingerprints")
+collections=("assets" "importbatches" "noteassets" "quicknoteassets" "subjects" "topics" "quicknotes" "turnfingerprints")
 
 for coll in "${collections[@]}"; do
   out_file="$OUTPUT_DIR/${coll}.json"

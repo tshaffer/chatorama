@@ -36,6 +36,55 @@ export interface NoteRelation {
   kind: NoteRelationKind;
 }
 
+// -------- Recipes --------
+
+export type RecipeIngredient = {
+  raw: string;
+  name?: string;
+  amount?: number;
+  unit?: string;
+  modifier?: string;
+  notes?: string;
+};
+
+export type RecipeNutrition = {
+  calories?: string | number;
+  unsaturatedFatContent?: string | number;
+  carbohydrateContent?: string | number;
+  cholesterolContent?: string | number;
+  fatContent?: string | number;
+  fiberContent?: string | number;
+  proteinContent?: string | number;
+  saturatedFatContent?: string | number;
+  sodiumContent?: string | number;
+  sugarContent?: string | number;
+  transFatContent?: string | number;
+};
+
+export type RecipeMeta = {
+  sourceUrl: string;
+  author?: string;
+  cookTimeMinutes?: number;
+  totalTimeMinutes?: number;
+  yield?: string;
+  description?: string;
+  cuisine?: string;
+  category?: string[];
+  keywords?: string[];
+  ratingValue?: number;
+  ratingCount?: number;
+  nutrition?: RecipeNutrition;
+  ingredientsRaw?: string[];
+  stepsRaw?: string[];
+  ingredients?: RecipeIngredient[];
+};
+
+export type CookedEvent = {
+  cookedAt: string; // ISO
+  rating?: number; // 1..5
+  notes?: string;
+};
+
 // shared Note type
 export interface Note {
   id: string;
@@ -56,6 +105,9 @@ export interface Note {
 
   // Networked relationships (generic)
   relations?: NoteRelation[];
+
+  recipe?: RecipeMeta;
+  cookedHistory?: CookedEvent[];
 
   sources?: { url?: string; type?: 'chatworthy' | 'clip' | 'manual' }[];
 

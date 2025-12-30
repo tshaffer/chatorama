@@ -9,6 +9,8 @@ import {
   useGetTopicNotesWithRelationsQuery, // ⬅️ NEW
   useUploadImageMutation,
   useAttachAssetToNoteMutation,
+  useNormalizeRecipeIngredientsMutation,
+  useSearchRecipesQuery,
 } from './notesApi';
 import {
   type Note,
@@ -40,6 +42,9 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  List,
+  ListItemButton,
+  ListItemText,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DoneIcon from '@mui/icons-material/Done';
@@ -62,6 +67,9 @@ import {
 import Autocomplete from '@mui/material/Autocomplete';
 import { useGetAllTopicsQuery } from '../topics/topicsApi';
 import NotePropertiesDialog from './NotePropertiesDialog';
+import RecipeView from './RecipeView';
+import CookedHistoryPanel from './CookedHistoryPanel';
+import RecipePropertiesDialog from './RecipePropertiesDialog';
 
 // ---------------- helpers ----------------
 
@@ -305,6 +313,8 @@ export default function NoteEditor({
   const [deleteNote, { isLoading: isDeleting }] = useDeleteNoteMutation();
   const [uploadImage] = useUploadImageMutation();
   const [attachAssetToNote] = useAttachAssetToNoteMutation();
+  const [normalizeRecipeIngredients, { isLoading: isNormalizing }] =
+    useNormalizeRecipeIngredientsMutation();
 
   // Data for pickers
   const { data: subjects = [] } = useGetSubjectsQuery();
@@ -437,6 +447,12 @@ export default function NoteEditor({
   const [topicLabel, setTopicLabel] = useState('');
   const [dirty, setDirty] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
+  const [recipePropsOpen, setRecipePropsOpen] = useState(false);
+  const [recipeSearchOpen, setRecipeSearchOpen] = useState(false);
+  const [recipeSearchQuery, setRecipeSearchQuery] = useState('');
+  const [recipeSearchMode, setRecipeSearchMode] = useState<'any' | 'all'>('any');
+  const [recipeSearchSubmitted, setRecipeSearchSubmitted] = useState<string | null>(null);
+  const [recipeSearchModeSubmitted, setRecipeSearchModeSubmitted] = useState<'any' | 'all'>('any');
   const [resizeOpen, setResizeOpen] = useState(false);
   const [resizeTarget, setResizeTarget] = useState<{
     src?: string;
@@ -450,6 +466,12 @@ export default function NoteEditor({
     msg: string;
     sev: 'success' | 'error';
   }>({ open: false, msg: '', sev: 'success' });
+
+  const recipeSearchArgs = recipeSearchSubmitted
+    ? { query: recipeSearchSubmitted, mode: recipeSearchModeSubmitted }
+    : skipToken;
+  const { data: recipeSearchResults = [], isFetching: isRecipeSearching } =
+    useSearchRecipesQuery(recipeSearchArgs);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastInitNoteIdRef = useRef<string | undefined>(undefined);
@@ -562,6 +584,11 @@ export default function NoteEditor({
       ),
     [subjectsWithTopics, note],
   );
+
+  const isRecipeNote =
+    !!(note as Note | undefined)?.recipe?.sourceUrl ||
+    !!(note as Note | undefined)?.recipe?.ingredientsRaw?.length ||
+    !!(note as Note | undefined)?.recipe?.stepsRaw?.length;
 
   // Subject/topic editing helpers
   const subjectLabelOptions = useMemo(() => {
@@ -1003,7 +1030,47 @@ export default function NoteEditor({
         </Box>
       )}
 
+      {/* {isRecipeNote && note && (
+        <Box sx={{ mb: 2 }}>
+          <Stack direction="row" spacing={1} sx={{ mb: 1 }} alignItems="center">
+            <Typography variant="subtitle2">Recipe</Typography>
+            {FF.recipe.normalizeButton && (
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={isNormalizing}
+                onClick={async () => {
+                  try {
+                    await normalizeRecipeIngredients({ noteId: (note as Note).id }).unwrap();
+                    setSnack({ open: true, msg: 'Ingredients normalized', sev: 'success' });
+                  } catch {
+                    setSnack({ open: true, msg: 'Normalize failed', sev: 'error' });
+                  }
+                }}
+              >
+                Normalize ingredients
+              </Button>
+            )}
+          </Stack>
+
+          <RecipeView note={note as Note} />
+          <CookedHistoryPanel note={note as Note} />
+          <Divider sx={{ mt: 2 }} />
+        </Box>
+      )} */}
+
       <Box sx={{ mt: 1 }}>
+        {isRecipeNote && (
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => setRecipePropsOpen(true)}
+            >
+              Recipe Properties
+            </Button>
+          </Stack>
+        )}
         <MarkdownBody
           markdown={previewBody}
           enableImageSizingUi={editing}
@@ -1012,6 +1079,11 @@ export default function NoteEditor({
       </Box>
     </>
   );
+
+  if (isRecipeNote) {
+    console.log(note);
+    // debugger;
+  }
 
   return (
     <Box
@@ -1133,6 +1205,15 @@ export default function NoteEditor({
               disabled={isLoading || isSaving}
             >
               Insert Image...
+            </Button>
+          )}
+          {!editing && (
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => setRecipeSearchOpen(true)}
+            >
+              Recipe Search
             </Button>
           )}
           <Tooltip title="View note properties">
@@ -1615,6 +1696,79 @@ export default function NoteEditor({
           {renderPreviewContent()}
         </Box>
       )}
+
+      <Dialog
+        open={recipeSearchOpen}
+        onClose={() => setRecipeSearchOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Recipe Search</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <TextField
+              label="Ingredients"
+              value={recipeSearchQuery}
+              onChange={(e) => setRecipeSearchQuery(e.target.value)}
+              placeholder="shrimp garlic"
+              fullWidth
+            />
+            <FormControl fullWidth size="small">
+              <InputLabel id="recipe-search-mode">Mode</InputLabel>
+              <Select
+                labelId="recipe-search-mode"
+                label="Mode"
+                value={recipeSearchMode}
+                onChange={(e) => setRecipeSearchMode(e.target.value as 'any' | 'all')}
+              >
+                <MenuItem value="any">Any</MenuItem>
+                <MenuItem value="all">All</MenuItem>
+              </Select>
+            </FormControl>
+
+            {recipeSearchSubmitted && (
+              <>
+                <Typography variant="caption" color="text.secondary">
+                  {isRecipeSearching ? 'Searching…' : `${recipeSearchResults.length} results`}
+                </Typography>
+                <List dense disablePadding>
+                  {recipeSearchResults.map((result) => (
+                    <ListItemButton
+                      key={result.id}
+                      onClick={() => {
+                        goToNote(result);
+                        setRecipeSearchOpen(false);
+                      }}
+                    >
+                      <ListItemText primary={result.title || 'Untitled'} />
+                    </ListItemButton>
+                  ))}
+                </List>
+              </>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRecipeSearchOpen(false)}>Close</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              const trimmed = recipeSearchQuery.trim();
+              if (!trimmed) return;
+              setRecipeSearchSubmitted(trimmed);
+              setRecipeSearchModeSubmitted(recipeSearchMode);
+            }}
+          >
+            Search
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <RecipePropertiesDialog
+        open={recipePropsOpen}
+        onClose={() => setRecipePropsOpen(false)}
+        recipe={(note as Note | undefined)?.recipe}
+      />
 
       <NotePropertiesDialog
         open={propertiesOpen}

@@ -17,6 +17,31 @@ export interface NoteDoc extends Document {
   backlinks: string[];
   relations?: NoteRelation[];
   sources?: { url?: string; type?: 'chatworthy'|'clip'|'manual' }[];
+  recipe?: {
+    sourceUrl: string;
+    author?: string;
+    cookTimeMinutes?: number;
+    totalTimeMinutes?: number;
+    yield?: string;
+    description?: string;
+    cuisine?: string;
+    category?: string[];
+    keywords?: string[];
+    ratingValue?: number;
+    ratingCount?: number;
+    nutrition?: Record<string, any>;
+    ingredientsRaw?: string[];
+    stepsRaw?: string[];
+    ingredients?: {
+      raw: string;
+      name?: string;
+      amount?: number;
+      unit?: string;
+      modifier?: string;
+      notes?: string;
+    }[];
+  };
+  cookedHistory?: { cookedAt: Date; rating?: number; notes?: string }[];
 
   /** Chatworthy provenance */
   chatworthyNoteId?: string;
@@ -68,6 +93,77 @@ const RelationSchema = new Schema<NoteRelation>(
   { _id: false }
 );
 
+type RecipeIngredient = {
+  raw: string;
+  name?: string;
+  amount?: number;
+  unit?: string;
+  modifier?: string;
+  notes?: string;
+};
+
+const RecipeIngredientSchema = new Schema<RecipeIngredient>(
+  {
+    raw: { type: String, required: true },
+    name: String,
+    amount: Number,
+    unit: String,
+    modifier: String,
+    notes: String,
+  },
+  { _id: false }
+);
+
+type RecipeMeta = {
+  sourceUrl: string;
+  author?: string;
+  cookTimeMinutes?: number;
+  totalTimeMinutes?: number;
+  yield?: string;
+  description?: string;
+  cuisine?: string;
+  category?: string[];
+  keywords?: string[];
+  ratingValue?: number;
+  ratingCount?: number;
+  nutrition?: Record<string, any>;
+  ingredientsRaw?: string[];
+  stepsRaw?: string[];
+  ingredients?: RecipeIngredient[];
+};
+
+const RecipeMetaSchema = new Schema<RecipeMeta>(
+  {
+    sourceUrl: { type: String, required: true },
+    author: String,
+    cookTimeMinutes: Number,
+    totalTimeMinutes: Number,
+    yield: String,
+    description: String,
+    cuisine: String,
+    category: { type: [String], default: [] },
+    keywords: { type: [String], default: [] },
+    ratingValue: Number,
+    ratingCount: Number,
+    nutrition: { type: Schema.Types.Mixed },
+    ingredientsRaw: { type: [String], default: [] },
+    stepsRaw: { type: [String], default: [] },
+    ingredients: { type: [RecipeIngredientSchema], default: [] },
+  },
+  { _id: false }
+);
+
+type CookedEvent = { cookedAt: Date; rating?: number; notes?: string };
+
+const CookedEventSchema = new Schema<CookedEvent>(
+  {
+    cookedAt: { type: Date, required: true },
+    rating: Number,
+    notes: String,
+  },
+  { _id: false }
+);
+
 const NoteSchema = new Schema<NoteDoc>(
   {
     subjectId: { type: String },
@@ -83,6 +179,8 @@ const NoteSchema = new Schema<NoteDoc>(
     sources:   { type: [SourceSchema], default: [] },
 
     relations: { type: [RelationSchema], default: [] },
+    recipe: { type: RecipeMetaSchema, required: false },
+    cookedHistory: { type: [CookedEventSchema], default: [] },
 
     // Chatworthy provenance
     chatworthyNoteId:     { type: String, index: true },
@@ -118,6 +216,10 @@ NoteSchema.index({ chatworthyNoteId: 1 });
 
 // Optional: fast lookup by Chatworthy chat + turn
 NoteSchema.index({ chatworthyChatId: 1, chatworthyTurnIndex: 1 });
+
+// Recipe lookup / dedupe / search
+NoteSchema.index({ 'recipe.sourceUrl': 1 }, { unique: true, sparse: true });
+NoteSchema.index({ 'recipe.ingredients.name': 1 });
 
 // Apply global JSON/Object transform: exposes `id`, removes `_id`/`__v`
 applyToJSON(NoteSchema);
