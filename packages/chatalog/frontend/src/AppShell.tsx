@@ -1,6 +1,6 @@
 // chatalog/frontend/src/AppShell.tsx
 import React, { useEffect, useState } from 'react';
-import { Outlet, Link, useLocation, useMatch } from 'react-router-dom';
+import { Outlet, Link, useLocation, useMatch, useNavigate, matchPath } from 'react-router-dom';
 import { AppBar, Toolbar, Typography, Button, Stack, Box, alpha, IconButton, Tooltip } from '@mui/material';
 import ImportChatworthyButton from './features/imports/ImportChatworthyButton';
 import { fetchJSON } from './lib/api';
@@ -15,6 +15,8 @@ import SettingsIcon from '@mui/icons-material/Settings';
 
 import QuickCaptureDialog from './features/quickNotes/QuickCaptureDialog';
 import SettingsDialog from './features/settings/SettingsDialog';
+import SearchBox from './components/SearchBox';
+import { parseSearchInput } from './features/search/queryParser';
 
 import ImportAiClassificationButton from './features/imports/ImportAiClassificationButton';
 
@@ -54,9 +56,12 @@ function TopNavButton({ to, children, icon }: TopNavButtonProps) {
 }
 
 export default function AppShell() {
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
+  const navigate = useNavigate();
   const [qcOpen, setQcOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchText, setSearchText] = useState('');
 
   useEffect(() => {
     fetchJSON<{ ok: boolean }>('/health')
@@ -69,6 +74,30 @@ export default function AppShell() {
     pathname === to ||
     (to === '/s' && pathname.startsWith('/s')) ||
     (to === '/' && (pathname === '/' || pathname === '/home'));
+
+  const m =
+    matchPath({ path: '/s/:subjectSlug/t/:topicSlug/n/:noteId-:noteSlug' }, pathname) ||
+    matchPath({ path: '/s/:subjectSlug/t/:topicSlug/n/:noteId' }, pathname) ||
+    matchPath({ path: '/s/:subjectSlug/t/:topicSlug' }, pathname);
+
+  const subjectSlug = (m?.params as any)?.subjectSlug as string | undefined;
+  const topicSlug = (m?.params as any)?.topicSlug as string | undefined;
+
+  const goSearch = () => {
+    const parsed = parseSearchInput(searchText);
+    if (!parsed.q && Object.keys(parsed.params).length === 0) return;
+
+    const params = new URLSearchParams();
+    if (parsed.q) params.set('q', parsed.q);
+    for (const [k, v] of Object.entries(parsed.params)) {
+      if (v) params.set(k, v);
+    }
+
+    if (subjectSlug) params.set('subjectSlug', subjectSlug);
+    if (topicSlug) params.set('topicSlug', topicSlug);
+
+    navigate(`/search?${params.toString()}`);
+  };
 
   return (
     <Box
@@ -84,6 +113,20 @@ export default function AppShell() {
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             Chatalog
           </Typography>
+
+          <SearchBox
+            value={searchText}
+            onChange={setSearchText}
+            onSubmit={goSearch}
+            placeholder="Search notes…"
+            sx={(theme) => ({
+              ml: 2,
+              width: 360,
+              bgcolor: theme.palette.background.paper,
+              borderRadius: 999,
+              border: `1px solid ${theme.palette.divider}`,
+            })}
+          />
 
           {/* Destinations */}
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mr: 1 }}>

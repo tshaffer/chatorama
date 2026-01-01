@@ -208,6 +208,16 @@ NoteSchema.index(
   { unique: true, partialFilterExpression: { slug: { $type: 'string' } } }
 );
 
+// Full-text search (v1): title weighted higher than markdown
+NoteSchema.index(
+  { title: 'text', markdown: 'text' },
+  {
+    name: 'notes_text_search_v1',
+    weights: { title: 10, markdown: 1 },
+    default_language: 'english',
+  }
+);
+
 // Fast stable sort when listing notes by topic
 NoteSchema.index({ topicId: 1, order: 1, _id: 1 });
 
@@ -216,6 +226,14 @@ NoteSchema.index({ chatworthyNoteId: 1 });
 
 // Optional: fast lookup by Chatworthy chat + turn
 NoteSchema.index({ chatworthyChatId: 1, chatworthyTurnIndex: 1 });
+
+// Search filters
+NoteSchema.index({ status: 1, updatedAt: -1 });
+NoteSchema.index({ tags: 1 });
+NoteSchema.index({ importBatchId: 1, updatedAt: -1 });
+NoteSchema.index({ sourceType: 1, updatedAt: -1 });
+NoteSchema.index({ chatworthyChatId: 1, updatedAt: -1 });
+NoteSchema.index({ importBatchId: 1, createdAt: -1 });
 
 // Recipe lookup / dedupe / search
 NoteSchema.index({ 'recipe.sourceUrl': 1 }, { unique: true, sparse: true });

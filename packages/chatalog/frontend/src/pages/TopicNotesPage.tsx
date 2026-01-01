@@ -48,6 +48,8 @@ import { selectNoteStatusVisibility } from '../features/settings/settingsSlice';
 import ConfirmIconButton from '../components/ConfirmIconButton';
 import DeleteIcon from '@mui/icons-material/Delete';
 import NotePropertiesDialog from '../features/notes/NotePropertiesDialog';
+import SearchBox from '../components/SearchBox';
+import { parseSearchInput } from '../features/search/queryParser';
 
 // Extract leading ObjectId from "<id>" or "<id>-<slug>"
 const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
@@ -74,6 +76,21 @@ export default function TopicNotesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [propertiesNoteId, setPropertiesNoteId] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState('');
+
+  const goScopedSearch = () => {
+    const parsed = parseSearchInput(searchText);
+    if (!parsed.q && Object.keys(parsed.params).length === 0) return;
+
+    const params = new URLSearchParams();
+    if (parsed.q) params.set('q', parsed.q);
+    for (const [k, v] of Object.entries(parsed.params)) {
+      if (v) params.set(k, v);
+    }
+    if (subjectSlug) params.set('subjectSlug', subjectSlug);
+    if (topicSlug) params.set('topicSlug', topicSlug);
+    navigate(`/search?${params.toString()}`);
+  };
 
   useEffect(() => {
     setSelectedBatchId(null);
@@ -348,6 +365,17 @@ export default function TopicNotesPage() {
                 )}
               </Box>
               <Toolbar disableGutters sx={{ gap: 1, minHeight: 'auto' }}>
+                <SearchBox
+                  value={searchText}
+                  onChange={setSearchText}
+                  onSubmit={goScopedSearch}
+                  placeholder={topicSlug ? 'Search within this topic...' : 'Search notes...'}
+                  sx={(theme) => ({
+                    width: 360,
+                    bgcolor: theme.palette.background.paper,
+                    border: `1px solid ${theme.palette.divider}`,
+                  })}
+                />
                 <Tooltip title="Select all notes in this topic">
                   <span>
                     <Button
