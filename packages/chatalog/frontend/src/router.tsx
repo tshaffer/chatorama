@@ -9,6 +9,7 @@ import SubjectIndex from './pages/SubjectIndex';
 import QuickNotesPage from './pages/QuickNotes';
 import QuickNotePage from './pages/QuickNotePage';
 import RelationsPage from './pages/RelationsPage';
+import SearchPage from './features/search/SearchPage';
 
 export const router = createBrowserRouter([
   {
@@ -42,6 +43,7 @@ export const router = createBrowserRouter([
 
       // Relations stub
       { path: 'relations', element: <RelationsPage /> },
+      { path: 'search', element: <SearchPage /> },
 
       { path: 'quick-notes', element: <QuickNotesPage /> },
       { path: 'quick-notes/:quickNoteId', element: <QuickNotePage /> },

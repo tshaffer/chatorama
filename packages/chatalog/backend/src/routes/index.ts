@@ -13,6 +13,7 @@ import assetsRouter from './assets';
 import noteAssetsRouter from './noteAssets';
 import quickNoteAssetsRouter from './quickNoteAssets';
 import recipesRouter from './recipes';
+import { searchRouter } from './search';
 
 export function createRoutes(app: Express) {
   const api = Router();
@@ -25,6 +26,7 @@ export function createRoutes(app: Express) {
   api.use('/notes', notesRouter);
   api.use('/assets', assetsRouter);
   api.use('/noteAssets', noteAssetsRouter);
+  api.use('/search', searchRouter);
 
   // Subjects + nested Topics + topic-notes list
   api.use('/subjects', subjectsRouter);
@@ -47,6 +49,7 @@ export function createRoutes(app: Express) {
   app.use('/api/assets', assetsRouter);
   app.use('/api/noteAssets', noteAssetsRouter);
   app.use('/api/quickNoteAssets', quickNoteAssetsRouter);
+  app.use('/api/search', searchRouter);
 
   app.use('/api/v1', api);
 }

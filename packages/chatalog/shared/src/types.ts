@@ -126,6 +126,7 @@ export interface Note {
 
   createdAt: string;         // ISO
   updatedAt: string;         // ISO
+  contentUpdatedAt?: string; // ISO
   importedAt?: string;       // ISO
 }
 
@@ -137,6 +138,7 @@ export interface NotePreview {
   status?: string;           // new status field
   tags: string[];
   updatedAt: string;         // ISO
+  contentUpdatedAt?: string; // ISO
 
   importBatchId?: string;
   subjectId?: string;

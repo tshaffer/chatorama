@@ -43,6 +43,12 @@ export interface NoteDoc extends Document {
   };
   cookedHistory?: { cookedAt: Date; rating?: number; notes?: string }[];
 
+  // --- Semantic search / embeddings ---
+  embedding?: number[];
+  embeddingModel?: string;
+  embeddingTextHash?: string;
+  embeddingUpdatedAt?: Date;
+
   /** Chatworthy provenance */
   chatworthyNoteId?: string;
   chatworthyChatId?: string;
@@ -61,6 +67,7 @@ export interface NoteDoc extends Document {
   order: number;
   createdAt: Date;
   updatedAt: Date;
+  contentUpdatedAt?: Date;
 }
 
 type Source = { url?: string; type?: 'chatworthy'|'clip'|'manual' };
@@ -182,6 +189,13 @@ const NoteSchema = new Schema<NoteDoc>(
     recipe: { type: RecipeMetaSchema, required: false },
     cookedHistory: { type: [CookedEventSchema], default: [] },
 
+    // --- Semantic search / embeddings ---
+    // NOTE: Atlas Search vector index is created in Atlas UI (not a MongoDB index).
+    embedding: { type: [Number], required: false },
+    embeddingModel: { type: String },
+    embeddingTextHash: { type: String, index: true },
+    embeddingUpdatedAt: { type: Date },
+
     // Chatworthy provenance
     chatworthyNoteId:     { type: String, index: true },
     chatworthyChatId:     { type: String, index: true },
@@ -195,6 +209,7 @@ const NoteSchema = new Schema<NoteDoc>(
 
     importBatchId: { type: String, index: true },
     importedAt: { type: Date, default: Date.now },
+    contentUpdatedAt: { type: Date, index: true },
 
     order:     { type: Number, required: true, default: 0, index: true },
   },
@@ -208,6 +223,16 @@ NoteSchema.index(
   { unique: true, partialFilterExpression: { slug: { $type: 'string' } } }
 );
 
+// Full-text search (v1): title weighted higher than markdown
+NoteSchema.index(
+  { title: 'text', markdown: 'text' },
+  {
+    name: 'notes_text_search_v1',
+    weights: { title: 10, markdown: 1 },
+    default_language: 'english',
+  }
+);
+
 // Fast stable sort when listing notes by topic
 NoteSchema.index({ topicId: 1, order: 1, _id: 1 });
 
@@ -217,9 +242,110 @@ NoteSchema.index({ chatworthyNoteId: 1 });
 // Optional: fast lookup by Chatworthy chat + turn
 NoteSchema.index({ chatworthyChatId: 1, chatworthyTurnIndex: 1 });
 
+// Search filters
+NoteSchema.index({ status: 1, updatedAt: -1 });
+NoteSchema.index({ status: 1, contentUpdatedAt: -1 });
+NoteSchema.index({ topicId: 1, contentUpdatedAt: -1 });
+NoteSchema.index({ tags: 1 });
+/**
+ * Embedding maintenance helpers:
+ * - Find notes that need embeddings (missing or stale) quickly.
+ */
+NoteSchema.index({ embeddingUpdatedAt: -1 });
+NoteSchema.index({ embeddingTextHash: 1, updatedAt: -1 });
+NoteSchema.index({ importBatchId: 1, updatedAt: -1 });
+NoteSchema.index({ sourceType: 1, updatedAt: -1 });
+NoteSchema.index({ chatworthyChatId: 1, updatedAt: -1 });
+NoteSchema.index({ importBatchId: 1, createdAt: -1 });
+
 // Recipe lookup / dedupe / search
 NoteSchema.index({ 'recipe.sourceUrl': 1 }, { unique: true, sparse: true });
 NoteSchema.index({ 'recipe.ingredients.name': 1 });
+
+const CONTENT_PATH_PREFIXES = [
+  'title',
+  'markdown',
+  'summary',
+  'status',
+  'tags',
+  'recipe',
+  'cookedHistory',
+];
+
+const SYSTEM_ONLY_PREFIXES = [
+  'embedding',
+  'embeddingUpdatedAt',
+  'embeddingTextHash',
+];
+
+function shouldBumpContentUpdatedAt(modifiedPaths: string[]): boolean {
+  if (!modifiedPaths || modifiedPaths.length === 0) return false;
+
+  const hasContentChange = modifiedPaths.some((p) =>
+    CONTENT_PATH_PREFIXES.some((prefix) => p === prefix || p.startsWith(`${prefix}.`)),
+  );
+
+  if (hasContentChange) return true;
+
+  const hasSystemOnly = modifiedPaths.every((p) =>
+    SYSTEM_ONLY_PREFIXES.some((prefix) => p === prefix || p.startsWith(`${prefix}.`)),
+  );
+  if (hasSystemOnly) return false;
+
+  return false;
+}
+
+NoteSchema.pre('save', function (next) {
+  const doc = this as any;
+
+  if (doc.isNew) {
+    doc.contentUpdatedAt = doc.contentUpdatedAt ?? doc.createdAt ?? new Date();
+    return next();
+  }
+
+  const modified = doc.modifiedPaths?.() ?? [];
+  if (shouldBumpContentUpdatedAt(modified)) {
+    doc.contentUpdatedAt = new Date();
+  }
+
+  return next();
+});
+
+function bumpContentUpdatedAtInUpdate(this: any) {
+  const update = this.getUpdate?.() ?? {};
+  const $set = update.$set ?? {};
+  const $unset = update.$unset ?? {};
+  const $push = update.$push ?? {};
+  const $pull = update.$pull ?? {};
+  const $addToSet = update.$addToSet ?? {};
+  const $inc = update.$inc ?? {};
+
+  const touched = new Set<string>();
+
+  const collectKeys = (obj: any) => {
+    if (!obj) return;
+    for (const k of Object.keys(obj)) touched.add(k);
+  };
+
+  collectKeys(update);
+  collectKeys($set);
+  collectKeys($unset);
+  collectKeys($push);
+  collectKeys($pull);
+  collectKeys($addToSet);
+  collectKeys($inc);
+
+  const touchedArr = Array.from(touched);
+
+  if (shouldBumpContentUpdatedAt(touchedArr)) {
+    update.$set = { ...(update.$set ?? {}), contentUpdatedAt: new Date() };
+    this.setUpdate(update);
+  }
+}
+
+NoteSchema.pre('findOneAndUpdate', bumpContentUpdatedAtInUpdate);
+NoteSchema.pre('updateOne', bumpContentUpdatedAtInUpdate);
+NoteSchema.pre('updateMany', bumpContentUpdatedAtInUpdate);
 
 // Apply global JSON/Object transform: exposes `id`, removes `_id`/`__v`
 applyToJSON(NoteSchema);
