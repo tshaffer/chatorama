@@ -9,10 +9,6 @@ import {
   ListItem,
   ListItemText,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableRow,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -25,10 +21,11 @@ type Props = {
   note: Note;
 };
 
-type IngredientsViewMode = 'edited' | 'original' | 'diff';
+type IngredientsListMode = 'current' | 'original' | 'diff';
 
 export default function RecipeView({ note }: Props) {
-  const [ingredientsViewMode, setIngredientsViewMode] = useState<IngredientsViewMode>('edited');
+  const [ingredientsListMode, setIngredientsListMode] =
+    useState<IngredientsListMode>('current');
 
   const ingredients = note.recipe?.ingredientsRaw ?? [];
   const steps = note.recipe?.stepsRaw ?? [];
@@ -57,7 +54,7 @@ export default function RecipeView({ note }: Props) {
   }, [note.recipe?.ingredients, note.recipe?.ingredientsRaw]);
 
   const editedIngredients = note.recipe?.ingredientsEdited ?? null;
-  const effectiveEdited = editedIngredients ?? originalIngredients;
+  const currentIngredients = editedIngredients ?? originalIngredients;
 
   return (
     <Stack spacing={2}>
@@ -86,21 +83,40 @@ export default function RecipeView({ note }: Props) {
       )}
 
       <Box>
-        <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }}>
-          <Typography variant="subtitle2">Ingredients</Typography>
-          <ToggleButtonGroup
-            size="small"
-            exclusive
-            value={ingredientsViewMode}
-            onChange={(_e, v) => v && setIngredientsViewMode(v)}
-          >
-            <ToggleButton value="edited">Edited</ToggleButton>
-            <ToggleButton value="original">Original</ToggleButton>
-            <ToggleButton value="diff">Diff</ToggleButton>
-          </ToggleButtonGroup>
-        </Stack>
+        <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+          Ingredients
+        </Typography>
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={ingredientsListMode}
+          onChange={(_e, v) => v && setIngredientsListMode(v)}
+          sx={{ mb: 1 }}
+        >
+          <ToggleButton value="current">Current</ToggleButton>
+          <ToggleButton value="original">Original</ToggleButton>
+          <ToggleButton value="diff">Diff</ToggleButton>
+        </ToggleButtonGroup>
 
-        {ingredientsViewMode === 'original' && (
+        {ingredientsListMode === 'current' && (
+          <>
+            {currentIngredients.length ? (
+              <List dense disablePadding>
+                {currentIngredients.map((ing, idx) => (
+                  <ListItem key={`${ing.raw}-${idx}`} disableGutters>
+                    <ListItemText primary={ing.raw} />
+                  </ListItem>
+                ))}
+              </List>
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                No ingredients found.
+              </Typography>
+            )}
+          </>
+        )}
+
+        {ingredientsListMode === 'original' && (
           <>
             {originalIngredients.length ? (
               <List dense disablePadding>
@@ -118,61 +134,34 @@ export default function RecipeView({ note }: Props) {
           </>
         )}
 
-        {ingredientsViewMode === 'edited' && (
+        {ingredientsListMode === 'diff' && (
           <>
-            {effectiveEdited.length ? (
+            {currentIngredients.length ? (
               <List dense disablePadding>
-                {effectiveEdited.map((ing, idx) => {
-                  const originalRaw = (originalIngredients[idx]?.raw ?? '').trim();
-                  const editedRaw = (ing.raw ?? '').trim();
-                  const isChanged = editedIngredients != null && originalRaw !== editedRaw;
+                {currentIngredients.map((ing, idx) => {
+                  const left = (ing.raw ?? '').trim();
+                  const orig = (originalIngredients[idx]?.raw ?? '').trim();
+                  const hasEdit = editedIngredients != null && orig !== left;
+                  const right = hasEdit ? orig : '';
                   return (
-                    <ListItem key={`${ing.raw}-${idx}`} disableGutters>
-                      <ListItemText
-                        primary={
-                          <Typography variant="body2" sx={{ fontWeight: isChanged ? 700 : 400 }}>
-                            {ing.raw}
-                          </Typography>
-                        }
-                      />
+                    <ListItem key={`${idx}-${left}`} disableGutters>
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr',
+                          columnGap: 2,
+                          width: '100%',
+                        }}
+                      >
+                        <Typography variant="body2">{left}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {right}
+                        </Typography>
+                      </Box>
                     </ListItem>
                   );
                 })}
               </List>
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                No ingredients found.
-              </Typography>
-            )}
-          </>
-        )}
-
-        {ingredientsViewMode === 'diff' && (
-          <>
-            {editedIngredients == null ? (
-              <Typography variant="body2" color="text.secondary">
-                No edits yet.
-              </Typography>
-            ) : effectiveEdited.length ? (
-              <Table size="small">
-                <TableBody>
-                  {effectiveEdited.map((ing, idx) => {
-                    const editedRaw = (ing.raw ?? '').trim();
-                    const originalRaw = (originalIngredients[idx]?.raw ?? '').trim();
-                    const changed = originalRaw !== editedRaw;
-                    return (
-                      <TableRow key={`${idx}-${editedRaw}`}>
-                        <TableCell sx={{ fontWeight: changed ? 700 : 400 }}>
-                          {editedRaw}
-                        </TableCell>
-                        <TableCell sx={{ opacity: changed ? 1 : 0.4 }}>
-                          {changed ? originalRaw : ''}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
             ) : (
               <Typography variant="body2" color="text.secondary">
                 No ingredients found.
