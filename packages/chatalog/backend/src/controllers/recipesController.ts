@@ -54,7 +54,7 @@ export async function addCookedEvent(req: Request, res: Response, next: NextFunc
       ? (note as any).cookedHistory
       : [];
 
-    (note as any).cookedHistory.push({ cookedAt: dt, rating: r, notes });
+    (note as any).cookedHistory.push({ cookedAt: dt.toISOString(), rating: r, notes });
 
     (note as any).cookedHistory.sort((a: any, b: any) => {
       const ta = new Date(a.cookedAt).getTime();

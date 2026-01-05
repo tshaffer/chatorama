@@ -1,7 +1,7 @@
 // models/Note.ts
 import mongoose, { Schema, Document, Types } from 'mongoose';
 import { applyToJSON } from '../db/toJsonPlugin';
-import { NoteRelation, RecipeIngredient, RecipeMeta } from '@chatorama/chatalog-shared';
+import { NoteRelation, RecipeIngredient, RecipeMeta, CookedEvent } from '@chatorama/chatalog-shared';
 
 export interface NoteDoc extends Document {
   _id: Types.ObjectId;
@@ -41,7 +41,7 @@ export interface NoteDoc extends Document {
       notes?: string;
     }[];
   };
-  cookedHistory?: { cookedAt: Date; rating?: number; notes?: string }[];
+  cookedHistory?: CookedEvent[];
 
   // --- Semantic search / embeddings ---
   embedding?: number[];
@@ -133,11 +133,9 @@ const RecipeMetaSchema = new Schema<RecipeMeta>(
   { _id: false }
 );
 
-type CookedEvent = { cookedAt: Date; rating?: number; notes?: string };
-
 const CookedEventSchema = new Schema<CookedEvent>(
   {
-    cookedAt: { type: Date, required: true },
+    cookedAt: { type: String, required: true },
     rating: Number,
     notes: String,
   },
