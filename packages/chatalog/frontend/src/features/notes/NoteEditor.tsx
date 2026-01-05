@@ -66,6 +66,7 @@ import {
 import Autocomplete from '@mui/material/Autocomplete';
 import { useGetAllTopicsQuery } from '../topics/topicsApi';
 import NotePropertiesDialog from './NotePropertiesDialog';
+import EditIngredientsDialog from './EditIngredientsDialog';
 import RecipeView from './RecipeView';
 import RecipePropertiesDialog from './RecipePropertiesDialog';
 
@@ -444,6 +445,7 @@ export default function NoteEditor({
   const [dirty, setDirty] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [recipePropsOpen, setRecipePropsOpen] = useState(false);
+  const [editIngredientsOpen, setEditIngredientsOpen] = useState(false);
   const [recipeSearchOpen, setRecipeSearchOpen] = useState(false);
   const [recipeSearchQuery, setRecipeSearchQuery] = useState('');
   const [recipeSearchMode, setRecipeSearchMode] = useState<'any' | 'all'>('any');
@@ -1036,6 +1038,13 @@ export default function NoteEditor({
       <Box sx={{ mt: 1 }}>
         {isRecipeNote && (
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => setEditIngredientsOpen(true)}
+            >
+              Edit Ingredients
+            </Button>
             <Button
               size="small"
               variant="outlined"
@@ -1743,6 +1752,14 @@ export default function NoteEditor({
         onClose={() => setRecipePropsOpen(false)}
         recipe={(note as Note | undefined)?.recipe}
       />
+
+      {note && (
+        <EditIngredientsDialog
+          open={editIngredientsOpen}
+          onClose={() => setEditIngredientsOpen(false)}
+          note={note as Note}
+        />
+      )}
 
       <NotePropertiesDialog
         open={propertiesOpen}

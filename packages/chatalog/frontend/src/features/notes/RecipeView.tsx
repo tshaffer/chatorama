@@ -1,38 +1,34 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
   Box,
-  Button,
-  Checkbox,
-  FormControlLabel,
-  IconButton,
   Link,
   List,
   ListItem,
   ListItemText,
   Stack,
-  Tab,
-  Tabs,
-  TextField,
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import type { Note, RecipeIngredient } from '@chatorama/chatalog-shared';
-import { useUpdateNoteMutation } from './notesApi';
 import CookedHistoryPanel from './CookedHistoryPanel';
 
 type Props = {
   note: Note;
 };
 
+type IngredientsViewMode = 'edited' | 'original' | 'diff';
+
 export default function RecipeView({ note }: Props) {
-  const [updateNote, { isLoading: isSaving }] = useUpdateNoteMutation();
-  const [activeTab, setActiveTab] = useState(0);
-  const [editedDraft, setEditedDraft] = useState<RecipeIngredient[] | null>(null);
-  const [showUnchanged, setShowUnchanged] = useState(false);
+  const [ingredientsViewMode, setIngredientsViewMode] = useState<IngredientsViewMode>('edited');
 
   const ingredients = note.recipe?.ingredientsRaw ?? [];
   const steps = note.recipe?.stepsRaw ?? [];
@@ -53,83 +49,15 @@ export default function RecipeView({ note }: Props) {
   const total = formatMinutes(note.recipe?.totalTimeMinutes);
   const hasAnyTime = Boolean(prep || cook || total);
 
-  const originalIngredients = useMemo(() => {
+  const originalIngredients = useMemo<RecipeIngredient[]>(() => {
     if (note.recipe?.ingredients?.length) {
       return note.recipe.ingredients;
     }
     return (note.recipe?.ingredientsRaw ?? []).map((raw) => ({ raw }));
   }, [note.recipe?.ingredients, note.recipe?.ingredientsRaw]);
 
-  useEffect(() => {
-    if (note.recipe?.ingredientsEdited?.length) {
-      setEditedDraft(note.recipe.ingredientsEdited.map((ing) => ({ ...ing })));
-    } else {
-      setEditedDraft(null);
-    }
-  }, [note.id, note.recipe?.ingredientsEdited]);
-
-  const handleStartEditing = async () => {
-    const init = originalIngredients.map((ing) => ({ ...ing }));
-    setEditedDraft(init);
-    await updateNote({
-      noteId: note.id,
-      patch: {
-        recipe: {
-          ...note.recipe,
-          ingredientsEdited: init,
-          ingredientsEditedRaw: init.map((ing) => ing.raw ?? ''),
-        },
-      },
-    }).unwrap();
-  };
-
-  const handleSaveEdited = async () => {
-    if (!editedDraft) return;
-    const cleaned = editedDraft
-      .map((ing) => ({
-        ...ing,
-        raw: (ing.raw ?? '').trim(),
-      }))
-      .filter((ing) => ing.raw);
-
-    await updateNote({
-      noteId: note.id,
-      patch: {
-        recipe: {
-          ...note.recipe,
-          ingredientsEdited: cleaned,
-          ingredientsEditedRaw: cleaned.map((ing) => ing.raw ?? ''),
-        },
-      },
-    }).unwrap();
-  };
-
-  const diffRows = useMemo(() => {
-    if (!editedDraft) return [];
-    const rows: Array<
-      | { kind: 'unchanged'; original: string; edited: string }
-      | { kind: 'modified'; original: string; edited: string }
-      | { kind: 'added'; edited: string }
-      | { kind: 'removed'; original: string }
-    > = [];
-    const max = Math.max(originalIngredients.length, editedDraft.length);
-    for (let i = 0; i < max; i += 1) {
-      const o = originalIngredients[i]?.raw?.trim();
-      const e = editedDraft[i]?.raw?.trim();
-      if (o && e) {
-        rows.push(
-          o === e
-            ? { kind: 'unchanged', original: o, edited: e }
-            : { kind: 'modified', original: o, edited: e },
-        );
-      } else if (o && !e) {
-        rows.push({ kind: 'removed', original: o });
-      } else if (!o && e) {
-        rows.push({ kind: 'added', edited: e });
-      }
-    }
-    return rows;
-  }, [editedDraft, originalIngredients]);
+  const editedIngredients = note.recipe?.ingredientsEdited ?? null;
+  const effectiveEdited = editedIngredients ?? originalIngredients;
 
   return (
     <Stack spacing={2}>
@@ -157,26 +85,22 @@ export default function RecipeView({ note }: Props) {
         </Box>
       )}
 
-      <Accordion defaultExpanded={false}>
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="subtitle2">Cooked history</Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <CookedHistoryPanel note={note} />
-        </AccordionDetails>
-      </Accordion>
-
       <Box>
-        <Typography variant="subtitle2" sx={{ mb: 1 }}>
-          Ingredients
-        </Typography>
-        <Tabs value={activeTab} onChange={(_e, v) => setActiveTab(v)} sx={{ mb: 1 }}>
-          <Tab label="Original" />
-          <Tab label="Edited" />
-          <Tab label="Diff" />
-        </Tabs>
+        <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }}>
+          <Typography variant="subtitle2">Ingredients</Typography>
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={ingredientsViewMode}
+            onChange={(_e, v) => v && setIngredientsViewMode(v)}
+          >
+            <ToggleButton value="edited">Edited</ToggleButton>
+            <ToggleButton value="original">Original</ToggleButton>
+            <ToggleButton value="diff">Diff</ToggleButton>
+          </ToggleButtonGroup>
+        </Stack>
 
-        {activeTab === 0 && (
+        {ingredientsViewMode === 'original' && (
           <>
             {originalIngredients.length ? (
               <List dense disablePadding>
@@ -194,131 +118,78 @@ export default function RecipeView({ note }: Props) {
           </>
         )}
 
-        {activeTab === 1 && (
+        {ingredientsViewMode === 'edited' && (
           <>
-            {!editedDraft ? (
-              <Stack spacing={1}>
-                <Typography variant="body2" color="text.secondary">
-                  No edited ingredients yet.
-                </Typography>
-                <Button size="small" variant="outlined" onClick={handleStartEditing}>
-                  Start editing
-                </Button>
-              </Stack>
-            ) : (
-              <Stack spacing={1.5}>
-                {editedDraft.length ? (
-                  editedDraft.map((ing, idx) => (
-                    <Stack key={`edited-${idx}`} direction="row" spacing={1} alignItems="center">
-                      <TextField
-                        label={`Ingredient ${idx + 1}`}
-                        value={ing.raw ?? ''}
-                        onChange={(e) => {
-                          const next = [...editedDraft];
-                          next[idx] = { ...next[idx], raw: e.target.value };
-                          setEditedDraft(next);
-                        }}
-                        fullWidth
-                        size="small"
+            {effectiveEdited.length ? (
+              <List dense disablePadding>
+                {effectiveEdited.map((ing, idx) => {
+                  const originalRaw = (originalIngredients[idx]?.raw ?? '').trim();
+                  const editedRaw = (ing.raw ?? '').trim();
+                  const isChanged = editedIngredients != null && originalRaw !== editedRaw;
+                  return (
+                    <ListItem key={`${ing.raw}-${idx}`} disableGutters>
+                      <ListItemText
+                        primary={
+                          <Typography variant="body2" sx={{ fontWeight: isChanged ? 700 : 400 }}>
+                            {ing.raw}
+                          </Typography>
+                        }
                       />
-                      <IconButton
-                        size="small"
-                        aria-label="Delete ingredient"
-                        onClick={() => {
-                          const next = editedDraft.filter((_, i) => i !== idx);
-                          setEditedDraft(next);
-                        }}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Stack>
-                  ))
-                ) : (
-                  <Typography variant="body2" color="text.secondary">
-                    No ingredients in the edited list.
-                  </Typography>
-                )}
-
-                <Stack direction="row" spacing={1}>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => setEditedDraft([...editedDraft, { raw: '' }])}
-                  >
-                    Add ingredient
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    onClick={handleSaveEdited}
-                    disabled={isSaving}
-                  >
-                    Save changes
-                  </Button>
-                </Stack>
-              </Stack>
+                    </ListItem>
+                  );
+                })}
+              </List>
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                No ingredients found.
+              </Typography>
             )}
           </>
         )}
 
-        {activeTab === 2 && (
+        {ingredientsViewMode === 'diff' && (
           <>
-            {!editedDraft ? (
+            {editedIngredients == null ? (
               <Typography variant="body2" color="text.secondary">
                 No edits yet.
               </Typography>
+            ) : effectiveEdited.length ? (
+              <Table size="small">
+                <TableBody>
+                  {effectiveEdited.map((ing, idx) => {
+                    const editedRaw = (ing.raw ?? '').trim();
+                    const originalRaw = (originalIngredients[idx]?.raw ?? '').trim();
+                    const changed = originalRaw !== editedRaw;
+                    return (
+                      <TableRow key={`${idx}-${editedRaw}`}>
+                        <TableCell sx={{ fontWeight: changed ? 700 : 400 }}>
+                          {editedRaw}
+                        </TableCell>
+                        <TableCell sx={{ opacity: changed ? 1 : 0.4 }}>
+                          {changed ? originalRaw : ''}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             ) : (
-              <Stack spacing={1}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={showUnchanged}
-                      onChange={(e) => setShowUnchanged(e.target.checked)}
-                      size="small"
-                    />
-                  }
-                  label="Show unchanged"
-                />
-                <List dense disablePadding>
-                  {diffRows
-                    .filter((row) => (showUnchanged ? true : row.kind !== 'unchanged'))
-                    .map((row, idx) => {
-                      if (row.kind === 'added') {
-                        return (
-                          <ListItem key={`diff-${idx}`} disableGutters>
-                            <ListItemText primary={`+ Added: ${row.edited}`} />
-                          </ListItem>
-                        );
-                      }
-                      if (row.kind === 'removed') {
-                        return (
-                          <ListItem key={`diff-${idx}`} disableGutters>
-                            <ListItemText primary={`- Removed: ${row.original}`} />
-                          </ListItem>
-                        );
-                      }
-                      if (row.kind === 'modified') {
-                        return (
-                          <ListItem key={`diff-${idx}`} disableGutters>
-                            <ListItemText
-                              primary={`~ Modified: ${row.original} → ${row.edited}`}
-                            />
-                          </ListItem>
-                        );
-                      }
-                      return (
-                        <ListItem key={`diff-${idx}`} disableGutters>
-                          <ListItemText primary={row.original} />
-                        </ListItem>
-                      );
-                    })}
-                </List>
-              </Stack>
+              <Typography variant="body2" color="text.secondary">
+                No ingredients found.
+              </Typography>
             )}
           </>
         )}
       </Box>
 
+      <Accordion defaultExpanded={false}>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography variant="subtitle2">Cooked history</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          <CookedHistoryPanel note={note} />
+        </AccordionDetails>
+      </Accordion>
     </Stack>
   );
 }
