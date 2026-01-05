@@ -59,16 +59,10 @@ export default function RecipePropertiesDialog({ open, onClose, recipe }: Props)
             </>
           )}
 
-          {(recipe?.author || recipe?.cookTimeMinutes || recipe?.totalTimeMinutes || recipe?.yield) && (
+          {(recipe?.author || recipe?.yield) && (
             <>
               <Stack spacing={1.5}>
                 {recipe?.author && <Row label="Author" value={recipe.author} />}
-                {recipe?.cookTimeMinutes != null && (
-                  <Row label="Cook time" value={`${recipe.cookTimeMinutes} min`} />
-                )}
-                {recipe?.totalTimeMinutes != null && (
-                  <Row label="Total time" value={`${recipe.totalTimeMinutes} min`} />
-                )}
                 {recipe?.yield && <Row label="Yield" value={recipe.yield} />}
               </Stack>
               <Divider />

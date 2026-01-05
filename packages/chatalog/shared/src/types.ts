@@ -64,6 +64,7 @@ export type RecipeNutrition = {
 export type RecipeMeta = {
   sourceUrl: string;
   author?: string;
+  prepTimeMinutes?: number;
   cookTimeMinutes?: number;
   totalTimeMinutes?: number;
   yield?: string;

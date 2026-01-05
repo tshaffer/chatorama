@@ -17,30 +17,7 @@ export interface NoteDoc extends Document {
   backlinks: string[];
   relations?: NoteRelation[];
   sources?: { url?: string; type?: 'chatworthy'|'clip'|'manual' }[];
-  recipe?: {
-    sourceUrl: string;
-    author?: string;
-    cookTimeMinutes?: number;
-    totalTimeMinutes?: number;
-    yield?: string;
-    description?: string;
-    cuisine?: string;
-    category?: string[];
-    keywords?: string[];
-    ratingValue?: number;
-    ratingCount?: number;
-    nutrition?: Record<string, any>;
-    ingredientsRaw?: string[];
-    stepsRaw?: string[];
-    ingredients?: {
-      raw: string;
-      name?: string;
-      amount?: number;
-      unit?: string;
-      modifier?: string;
-      notes?: string;
-    }[];
-  };
+  recipe?: RecipeMeta;
   cookedHistory?: CookedEvent[];
 
   // --- Semantic search / embeddings ---
@@ -116,6 +93,7 @@ const RecipeMetaSchema = new Schema<RecipeMeta>(
   {
     sourceUrl: { type: String, required: true },
     author: String,
+    prepTimeMinutes: Number,
     cookTimeMinutes: Number,
     totalTimeMinutes: Number,
     yield: String,

@@ -55,7 +55,6 @@ export default function CookedHistoryPanel({ note }: Props) {
   return (
     <Box>
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-        <Typography variant="subtitle2">Cooked history</Typography>
         <Button size="small" variant="outlined" onClick={() => setOpen(true)}>
           Cooked this
         </Button>

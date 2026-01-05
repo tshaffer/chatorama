@@ -226,6 +226,7 @@ recipesRouter.post('/import', async (req, res, next) => {
     const steps = normalizeInstructions((recipe as any).recipeInstructions || (recipe as any).instructions);
 
     const description: string | undefined = (recipe as any).description;
+    const prepTimeMinutes = parseIsoDurationToMinutes((recipe as any).prepTime);
     const cookTimeMinutes = parseIsoDurationToMinutes((recipe as any).cookTime);
     const totalTimeMinutes = parseIsoDurationToMinutes((recipe as any).totalTime);
     const recipeYield: string | undefined = (recipe as any).recipeYield;
@@ -278,6 +279,7 @@ recipesRouter.post('/import', async (req, res, next) => {
         recipe: {
           sourceUrl: pageUrl,
           description,
+          prepTimeMinutes,
           cookTimeMinutes,
           totalTimeMinutes,
           yield: recipeYield,

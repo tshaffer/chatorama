@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
 import {
+  Box,
+  Link,
   Stack,
   Typography,
 } from '@mui/material';
@@ -16,25 +17,43 @@ export default function RecipeView({ note }: Props) {
   const hasRecipe = ingredients.length > 0 && steps.length > 0;
   if (!hasRecipe) return null;
 
-  const metaLine = useMemo(() => {
-    const parts: string[] = [];
-    if (note.recipe?.totalTimeMinutes) {
-      parts.push(`${note.recipe.totalTimeMinutes} min`);
-    }
-    if (note.recipe?.yield) {
-      parts.push(note.recipe.yield);
-    }
-    return parts.join(' • ');
-  }, [note.recipe?.totalTimeMinutes, note.recipe?.yield]);
+  const formatMinutes = (min?: number): string | null => {
+    if (min == null || Number.isNaN(min)) return null;
+    if (min < 60) return `${min} min`;
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return m ? `${h} hr ${m} min` : `${h} hr`;
+  };
+
+  const prep = formatMinutes(note.recipe?.prepTimeMinutes);
+  const cook = formatMinutes(note.recipe?.cookTimeMinutes);
+  const total = formatMinutes(note.recipe?.totalTimeMinutes);
+  const hasAnyTime = Boolean(prep || cook || total);
 
   return (
     <Stack spacing={2}>
-      {(metaLine || note.recipe?.author) && (
-        <Typography variant="body2" color="text.secondary">
-          {metaLine}
-          {metaLine && note.recipe?.author ? ' • ' : ''}
-          {note.recipe?.author}
-        </Typography>
+      {note.recipe?.sourceUrl && (
+        <Box>
+          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+            Source
+          </Typography>
+          <Link href={note.recipe.sourceUrl} target="_blank" rel="noopener noreferrer">
+            {note.recipe.sourceUrl}
+          </Link>
+        </Box>
+      )}
+
+      {hasAnyTime && (
+        <Box>
+          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+            Times
+          </Typography>
+          <Stack direction="row" spacing={2} flexWrap="wrap">
+            {prep && <Typography variant="body2">Prep: {prep}</Typography>}
+            {cook && <Typography variant="body2">Cook: {cook}</Typography>}
+            {total && <Typography variant="body2">Total: {total}</Typography>}
+          </Stack>
+        </Box>
       )}
 
     </Stack>

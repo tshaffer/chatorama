@@ -23,6 +23,9 @@ import {
   slugifyStandard,
 } from '@chatorama/chatalog-shared';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Stack,
   TextField,
@@ -49,6 +52,7 @@ import {
 import EditIcon from '@mui/icons-material/Edit';
 import DoneIcon from '@mui/icons-material/Done';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
@@ -1030,34 +1034,22 @@ export default function NoteEditor({
         </Box>
       )}
 
-      {/* {isRecipeNote && note && (
+      {isRecipeNote && note && (
         <Box sx={{ mb: 2 }}>
-          <Stack direction="row" spacing={1} sx={{ mb: 1 }} alignItems="center">
-            <Typography variant="subtitle2">Recipe</Typography>
-            {FF.recipe.normalizeButton && (
-              <Button
-                size="small"
-                variant="outlined"
-                disabled={isNormalizing}
-                onClick={async () => {
-                  try {
-                    await normalizeRecipeIngredients({ noteId: (note as Note).id }).unwrap();
-                    setSnack({ open: true, msg: 'Ingredients normalized', sev: 'success' });
-                  } catch {
-                    setSnack({ open: true, msg: 'Normalize failed', sev: 'error' });
-                  }
-                }}
-              >
-                Normalize ingredients
-              </Button>
-            )}
-          </Stack>
-
           <RecipeView note={note as Note} />
-          <CookedHistoryPanel note={note as Note} />
+
+          <Accordion defaultExpanded={false} sx={{ mt: 2 }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography variant="subtitle2">Cooked history</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <CookedHistoryPanel note={note as Note} />
+            </AccordionDetails>
+          </Accordion>
+
           <Divider sx={{ mt: 2 }} />
         </Box>
-      )} */}
+      )}
 
       <Box sx={{ mt: 1 }}>
         {isRecipeNote && (
