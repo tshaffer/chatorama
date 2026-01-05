@@ -8,7 +8,7 @@ import {
   normalizeRecipeIngredients,
   searchRecipesByIngredients,
 } from '../controllers/recipesController';
-import { normalizeIngredientLine } from '../utils/recipeNormalize';
+import { buildRecipeMarkdown, normalizeIngredientLine } from '../utils/recipeNormalize';
 
 type ImportRecipeRequest = {
   pageUrl: string;
@@ -226,6 +226,7 @@ recipesRouter.post('/import', async (req, res, next) => {
     const steps = normalizeInstructions((recipe as any).recipeInstructions || (recipe as any).instructions);
 
     const description: string | undefined = (recipe as any).description;
+    const prepTimeMinutes = parseIsoDurationToMinutes((recipe as any).prepTime);
     const cookTimeMinutes = parseIsoDurationToMinutes((recipe as any).cookTime);
     const totalTimeMinutes = parseIsoDurationToMinutes((recipe as any).totalTime);
     const recipeYield: string | undefined = (recipe as any).recipeYield;
@@ -251,19 +252,11 @@ recipesRouter.post('/import', async (req, res, next) => {
       transFatContent,
     } = (recipe as any).nutrition || {};
 
-    const markdownLines: string[] = [`# ${title}`, '', `Source: ${pageUrl}`, '', '## Ingredients'];
-    if (ingredients.length) {
-      ingredients.forEach((ing) => markdownLines.push(`- ${ing}`));
-    } else {
-      markdownLines.push('- (not found)');
-    }
-
-    markdownLines.push('', '## Steps');
-    if (steps.length) {
-      steps.forEach((step, idx) => markdownLines.push(`${idx + 1}. ${step}`));
-    } else {
-      markdownLines.push('1. (not found)');
-    }
+    const markdown = buildRecipeMarkdown({
+      title,
+      sourceUrl: pageUrl,
+      description,
+    });
 
     const baseSlug = slugifyStandard(String(title || 'recipe')) || 'recipe';
     const slug = await dedupeSlug(topic.id.toString(), baseSlug);
@@ -274,10 +267,11 @@ recipesRouter.post('/import', async (req, res, next) => {
         topicId: topic.id.toString(),
         title,
         slug,
-        markdown: markdownLines.join('\n'),
+        markdown,
         recipe: {
           sourceUrl: pageUrl,
           description,
+          prepTimeMinutes,
           cookTimeMinutes,
           totalTimeMinutes,
           yield: recipeYield,

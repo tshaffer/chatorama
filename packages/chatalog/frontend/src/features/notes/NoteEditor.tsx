@@ -9,7 +9,6 @@ import {
   useGetTopicNotesWithRelationsQuery, // ⬅️ NEW
   useUploadImageMutation,
   useAttachAssetToNoteMutation,
-  useNormalizeRecipeIngredientsMutation,
   useSearchRecipesQuery,
 } from './notesApi';
 import {
@@ -67,8 +66,8 @@ import {
 import Autocomplete from '@mui/material/Autocomplete';
 import { useGetAllTopicsQuery } from '../topics/topicsApi';
 import NotePropertiesDialog from './NotePropertiesDialog';
+import EditIngredientsDialog from './EditIngredientsDialog';
 import RecipeView from './RecipeView';
-import CookedHistoryPanel from './CookedHistoryPanel';
 import RecipePropertiesDialog from './RecipePropertiesDialog';
 
 // ---------------- helpers ----------------
@@ -313,8 +312,6 @@ export default function NoteEditor({
   const [deleteNote, { isLoading: isDeleting }] = useDeleteNoteMutation();
   const [uploadImage] = useUploadImageMutation();
   const [attachAssetToNote] = useAttachAssetToNoteMutation();
-  const [normalizeRecipeIngredients, { isLoading: isNormalizing }] =
-    useNormalizeRecipeIngredientsMutation();
 
   // Data for pickers
   const { data: subjects = [] } = useGetSubjectsQuery();
@@ -448,6 +445,7 @@ export default function NoteEditor({
   const [dirty, setDirty] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [recipePropsOpen, setRecipePropsOpen] = useState(false);
+  const [editIngredientsOpen, setEditIngredientsOpen] = useState(false);
   const [recipeSearchOpen, setRecipeSearchOpen] = useState(false);
   const [recipeSearchQuery, setRecipeSearchQuery] = useState('');
   const [recipeSearchMode, setRecipeSearchMode] = useState<'any' | 'all'>('any');
@@ -1030,38 +1028,16 @@ export default function NoteEditor({
         </Box>
       )}
 
-      {/* {isRecipeNote && note && (
-        <Box sx={{ mb: 2 }}>
-          <Stack direction="row" spacing={1} sx={{ mb: 1 }} alignItems="center">
-            <Typography variant="subtitle2">Recipe</Typography>
-            {FF.recipe.normalizeButton && (
-              <Button
-                size="small"
-                variant="outlined"
-                disabled={isNormalizing}
-                onClick={async () => {
-                  try {
-                    await normalizeRecipeIngredients({ noteId: (note as Note).id }).unwrap();
-                    setSnack({ open: true, msg: 'Ingredients normalized', sev: 'success' });
-                  } catch {
-                    setSnack({ open: true, msg: 'Normalize failed', sev: 'error' });
-                  }
-                }}
-              >
-                Normalize ingredients
-              </Button>
-            )}
-          </Stack>
-
-          <RecipeView note={note as Note} />
-          <CookedHistoryPanel note={note as Note} />
-          <Divider sx={{ mt: 2 }} />
-        </Box>
-      )} */}
-
       <Box sx={{ mt: 1 }}>
         {isRecipeNote && (
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => setEditIngredientsOpen(true)}
+            >
+              Edit Ingredients
+            </Button>
             <Button
               size="small"
               variant="outlined"
@@ -1071,19 +1047,23 @@ export default function NoteEditor({
             </Button>
           </Stack>
         )}
-        <MarkdownBody
-          markdown={previewBody}
-          enableImageSizingUi={editing}
-          onRequestResizeImage={handleRequestResizeImage}
-        />
+        {isRecipeNote && note ? (
+          <RecipeView
+            note={note as Note}
+            markdown={previewBody}
+            enableImageSizingUi={editing}
+            onRequestResizeImage={handleRequestResizeImage}
+          />
+        ) : (
+          <MarkdownBody
+            markdown={previewBody}
+            enableImageSizingUi={editing}
+            onRequestResizeImage={handleRequestResizeImage}
+          />
+        )}
       </Box>
     </>
   );
-
-  if (isRecipeNote) {
-    console.log(note);
-    // debugger;
-  }
 
   return (
     <Box
@@ -1769,6 +1749,14 @@ export default function NoteEditor({
         onClose={() => setRecipePropsOpen(false)}
         recipe={(note as Note | undefined)?.recipe}
       />
+
+      {note && (
+        <EditIngredientsDialog
+          open={editIngredientsOpen}
+          onClose={() => setEditIngredientsOpen(false)}
+          note={note as Note}
+        />
+      )}
 
       <NotePropertiesDialog
         open={propertiesOpen}

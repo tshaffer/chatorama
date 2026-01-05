@@ -11,6 +11,7 @@ import type {
   Asset,
   NoteAssetWithAsset,
   CookedEvent,
+  RecipeMeta,
 } from '@chatorama/chatalog-shared';
 import { chatalogApi as baseApi } from '../api/chatalogApi';
 import { subjectsApi } from '../subjects/subjectsApi';
@@ -29,7 +30,9 @@ type UpdateNoteRequest = {
       Note,
       'title' | 'markdown' | 'summary' | 'status' | 'tags' | 'links' | 'relations' | 'subjectId' | 'topicId'
     >
-  >;
+  > & {
+    recipe?: Partial<RecipeMeta>;
+  };
 };
 
 type DeleteNoteRequest = { noteId: string };

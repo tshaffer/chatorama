@@ -1,7 +1,7 @@
 // models/Note.ts
 import mongoose, { Schema, Document, Types } from 'mongoose';
 import { applyToJSON } from '../db/toJsonPlugin';
-import { NoteRelation } from '@chatorama/chatalog-shared';
+import { NoteRelation, RecipeIngredient, RecipeMeta, CookedEvent } from '@chatorama/chatalog-shared';
 
 export interface NoteDoc extends Document {
   _id: Types.ObjectId;
@@ -17,31 +17,8 @@ export interface NoteDoc extends Document {
   backlinks: string[];
   relations?: NoteRelation[];
   sources?: { url?: string; type?: 'chatworthy'|'clip'|'manual' }[];
-  recipe?: {
-    sourceUrl: string;
-    author?: string;
-    cookTimeMinutes?: number;
-    totalTimeMinutes?: number;
-    yield?: string;
-    description?: string;
-    cuisine?: string;
-    category?: string[];
-    keywords?: string[];
-    ratingValue?: number;
-    ratingCount?: number;
-    nutrition?: Record<string, any>;
-    ingredientsRaw?: string[];
-    stepsRaw?: string[];
-    ingredients?: {
-      raw: string;
-      name?: string;
-      amount?: number;
-      unit?: string;
-      modifier?: string;
-      notes?: string;
-    }[];
-  };
-  cookedHistory?: { cookedAt: Date; rating?: number; notes?: string }[];
+  recipe?: RecipeMeta;
+  cookedHistory?: CookedEvent[];
 
   // --- Semantic search / embeddings ---
   embedding?: number[];
@@ -100,18 +77,10 @@ const RelationSchema = new Schema<NoteRelation>(
   { _id: false }
 );
 
-type RecipeIngredient = {
-  raw: string;
-  name?: string;
-  amount?: number;
-  unit?: string;
-  modifier?: string;
-  notes?: string;
-};
-
 const RecipeIngredientSchema = new Schema<RecipeIngredient>(
   {
     raw: { type: String, required: true },
+    deleted: { type: Boolean, default: false },
     name: String,
     amount: Number,
     unit: String,
@@ -121,28 +90,11 @@ const RecipeIngredientSchema = new Schema<RecipeIngredient>(
   { _id: false }
 );
 
-type RecipeMeta = {
-  sourceUrl: string;
-  author?: string;
-  cookTimeMinutes?: number;
-  totalTimeMinutes?: number;
-  yield?: string;
-  description?: string;
-  cuisine?: string;
-  category?: string[];
-  keywords?: string[];
-  ratingValue?: number;
-  ratingCount?: number;
-  nutrition?: Record<string, any>;
-  ingredientsRaw?: string[];
-  stepsRaw?: string[];
-  ingredients?: RecipeIngredient[];
-};
-
 const RecipeMetaSchema = new Schema<RecipeMeta>(
   {
     sourceUrl: { type: String, required: true },
     author: String,
+    prepTimeMinutes: Number,
     cookTimeMinutes: Number,
     totalTimeMinutes: Number,
     yield: String,
@@ -156,15 +108,15 @@ const RecipeMetaSchema = new Schema<RecipeMeta>(
     ingredientsRaw: { type: [String], default: [] },
     stepsRaw: { type: [String], default: [] },
     ingredients: { type: [RecipeIngredientSchema], default: [] },
+    ingredientsEditedRaw: { type: [String], default: undefined },
+    ingredientsEdited: { type: [RecipeIngredientSchema], default: undefined },
   },
   { _id: false }
 );
 
-type CookedEvent = { cookedAt: Date; rating?: number; notes?: string };
-
 const CookedEventSchema = new Schema<CookedEvent>(
   {
-    cookedAt: { type: Date, required: true },
+    cookedAt: { type: String, required: true },
     rating: Number,
     notes: String,
   },

@@ -40,6 +40,7 @@ export interface NoteRelation {
 
 export type RecipeIngredient = {
   raw: string;
+  deleted?: boolean;
   name?: string;
   amount?: number;
   unit?: string;
@@ -64,6 +65,7 @@ export type RecipeNutrition = {
 export type RecipeMeta = {
   sourceUrl: string;
   author?: string;
+  prepTimeMinutes?: number;
   cookTimeMinutes?: number;
   totalTimeMinutes?: number;
   yield?: string;
@@ -77,6 +79,8 @@ export type RecipeMeta = {
   ingredientsRaw?: string[];
   stepsRaw?: string[];
   ingredients?: RecipeIngredient[];
+  ingredientsEditedRaw?: string[];
+  ingredientsEdited?: RecipeIngredient[];
 };
 
 export type CookedEvent = {

@@ -29,6 +29,10 @@ type Props = {
   // NEW: allow clickable images that trigger a resize UI in parent
   enableImageSizingUi?: boolean; // default false
   onRequestResizeImage?: (args: { src?: string; title?: string; alt?: string }) => void;
+  recipeTokens?: {
+    ingredients?: React.ReactNode;
+    steps?: React.ReactNode;
+  };
 };
 
 type LogicalTurn = {
@@ -122,6 +126,7 @@ export default function MarkdownBody({
   enableToc = true,
   enableImageSizingUi = false,
   onRequestResizeImage,
+  recipeTokens,
 }: Props) {
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [tocOpen, setTocOpen] = useState(true);
@@ -162,6 +167,139 @@ export default function MarkdownBody({
 
     el.classList.add('toc-target-flash');
     window.setTimeout(() => el.classList.remove('toc-target-flash'), 650);
+  };
+
+  const ING_TOKEN = '{{RECIPE_INGREDIENTS}}';
+  const STEPS_TOKEN = '{{RECIPE_STEPS}}';
+
+  const markdownComponents = {
+    // Inject an anchor at each rendered "**Prompt**" marker
+    strong: ({ children, ...rest }: any) => {
+      const first = React.Children.toArray(children)[0];
+      const text = typeof first === 'string' ? first : '';
+
+      if (text.toLowerCase() === 'prompt') {
+        const idx = renderPromptIndexRef.current++;
+        const anchorId = `turn-${idx}`;
+        return (
+          <>
+            <span id={anchorId} />
+            <strong {...rest}>{children}</strong>
+          </>
+        );
+      }
+
+      return <strong {...rest}>{children}</strong>;
+    },
+
+    a: ({ href, children, ...rest }: any) => {
+      if (!isSafeHref(href)) {
+        return <span {...rest}>{children}</span>;
+      }
+
+      // Internal anchor: scroll inside the note; do not open new tab
+      if (href?.startsWith('#')) {
+        const id = href.slice(1);
+        return (
+          <a
+            {...rest}
+            href={href}
+            onClick={(e) => {
+              e.preventDefault();
+              jumpToId(id);
+            }}
+          >
+            {children}
+          </a>
+        );
+      }
+
+      // External link: open new tab
+      return (
+        <a {...rest} href={href} target="_blank" rel="noopener noreferrer">
+          {children}
+        </a>
+      );
+    },
+
+    img: ({ src, alt, title }: any) => {
+      const spec = parseImageSize(title);
+      const clickable = !!enableImageSizingUi && !!onRequestResizeImage;
+
+      return (
+        <Box
+          component="img"
+          src={src}
+          alt={alt ?? ''}
+          title={title}
+          sx={{
+            display: 'block',
+            maxWidth: '100%',
+            width: spec.width ?? undefined,
+            height: spec.height ?? 'auto',
+            cursor: clickable ? 'pointer' : 'default',
+          }}
+          onClick={
+            clickable
+              ? (e: any) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onRequestResizeImage?.({ src, title, alt });
+                }
+              : undefined
+          }
+        />
+      );
+    },
+  };
+
+  const renderMarkdownChunk = (text: string, key: string | number) => (
+    <ReactMarkdown
+      key={key}
+      remarkPlugins={[remarkGfm, remarkBreaks]}
+      rehypePlugins={[rehypeHighlight, rehypeSlug]}
+      components={markdownComponents}
+    >
+      {text}
+    </ReactMarkdown>
+  );
+
+  const renderWithTokens = () => {
+    if (!recipeTokens?.ingredients && !recipeTokens?.steps) {
+      return renderMarkdownChunk(markdown, 'markdown');
+    }
+
+    const parts: Array<
+      { kind: 'md'; text: string } | { kind: 'ing' } | { kind: 'steps' }
+    > = [];
+
+    let remaining = markdown;
+    while (true) {
+      const iIng = remaining.indexOf(ING_TOKEN);
+      const iSteps = remaining.indexOf(STEPS_TOKEN);
+      if (iIng === -1 && iSteps === -1) {
+        if (remaining) parts.push({ kind: 'md', text: remaining });
+        break;
+      }
+
+      const nextIsIng = iIng !== -1 && (iSteps === -1 || iIng < iSteps);
+      const idx = nextIsIng ? iIng : iSteps;
+      const tokLen = nextIsIng ? ING_TOKEN.length : STEPS_TOKEN.length;
+      const before = remaining.slice(0, idx);
+      if (before) parts.push({ kind: 'md', text: before });
+      parts.push(nextIsIng ? { kind: 'ing' } : { kind: 'steps' });
+      remaining = remaining.slice(idx + tokLen);
+    }
+
+    return (
+      <>
+        {parts.map((p, i) => {
+          if (p.kind === 'md') return renderMarkdownChunk(p.text, i);
+          if (p.kind === 'ing') return <React.Fragment key={i}>{recipeTokens?.ingredients ?? null}</React.Fragment>;
+          return <React.Fragment key={i}>{recipeTokens?.steps ?? null}</React.Fragment>;
+        })}
+      </>
+    );
   };
 
   return (
@@ -222,92 +360,7 @@ export default function MarkdownBody({
         </Box>
       )}
 
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkBreaks]}
-        rehypePlugins={[rehypeHighlight, rehypeSlug]}
-        components={{
-          // Inject an anchor at each rendered "**Prompt**" marker
-          strong: ({ children, ...rest }) => {
-            const first = React.Children.toArray(children)[0];
-            const text = typeof first === 'string' ? first : '';
-
-            if (text.toLowerCase() === 'prompt') {
-              const idx = renderPromptIndexRef.current++;
-              const anchorId = `turn-${idx}`;
-              return (
-                <>
-                  <span id={anchorId} />
-                  <strong {...rest}>{children}</strong>
-                </>
-              );
-            }
-
-            return <strong {...rest}>{children}</strong>;
-          },
-
-          a: ({ href, children, ...rest }) => {
-            if (!isSafeHref(href)) {
-              return <span {...rest}>{children}</span>;
-            }
-
-            // Internal anchor: scroll inside the note; do not open new tab
-            if (href?.startsWith('#')) {
-              const id = href.slice(1);
-              return (
-                <a
-                  {...rest}
-                  href={href}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    jumpToId(id);
-                  }}
-                >
-                  {children}
-                </a>
-              );
-            }
-
-            // External link: open new tab
-            return (
-              <a {...rest} href={href} target="_blank" rel="noopener noreferrer">
-                {children}
-              </a>
-            );
-          },
-
-          img: ({ src, alt, title }) => {
-            const spec = parseImageSize(title);
-            const clickable = !!enableImageSizingUi && !!onRequestResizeImage;
-
-            return (
-              <Box
-                component="img"
-                src={src}
-                alt={alt ?? ''}
-                title={title}
-                sx={{
-                  display: 'block',
-                  maxWidth: '100%',
-                  width: spec.width ?? undefined,
-                  height: spec.height ?? 'auto',
-                  cursor: clickable ? 'pointer' : 'default',
-                }}
-                onClick={
-                  clickable
-                    ? (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        onRequestResizeImage?.({ src, title, alt });
-                      }
-                    : undefined
-                }
-              />
-            );
-          },
-        }}
-      >
-        {markdown}
-      </ReactMarkdown>
+      {renderWithTokens()}
     </Box>
   );
 }
