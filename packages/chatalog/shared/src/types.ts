@@ -78,6 +78,8 @@ export type RecipeMeta = {
   ingredientsRaw?: string[];
   stepsRaw?: string[];
   ingredients?: RecipeIngredient[];
+  ingredientsEditedRaw?: string[];
+  ingredientsEdited?: RecipeIngredient[];
 };
 
 export type CookedEvent = {

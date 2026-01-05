@@ -9,7 +9,6 @@ import {
   useGetTopicNotesWithRelationsQuery, // ⬅️ NEW
   useUploadImageMutation,
   useAttachAssetToNoteMutation,
-  useNormalizeRecipeIngredientsMutation,
   useSearchRecipesQuery,
 } from './notesApi';
 import {
@@ -23,9 +22,6 @@ import {
   slugifyStandard,
 } from '@chatorama/chatalog-shared';
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Box,
   Stack,
   TextField,
@@ -52,7 +48,6 @@ import {
 import EditIcon from '@mui/icons-material/Edit';
 import DoneIcon from '@mui/icons-material/Done';
 import DeleteIcon from '@mui/icons-material/Delete';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
@@ -72,7 +67,6 @@ import Autocomplete from '@mui/material/Autocomplete';
 import { useGetAllTopicsQuery } from '../topics/topicsApi';
 import NotePropertiesDialog from './NotePropertiesDialog';
 import RecipeView from './RecipeView';
-import CookedHistoryPanel from './CookedHistoryPanel';
 import RecipePropertiesDialog from './RecipePropertiesDialog';
 
 // ---------------- helpers ----------------
@@ -317,8 +311,6 @@ export default function NoteEditor({
   const [deleteNote, { isLoading: isDeleting }] = useDeleteNoteMutation();
   const [uploadImage] = useUploadImageMutation();
   const [attachAssetToNote] = useAttachAssetToNoteMutation();
-  const [normalizeRecipeIngredients, { isLoading: isNormalizing }] =
-    useNormalizeRecipeIngredientsMutation();
 
   // Data for pickers
   const { data: subjects = [] } = useGetSubjectsQuery();
@@ -1037,16 +1029,6 @@ export default function NoteEditor({
       {isRecipeNote && note && (
         <Box sx={{ mb: 2 }}>
           <RecipeView note={note as Note} />
-
-          <Accordion defaultExpanded={false} sx={{ mt: 2 }}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography variant="subtitle2">Cooked history</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <CookedHistoryPanel note={note as Note} />
-            </AccordionDetails>
-          </Accordion>
-
           <Divider sx={{ mt: 2 }} />
         </Box>
       )}

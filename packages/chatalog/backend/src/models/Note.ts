@@ -107,6 +107,8 @@ const RecipeMetaSchema = new Schema<RecipeMeta>(
     ingredientsRaw: { type: [String], default: [] },
     stepsRaw: { type: [String], default: [] },
     ingredients: { type: [RecipeIngredientSchema], default: [] },
+    ingredientsEditedRaw: { type: [String], default: undefined },
+    ingredientsEdited: { type: [RecipeIngredientSchema], default: undefined },
   },
   { _id: false }
 );
