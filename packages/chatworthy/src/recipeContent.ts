@@ -197,8 +197,17 @@ function ensureUi() {
 async function init() {
   if (!isTopWindow()) return;
 
-  const host = location.host || '';
-  if (!/^cooking\.nytimes\.com$/i.test(host)) return;
+  const host = (location.host || '').toLowerCase();
+  const path = location.pathname || '';
+
+  const isNytCooking = host === 'cooking.nytimes.com';
+  const isBonAppetit = host === 'www.bonappetit.com' || host === 'bonappetit.com';
+
+  const isLikelyRecipePath =
+    (isNytCooking && /^\/recipes\//i.test(path)) ||
+    (isBonAppetit && /^\/recipe\//i.test(path));
+
+  if (!isLikelyRecipePath) return;
 
   if (document.readyState === 'loading') {
     await new Promise<void>((resolve) =>
@@ -206,7 +215,7 @@ async function init() {
     );
   }
 
-  console.log('[chatworthy][recipe] content script active');
+  console.log('[chatworthy][recipe] content script active', { host, path });
   ensureUi();
 }
 

@@ -12,7 +12,9 @@
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
-    "https://cooking.nytimes.com/*"
+    "https://cooking.nytimes.com/*",
+    "https://www.bonappetit.com/*",
+    "https://bonappetit.com/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -34,7 +36,9 @@
     },
     {
       "matches": [
-        "https://cooking.nytimes.com/*"
+        "https://cooking.nytimes.com/*",
+        "https://www.bonappetit.com/*",
+        "https://bonappetit.com/*"
       ],
       "js": [
         "recipeContent.js"
