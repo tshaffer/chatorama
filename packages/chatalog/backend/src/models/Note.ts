@@ -1,7 +1,7 @@
 // models/Note.ts
 import mongoose, { Schema, Document, Types } from 'mongoose';
 import { applyToJSON } from '../db/toJsonPlugin';
-import { NoteRelation } from '@chatorama/chatalog-shared';
+import { NoteRelation, RecipeIngredient, RecipeMeta } from '@chatorama/chatalog-shared';
 
 export interface NoteDoc extends Document {
   _id: Types.ObjectId;
@@ -100,15 +100,6 @@ const RelationSchema = new Schema<NoteRelation>(
   { _id: false }
 );
 
-type RecipeIngredient = {
-  raw: string;
-  name?: string;
-  amount?: number;
-  unit?: string;
-  modifier?: string;
-  notes?: string;
-};
-
 const RecipeIngredientSchema = new Schema<RecipeIngredient>(
   {
     raw: { type: String, required: true },
@@ -120,24 +111,6 @@ const RecipeIngredientSchema = new Schema<RecipeIngredient>(
   },
   { _id: false }
 );
-
-type RecipeMeta = {
-  sourceUrl: string;
-  author?: string;
-  cookTimeMinutes?: number;
-  totalTimeMinutes?: number;
-  yield?: string;
-  description?: string;
-  cuisine?: string;
-  category?: string[];
-  keywords?: string[];
-  ratingValue?: number;
-  ratingCount?: number;
-  nutrition?: Record<string, any>;
-  ingredientsRaw?: string[];
-  stepsRaw?: string[];
-  ingredients?: RecipeIngredient[];
-};
 
 const RecipeMetaSchema = new Schema<RecipeMeta>(
   {
