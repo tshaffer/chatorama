@@ -5,6 +5,23 @@ import { useGetSearchQuery } from './searchApi';
 import { useGetSubjectsWithTopicsQuery, resolveSubjectAndTopicNames } from '../subjects/subjectsApi';
 import SearchBox from '../../components/SearchBox';
 import { parseSearchInput } from './queryParser';
+import { useAppDispatch, useAppSelector } from '../../store';
+import {
+  hydrateFromUrl,
+  resetDraftToCommitted,
+  setDraftMinSemanticScore,
+  setDraftMode,
+  setDraftText,
+  setDraftUpdatedFrom,
+  setDraftUpdatedTo,
+  setFiltersDialogOpen,
+} from './searchSlice';
+import {
+  selectFiltersDialogOpen,
+  selectSearchCommitted,
+  selectSearchDraft,
+} from './searchSelectors';
+import { buildSearchUrlFromQuery, parseSearchQueryFromUrl } from './searchUrl';
 import {
   Alert,
   Box,
@@ -33,61 +50,29 @@ function clampLimit(n: number) {
   return Math.max(1, Math.min(50, Math.floor(n)));
 }
 
-function useQueryParam(name: string): string {
-  const { search } = useLocation();
-  return useMemo(() => new URLSearchParams(search).get(name) ?? '', [search, name]);
-}
-
 export default function SearchPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams();
-  const qParam = useQueryParam('q');
+  const dispatch = useAppDispatch();
+  const draft = useAppSelector(selectSearchDraft);
+  const committed = useAppSelector(selectSearchCommitted);
+  const filtersOpen = useAppSelector(selectFiltersDialogOpen);
 
-  const [q, setQ] = useState('');
-  const [queryText, setQueryText] = useState<string>(q ?? '');
-  const [mode, setMode] = useState<SearchMode>('auto');
-  const [limit, setLimit] = useState<number>(20);
   const [activeRowIndex, setActiveRowIndex] = useState<number>(-1);
   const [overrideTopicId, setOverrideTopicId] = useState<string | null>(null);
   const [overrideSubjectId, setOverrideSubjectId] = useState<string | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-
   useEffect(() => {
-    const nextQ = qParam.trim();
-    if (nextQ !== q) setQ(nextQ);
-  }, [qParam, q]);
+    dispatch(hydrateFromUrl(parseSearchQueryFromUrl(location.search)));
+  }, [dispatch, location.search]);
 
-  useEffect(() => {
-    setQueryText(q ?? '');
-  }, [q]);
-
-  const urlParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
-
-  const topicIdFromQuery = urlParams.get('topicId')?.trim() || '';
-  const subjectIdFromQuery = urlParams.get('subjectId')?.trim() || '';
-  const statusFromQuery = urlParams.get('status')?.trim() || '';
-  const tagsFromQueryRaw = urlParams.get('tags')?.trim() || '';
-  const tagsFromQuery = tagsFromQueryRaw
-    ? tagsFromQueryRaw.split(',').map((t) => t.trim()).filter(Boolean)
-    : [];
-  const updatedFrom = urlParams.get('updatedFrom')?.trim() || '';
-  const updatedTo = urlParams.get('updatedTo')?.trim() || '';
-  const minSemanticScoreFromQueryRaw = urlParams.get('minSemanticScore');
-  const minSemanticScoreFromQuery =
-    minSemanticScoreFromQueryRaw != null && minSemanticScoreFromQueryRaw.trim() !== ''
-      ? Number(minSemanticScoreFromQueryRaw)
-      : undefined;
-  const minSemanticScore = Number.isFinite(minSemanticScoreFromQuery as any)
-    ? Math.max(0, Math.min(1, minSemanticScoreFromQuery as number))
-    : undefined;
-
-  const [draftMode, setDraftMode] = useState<string>(mode !== 'auto' ? mode : 'hybrid');
-  const [draftMinSemantic, setDraftMinSemantic] = useState<number | ''>(
-    minSemanticScore !== undefined ? minSemanticScore : '',
-  );
-  const [draftUpdatedFrom, setDraftUpdatedFrom] = useState<string>(updatedFrom || '');
-  const [draftUpdatedTo, setDraftUpdatedTo] = useState<string>(updatedTo || '');
+  const topicIdFromQuery = committed.filters.topicId ?? '';
+  const subjectIdFromQuery = committed.filters.subjectId ?? '';
+  const statusFromQuery = committed.filters.status ?? '';
+  const tagsFromQuery = committed.filters.tags ?? [];
+  const updatedFrom = committed.filters.updatedFrom ?? '';
+  const updatedTo = committed.filters.updatedTo ?? '';
+  const minSemanticScore = committed.filters.minSemanticScore;
 
   const stateAny = (location.state ?? {}) as any;
   const topicIdFromState = String(stateAny.topicId ?? '').trim();
@@ -106,24 +91,31 @@ export default function SearchPage() {
       ? overrideSubjectId
       : subjectIdFromQuery || subjectIdFromState || subjectIdFromRoute || undefined;
 
-  const trimmedQ = q.trim();
+  const trimmedQ = committed.text.trim();
   const debouncedQ = useDebouncedValue(trimmedQ, 350);
   const shouldQuery = debouncedQ.length > 0;
   const highlightTokens = useMemo(
-    () => tokenizeForHighlight(debouncedQ || trimmedQ || q),
-    [debouncedQ, trimmedQ, q],
+    () => tokenizeForHighlight(debouncedQ || trimmedQ || committed.text),
+    [debouncedQ, trimmedQ, committed.text],
   );
 
   const args = useMemo(
     () => ({
       q: debouncedQ,
-      mode,
-      limit: clampLimit(limit),
+      mode: committed.mode as SearchMode,
+      limit: clampLimit(committed.limit),
       ...(effectiveSubjectId ? { subjectId: effectiveSubjectId } : {}),
       ...(effectiveTopicId ? { topicId: effectiveTopicId } : {}),
       ...(minSemanticScore !== undefined ? { minSemanticScore } : {}),
     }),
-    [debouncedQ, mode, limit, effectiveSubjectId, effectiveTopicId, minSemanticScore],
+    [
+      debouncedQ,
+      committed.mode,
+      committed.limit,
+      effectiveSubjectId,
+      effectiveTopicId,
+      minSemanticScore,
+    ],
   );
 
   const { data, error, isFetching } = useGetSearchQuery(args, { skip: !shouldQuery });
@@ -163,7 +155,7 @@ export default function SearchPage() {
     | { kind: 'result'; id: string; r: (typeof results)[number] };
 
   const displayRows: DisplayRow[] = useMemo(() => {
-    if (mode !== 'hybrid') {
+    if (committed.mode !== 'hybrid') {
       return (results ?? []).map((r) => ({ kind: 'result' as const, id: r.id, r }));
     }
 
@@ -182,7 +174,7 @@ export default function SearchPage() {
     }
 
     return rows;
-  }, [mode, results, keywordResults, semanticOnlyResults]);
+  }, [committed.mode, results, keywordResults, semanticOnlyResults]);
 
   const selectableRowIndexes = useMemo(() => {
     const idxs: number[] = [];
@@ -192,103 +184,61 @@ export default function SearchPage() {
     return idxs;
   }, [displayRows]);
 
-  const currentParamMap = useMemo(
-    () =>
-      toParamMap({
-        q: trimmedQ,
-        mode,
-        subjectId: effectiveSubjectId,
-        topicId: effectiveTopicId,
-        status: statusFromQuery,
-        tags: tagsFromQuery,
-        updatedFrom,
-        updatedTo,
-        minSemanticScore,
-      }),
-    [
-      trimmedQ,
-      mode,
-      effectiveSubjectId,
-      effectiveTopicId,
-      statusFromQuery,
-      tagsFromQuery,
-      updatedFrom,
-      updatedTo,
-      minSemanticScore,
-    ],
-  );
-
-  const goWithParams = useCallback(
-    (nextMap: Record<string, string | undefined | null>) => {
-      navigate(buildSearchUrl(nextMap));
+  const applyCommitted = useCallback(
+    (nextQuery: typeof committed) => {
+      dispatch(hydrateFromUrl(nextQuery));
+      navigate(buildSearchUrlFromQuery(nextQuery));
     },
-    [navigate],
+    [dispatch, navigate],
   );
 
   const onSubmitQuery = () => {
-    const parsed = parseSearchInput(queryText);
+    const parsed = parseSearchInput(draft.text);
     if (!parsed.q && Object.keys(parsed.params).length === 0) return;
 
-    const next = { ...currentParamMap };
-    if (parsed.q) next.q = parsed.q;
-    else delete (next as any).q;
+    const nextQuery = {
+      ...committed,
+      text: parsed.q || '',
+      filters: {
+        ...committed.filters,
+        tags: parsed.params.tags
+          ? parsed.params.tags.split(',').map((t) => t.trim()).filter(Boolean)
+          : [],
+        status: parsed.params.status?.trim() || undefined,
+        updatedFrom: parsed.params.updatedFrom?.trim() || undefined,
+        updatedTo: parsed.params.updatedTo?.trim() || undefined,
+      },
+    };
 
-    for (const [k, v] of Object.entries(parsed.params)) {
-      if (v) (next as any)[k] = String(v);
-      else delete (next as any)[k];
-    }
-
-    goWithParams(next);
+    applyCommitted(nextQuery);
   };
 
   const openFilters = () => {
-    setDraftMode(mode !== 'auto' ? mode : 'hybrid');
-    setDraftMinSemantic(minSemanticScore !== undefined ? minSemanticScore : '');
-    setDraftUpdatedFrom(updatedFrom || '');
-    setDraftUpdatedTo(updatedTo || '');
-    setFiltersOpen(true);
+    dispatch(resetDraftToCommitted());
+    dispatch(setFiltersDialogOpen(true));
   };
 
   const applyDraftFilters = () => {
-    const next = { ...currentParamMap };
-    next.mode = draftMode;
-    setMode(draftMode as SearchMode);
-
-    if (draftMinSemantic === '' || Number.isNaN(Number(draftMinSemantic))) {
-      delete (next as any).minSemanticScore;
-    } else {
-      next.minSemanticScore = String(draftMinSemantic);
-    }
-
-    if (!draftUpdatedFrom.trim()) delete (next as any).updatedFrom;
-    else next.updatedFrom = draftUpdatedFrom.trim();
-
-    if (!draftUpdatedTo.trim()) delete (next as any).updatedTo;
-    else next.updatedTo = draftUpdatedTo.trim();
-
-    goWithParams(next);
-    setFiltersOpen(false);
+    const nextQuery = draft;
+    dispatch(hydrateFromUrl(nextQuery));
+    navigate(buildSearchUrlFromQuery(nextQuery));
+    dispatch(setFiltersDialogOpen(false));
   };
 
   const clearDraftAndApply = () => {
-    const next = { ...currentParamMap };
-    delete (next as any).mode;
-    delete (next as any).minSemanticScore;
-    delete (next as any).updatedFrom;
-    delete (next as any).updatedTo;
-    setMode('auto');
-    goWithParams(next);
-    setFiltersOpen(false);
+    const nextQuery = {
+      ...committed,
+      mode: 'auto' as const,
+      filters: {
+        ...committed.filters,
+        minSemanticScore: undefined,
+        updatedFrom: undefined,
+        updatedTo: undefined,
+      },
+    };
+    applyCommitted(nextQuery);
+    dispatch(setFiltersDialogOpen(false));
   };
-
-  const removeParam = useCallback(
-    (key: string) => {
-      const next = { ...currentParamMap };
-      delete (next as any)[key];
-      goWithParams(next);
-    },
-    [currentParamMap, goWithParams],
-  );
 
   const hasAnyFilterChips = Boolean(
     effectiveSubjectId ||
@@ -298,7 +248,7 @@ export default function SearchPage() {
       updatedFrom ||
       updatedTo ||
       minSemanticScore !== undefined ||
-      (mode && mode !== 'auto'),
+      (committed.mode && committed.mode !== 'auto'),
   );
 
   useEffect(() => {
@@ -358,7 +308,7 @@ export default function SearchPage() {
                 <Box sx={{ width: '100%' }}>
                   <TextField
                     label="Query (read-only)"
-                    value={q}
+                    value={committed.text}
                     placeholder="Type to search..."
                     autoFocus
                     fullWidth
@@ -378,11 +328,13 @@ export default function SearchPage() {
 
               <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
                 <ToggleButtonGroup
-                  value={mode}
+                  value={committed.mode}
                   exclusive
                   onChange={(_e, v) => {
-                    if (v) setMode(v);
-                  }}
+                  if (!v) return;
+                  const nextQuery = { ...committed, mode: v as any };
+                  applyCommitted(nextQuery);
+                }}
                   size="small"
                 >
                   <ToggleButton value="auto">Auto</ToggleButton>
@@ -394,8 +346,12 @@ export default function SearchPage() {
                 <TextField
                   label="Limit"
                   type="number"
-                  value={limit}
-                  onChange={(e) => setLimit(Number(e.target.value))}
+                  value={committed.limit}
+                  onChange={(e) => {
+                    const nextLimit = clampLimit(Number(e.target.value));
+                    const nextQuery = { ...committed, limit: nextLimit };
+                    applyCommitted(nextQuery);
+                  }}
                   inputProps={{ min: 1, max: 50, step: 1 }}
                   size="small"
                   sx={{ width: 120 }}
@@ -420,6 +376,15 @@ export default function SearchPage() {
                       .filter(Boolean)
                       .join(' / ')}`}
                     onDelete={() => {
+                      const nextQuery = {
+                        ...committed,
+                        filters: {
+                          ...committed.filters,
+                          subjectId: undefined,
+                          topicId: undefined,
+                        },
+                      };
+                      applyCommitted(nextQuery);
                       setOverrideSubjectId('');
                       setOverrideTopicId('');
                     }}
@@ -455,10 +420,10 @@ export default function SearchPage() {
             </Box>
             <Box sx={{ px: 2, pb: 1, flexShrink: 0 }}>
               <SearchBox
-                value={queryText}
-                onChange={setQueryText}
+                value={draft.text}
+                onChange={(v) => dispatch(setDraftText(v))}
                 onSubmit={onSubmitQuery}
-                placeholder="Search notes…"
+                placeholder="Search…"
                 sx={(theme) => ({
                   width: '100%',
                   maxWidth: 720,
@@ -482,20 +447,32 @@ export default function SearchPage() {
                           .filter(Boolean)
                           .join(' / ')}`}
                         onDelete={() => {
-                          const next = { ...currentParamMap };
-                          delete (next as any).subjectId;
-                          delete (next as any).topicId;
-                          goWithParams(next);
+                          const nextQuery = {
+                            ...committed,
+                            filters: {
+                              ...committed.filters,
+                              subjectId: undefined,
+                              topicId: undefined,
+                            },
+                          };
+                          applyCommitted(nextQuery);
+                          setOverrideSubjectId('');
+                          setOverrideTopicId('');
                         }}
                         size="small"
                         variant="outlined"
                       />
                     ) : null}
 
-                    {mode && mode !== 'auto' ? (
+                    {committed.mode && committed.mode !== 'auto' ? (
                       <Chip
-                        label={`Mode: ${mode}`}
-                        onDelete={() => removeParam('mode')}
+                        label={`Mode: ${committed.mode}`}
+                        onDelete={() =>
+                          applyCommitted({
+                            ...committed,
+                            mode: 'auto',
+                          })
+                        }
                         size="small"
                         variant="outlined"
                       />
@@ -504,7 +481,12 @@ export default function SearchPage() {
                     {minSemanticScore !== undefined ? (
                       <Chip
                         label={`Min semantic: ≥ ${minSemanticScore.toFixed(2)}`}
-                        onDelete={() => removeParam('minSemanticScore')}
+                        onDelete={() =>
+                          applyCommitted({
+                            ...committed,
+                            filters: { ...committed.filters, minSemanticScore: undefined },
+                          })
+                        }
                         size="small"
                         variant="outlined"
                       />
@@ -513,7 +495,12 @@ export default function SearchPage() {
                     {statusFromQuery ? (
                       <Chip
                         label={`Status: ${statusFromQuery}`}
-                        onDelete={() => removeParam('status')}
+                        onDelete={() =>
+                          applyCommitted({
+                            ...committed,
+                            filters: { ...committed.filters, status: undefined },
+                          })
+                        }
                         size="small"
                         variant="outlined"
                       />
@@ -525,18 +512,10 @@ export default function SearchPage() {
                         label={`Tag: ${t}`}
                         onDelete={() => {
                           const nextTags = tagsFromQuery.filter((x) => x !== t);
-                          const next = toParamMap({
-                            q: trimmedQ,
-                            mode,
-                            subjectId: effectiveSubjectId,
-                            topicId: effectiveTopicId,
-                            status: statusFromQuery,
-                            tags: nextTags,
-                            updatedFrom,
-                            updatedTo,
-                            minSemanticScore,
+                          applyCommitted({
+                            ...committed,
+                            filters: { ...committed.filters, tags: nextTags },
                           });
-                          goWithParams(next);
                         }}
                         size="small"
                         variant="outlined"
@@ -546,7 +525,12 @@ export default function SearchPage() {
                     {updatedFrom ? (
                       <Chip
                         label={`Content updated from: ${updatedFrom}`}
-                        onDelete={() => removeParam('updatedFrom')}
+                        onDelete={() =>
+                          applyCommitted({
+                            ...committed,
+                            filters: { ...committed.filters, updatedFrom: undefined },
+                          })
+                        }
                         size="small"
                         variant="outlined"
                       />
@@ -555,7 +539,12 @@ export default function SearchPage() {
                     {updatedTo ? (
                       <Chip
                         label={`Content updated to: ${updatedTo}`}
-                        onDelete={() => removeParam('updatedTo')}
+                        onDelete={() =>
+                          applyCommitted({
+                            ...committed,
+                            filters: { ...committed.filters, updatedTo: undefined },
+                          })
+                        }
                         size="small"
                         variant="outlined"
                       />
@@ -664,7 +653,12 @@ export default function SearchPage() {
         ) : null}
       </Box>
 
-      <Dialog open={filtersOpen} onClose={() => setFiltersOpen(false)} fullWidth maxWidth="sm">
+      <Dialog
+        open={filtersOpen}
+        onClose={() => dispatch(setFiltersDialogOpen(false))}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>Filters</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
@@ -673,10 +667,10 @@ export default function SearchPage() {
                 Mode
               </Typography>
               <ToggleButtonGroup
-                value={draftMode}
+                value={draft.mode}
                 exclusive
                 onChange={(_e, v) => {
-                  if (v) setDraftMode(v);
+                  if (v) dispatch(setDraftMode(v as any));
                 }}
                 size="small"
               >
@@ -686,42 +680,42 @@ export default function SearchPage() {
               </ToggleButtonGroup>
             </Box>
 
-            <TextField
-              label="Min semantic score"
-              type="number"
-              inputProps={{ min: 0, max: 1, step: 0.01 }}
-              value={draftMinSemantic}
-              onChange={(e) => {
-                const s = e.target.value;
-                if (s === '') setDraftMinSemantic('');
-                else setDraftMinSemantic(Math.max(0, Math.min(1, Number(s))));
-              }}
-              helperText="Applies to Semantic/Hybrid. Leave blank for default."
-            />
+              <TextField
+                label="Min semantic score"
+                type="number"
+                inputProps={{ min: 0, max: 1, step: 0.01 }}
+                value={draft.filters.minSemanticScore ?? ''}
+                onChange={(e) => {
+                  const s = e.target.value;
+                  if (s === '') dispatch(setDraftMinSemanticScore(undefined));
+                  else dispatch(setDraftMinSemanticScore(Math.max(0, Math.min(1, Number(s)))));
+                }}
+                helperText="Applies to Semantic/Hybrid. Leave blank for default."
+              />
 
             <Stack direction="row" spacing={2}>
-              <TextField
-                label="Content updated from"
-                type="date"
-                value={draftUpdatedFrom}
-                onChange={(e) => setDraftUpdatedFrom(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-                fullWidth
-              />
-              <TextField
-                label="Content updated to"
-                type="date"
-                value={draftUpdatedTo}
-                onChange={(e) => setDraftUpdatedTo(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-                fullWidth
-              />
+                <TextField
+                  label="Content updated from"
+                  type="date"
+                  value={draft.filters.updatedFrom ?? ''}
+                  onChange={(e) => dispatch(setDraftUpdatedFrom(e.target.value))}
+                  InputLabelProps={{ shrink: true }}
+                  fullWidth
+                />
+                <TextField
+                  label="Content updated to"
+                  type="date"
+                  value={draft.filters.updatedTo ?? ''}
+                  onChange={(e) => dispatch(setDraftUpdatedTo(e.target.value))}
+                  InputLabelProps={{ shrink: true }}
+                  fullWidth
+                />
             </Stack>
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={clearDraftAndApply}>Clear</Button>
-          <Button onClick={() => setFiltersOpen(false)}>Cancel</Button>
+          <Button onClick={() => dispatch(setFiltersDialogOpen(false))}>Cancel</Button>
           <Button variant="contained" onClick={applyDraftFilters}>
             Apply
           </Button>
@@ -792,41 +786,4 @@ function renderHighlightedSnippet(snippet: string, tokens: string[]): ReactNode 
       })}
     </>
   );
-}
-
-function buildSearchUrl(next: Record<string, string | undefined | null>) {
-  const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(next)) {
-    if (v == null) continue;
-    const s = String(v).trim();
-    if (!s) continue;
-    params.set(k, s);
-  }
-  const qs = params.toString();
-  return qs ? `/search?${qs}` : '/search';
-}
-
-function toParamMap(args: {
-  q?: string;
-  mode?: string;
-  subjectId?: string;
-  topicId?: string;
-  status?: string;
-  tags?: string[];
-  updatedFrom?: string;
-  updatedTo?: string;
-  minSemanticScore?: number;
-}) {
-  return {
-    q: args.q,
-    mode: args.mode,
-    subjectId: args.subjectId,
-    topicId: args.topicId,
-    status: args.status,
-    tags: args.tags && args.tags.length ? args.tags.join(',') : undefined,
-    updatedFrom: args.updatedFrom,
-    updatedTo: args.updatedTo,
-    minSemanticScore:
-      args.minSemanticScore !== undefined ? String(args.minSemanticScore) : undefined,
-  };
 }
