@@ -10,6 +10,7 @@ export type GetSearchArgs = {
   q: string;
   mode?: SearchMode;
   limit?: number;
+  scope?: 'all' | 'recipes' | 'notes';
   subjectId?: string;
   topicId?: string;
   minSemanticScore?: number;
@@ -18,11 +19,12 @@ export type GetSearchArgs = {
 export const searchApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
     getSearch: build.query<SearchResponse, GetSearchArgs>({
-      query: ({ q, mode, limit, subjectId, topicId, minSemanticScore }) => {
+      query: ({ q, mode, limit, scope, subjectId, topicId, minSemanticScore }) => {
         const params = new URLSearchParams();
         params.set('q', q);
         if (mode) params.set('mode', mode);
         if (limit != null) params.set('limit', String(limit));
+        if (scope && scope !== 'all') params.set('scope', scope);
         if (subjectId) params.set('subjectId', subjectId);
         if (topicId) params.set('topicId', topicId);
         if (minSemanticScore != null) {

@@ -95,9 +95,16 @@ export default function AppShell() {
     const parsed = parseSearchInput(searchDraftText);
     if (!parsed.q && Object.keys(parsed.params).length === 0) return;
 
+    const scopeParam = (parsed.params.scope ?? '').trim().toLowerCase();
+    const scope =
+      scopeParam === 'recipes' || scopeParam === 'notes' || scopeParam === 'all'
+        ? scopeParam
+        : undefined;
+
     const nextQuery = {
       ...searchDraft,
       text: parsed.q || '',
+      ...(scope ? { scope: scope as any } : {}),
       filters: {
         ...searchDraft.filters,
         tags: parsed.params.tags

@@ -104,6 +104,7 @@ export default function SearchPage() {
       q: debouncedQ,
       mode: committed.mode as SearchMode,
       limit: clampLimit(committed.limit),
+      scope: committed.scope,
       ...(effectiveSubjectId ? { subjectId: effectiveSubjectId } : {}),
       ...(effectiveTopicId ? { topicId: effectiveTopicId } : {}),
       ...(minSemanticScore !== undefined ? { minSemanticScore } : {}),
@@ -112,6 +113,7 @@ export default function SearchPage() {
       debouncedQ,
       committed.mode,
       committed.limit,
+      committed.scope,
       effectiveSubjectId,
       effectiveTopicId,
       minSemanticScore,
@@ -196,9 +198,16 @@ export default function SearchPage() {
     const parsed = parseSearchInput(draft.text);
     if (!parsed.q && Object.keys(parsed.params).length === 0) return;
 
+    const scopeParam = (parsed.params.scope ?? '').trim().toLowerCase();
+    const scope =
+      scopeParam === 'recipes' || scopeParam === 'notes' || scopeParam === 'all'
+        ? scopeParam
+        : undefined;
+
     const nextQuery = {
       ...committed,
       text: parsed.q || '',
+      ...(scope ? { scope: scope as any } : {}),
       filters: {
         ...committed.filters,
         tags: parsed.params.tags
@@ -328,10 +337,24 @@ export default function SearchPage() {
 
               <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
                 <ToggleButtonGroup
+                  value={committed.scope}
+                  exclusive
+                  onChange={(_e, v) => {
+                    if (!v) return;
+                    const nextQuery = { ...committed, scope: v as any };
+                    applyCommitted(nextQuery);
+                  }}
+                  size="small"
+                >
+                  <ToggleButton value="all">All</ToggleButton>
+                  <ToggleButton value="recipes">Recipes</ToggleButton>
+                </ToggleButtonGroup>
+
+                <ToggleButtonGroup
                   value={committed.mode}
                   exclusive
                   onChange={(_e, v) => {
-                  if (!v) return;
+                    if (!v) return;
                   const nextQuery = { ...committed, mode: v as any };
                   applyCommitted(nextQuery);
                 }}
@@ -416,6 +439,7 @@ export default function SearchPage() {
               <Typography variant="body2" color="text.secondary">
                 {results.length} result{results.length === 1 ? '' : 's'}
                 {data?.mode ? ` • mode: ${data.mode}` : ''}
+                {committed.scope !== 'all' ? ` • scope: ${committed.scope}` : ''}
               </Typography>
             </Box>
             <Box sx={{ px: 2, pb: 1, flexShrink: 0 }}>

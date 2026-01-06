@@ -741,6 +741,13 @@ function toKeywordOnlyResults(hits: SearchHit[], limit: number) {
 function buildNoteFilterFromQuery(query: any): Record<string, any> {
   const filter: Record<string, any> = {};
 
+  const scope = String(query.scope ?? '').trim().toLowerCase();
+  if (scope === 'recipes') {
+    filter.recipe = { $exists: true };
+  } else if (scope === 'notes') {
+    filter.recipe = { $exists: false };
+  }
+
   const subjectId = String(query.subjectId ?? '').trim();
   if (subjectId) filter.subjectId = subjectId;
 
