@@ -14,6 +14,7 @@ import { slugifyStandard, type ApplyImportRequest, type ApplyNoteImportCommand, 
 import { ImportBatchModel } from '../models/ImportBatch';
 import { hashPromptResponsePair } from '../utils/textHash';
 import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
+import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -905,6 +906,7 @@ router.post('/chatworthy/apply', async (req, res, next) => {
         sources: row.provenanceUrl
           ? [{ type: 'chatworthy', url: row.provenanceUrl }]
           : [{ type: 'chatworthy' }],
+        docKind: 'note',
 
         // Chatworthy provenance
         chatworthyNoteId: row.chatworthyNoteId,
@@ -920,6 +922,13 @@ router.post('/chatworthy/apply', async (req, res, next) => {
 
         importedAt: new Date(),
       });
+
+      try {
+        // Best-effort embedding update; consider background queue later.
+        await computeAndPersistEmbeddings(String(doc._id));
+      } catch (err) {
+        console.error('[embeddings] chatworthy import failed', doc._id, err);
+      }
 
       createdNotes.push(doc);
 

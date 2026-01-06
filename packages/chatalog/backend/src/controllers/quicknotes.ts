@@ -5,6 +5,7 @@ import { QuickNoteModel } from '../models/QuickNote';
 import { NoteModel } from '../models/Note';
 import { slugifyAscentStripping } from '@chatorama/chatalog-shared';
 import { dedupeSlug, ensureSubjectTopicExist, toObjectId } from '../utilities';
+import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
 
 const router = Router();
 
@@ -201,7 +202,15 @@ router.post('/:id/convert', async (req, res) => {
       links: [],
       backlinks: [],
       sources: [{ type: 'manual' as const }],
+      docKind: 'note',
     });
+
+    try {
+      // Best-effort embedding update; consider background queue later.
+      await computeAndPersistEmbeddings(String(createdNote._id));
+    } catch (err) {
+      console.error('[embeddings] quicknote convert failed', createdNote._id, err);
+    }
 
     await quick.deleteOne();
 

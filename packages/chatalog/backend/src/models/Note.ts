@@ -17,6 +17,7 @@ export interface NoteDoc extends Document {
   backlinks: string[];
   relations?: NoteRelation[];
   sources?: { url?: string; type?: 'chatworthy'|'clip'|'manual' }[];
+  docKind: 'note' | 'recipe';
   recipe?: RecipeMeta;
   cookedHistory?: CookedEvent[];
 
@@ -25,6 +26,10 @@ export interface NoteDoc extends Document {
   embeddingModel?: string;
   embeddingTextHash?: string;
   embeddingUpdatedAt?: Date;
+  recipeEmbedding?: number[];
+  recipeEmbeddingModel?: string;
+  recipeEmbeddingTextHash?: string;
+  recipeEmbeddingUpdatedAt?: Date;
 
   /** Chatworthy provenance */
   chatworthyNoteId?: string;
@@ -147,6 +152,12 @@ const NoteSchema = new Schema<NoteDoc>(
     embeddingModel: { type: String },
     embeddingTextHash: { type: String, index: true },
     embeddingUpdatedAt: { type: Date },
+    recipeEmbedding: { type: [Number], required: false },
+    recipeEmbeddingModel: { type: String },
+    recipeEmbeddingTextHash: { type: String, index: true },
+    recipeEmbeddingUpdatedAt: { type: Date },
+
+    docKind: { type: String, enum: ['note', 'recipe'], index: true },
 
     // Chatworthy provenance
     chatworthyNoteId:     { type: String, index: true },
@@ -205,6 +216,8 @@ NoteSchema.index({ tags: 1 });
  */
 NoteSchema.index({ embeddingUpdatedAt: -1 });
 NoteSchema.index({ embeddingTextHash: 1, updatedAt: -1 });
+NoteSchema.index({ recipeEmbeddingUpdatedAt: -1 });
+NoteSchema.index({ recipeEmbeddingTextHash: 1, updatedAt: -1 });
 NoteSchema.index({ importBatchId: 1, updatedAt: -1 });
 NoteSchema.index({ sourceType: 1, updatedAt: -1 });
 NoteSchema.index({ chatworthyChatId: 1, updatedAt: -1 });
@@ -228,6 +241,9 @@ const SYSTEM_ONLY_PREFIXES = [
   'embedding',
   'embeddingUpdatedAt',
   'embeddingTextHash',
+  'recipeEmbedding',
+  'recipeEmbeddingUpdatedAt',
+  'recipeEmbeddingTextHash',
 ];
 
 function shouldBumpContentUpdatedAt(modifiedPaths: string[]): boolean {
@@ -249,6 +265,12 @@ function shouldBumpContentUpdatedAt(modifiedPaths: string[]): boolean {
 
 NoteSchema.pre('save', function (next) {
   const doc = this as any;
+  doc.docKind = doc.recipe != null ? 'recipe' : 'note';
+  return next();
+});
+
+NoteSchema.pre('save', function (next) {
+  const doc = this as any;
 
   if (doc.isNew) {
     doc.contentUpdatedAt = doc.contentUpdatedAt ?? doc.createdAt ?? new Date();
@@ -262,6 +284,41 @@ NoteSchema.pre('save', function (next) {
 
   return next();
 });
+
+function syncDocKindInUpdate(this: any) {
+  const update = this.getUpdate?.() ?? {};
+  const $set = update.$set ?? {};
+  const $unset = update.$unset ?? {};
+
+  const setKeys = Object.keys($set);
+
+  const recipeEmbeddingTouched =
+    'recipeEmbedding' in $set ||
+    'recipeEmbedding' in update;
+
+  const recipeFieldTouched =
+    'recipe' in $set ||
+    setKeys.some((k) => k === 'recipe' || k.startsWith('recipe.')) ||
+    'recipe' in update;
+
+  const recipeUnset =
+    'recipe' in $unset ||
+    'recipeEmbedding' in $unset;
+
+  if (recipeEmbeddingTouched) {
+    $set.docKind = 'recipe';
+    update.$set = $set;
+  } else if (recipeFieldTouched) {
+    const recipeValue = 'recipe' in $set ? $set.recipe : (update as any).recipe;
+    $set.docKind = recipeValue == null ? 'note' : 'recipe';
+    update.$set = $set;
+  } else if (recipeUnset) {
+    $set.docKind = 'note';
+    update.$set = $set;
+  }
+
+  this.setUpdate?.(update);
+}
 
 function bumpContentUpdatedAtInUpdate(this: any) {
   const update = this.getUpdate?.() ?? {};
@@ -294,6 +351,10 @@ function bumpContentUpdatedAtInUpdate(this: any) {
     this.setUpdate(update);
   }
 }
+
+NoteSchema.pre('findOneAndUpdate', syncDocKindInUpdate);
+NoteSchema.pre('updateOne', syncDocKindInUpdate);
+NoteSchema.pre('updateMany', syncDocKindInUpdate);
 
 NoteSchema.pre('findOneAndUpdate', bumpContentUpdatedAtInUpdate);
 NoteSchema.pre('updateOne', bumpContentUpdatedAtInUpdate);

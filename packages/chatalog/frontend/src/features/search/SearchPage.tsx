@@ -1,93 +1,155 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { SearchMode } from '@chatorama/chatalog-shared';
-import { useGetSearchQuery } from './searchApi';
+import type { SearchExplain, SearchMode } from '@chatorama/chatalog-shared';
+import {
+  useCreateSavedSearchMutation,
+  useDeleteSavedSearchMutation,
+  useGetRecipeFacetsQuery,
+  useGetSavedSearchesQuery,
+  useSearchMutation,
+} from './searchApi';
 import { useGetSubjectsWithTopicsQuery, resolveSubjectAndTopicNames } from '../subjects/subjectsApi';
 import SearchBox from '../../components/SearchBox';
 import { parseSearchInput } from './queryParser';
+import { useAppDispatch, useAppSelector } from '../../store';
+import {
+  hydrateFromUrl,
+  resetDraftToCommitted,
+  setDraftMinSemanticScore,
+  setDraftMode,
+  setDraftText,
+  setDraftUpdatedFrom,
+  setDraftUpdatedTo,
+  setFiltersDialogOpen,
+  setSelectedScope,
+} from './searchSlice';
+import {
+  selectFiltersDialogOpen,
+  selectLastUsedScope,
+  selectSearchCommitted,
+  selectSearchDraft,
+  selectSearchSpec,
+} from './searchSelectors';
+import {
+  buildSearchUrlFromQuery,
+  getDefaultSearchQuery,
+  parseSearchQueryFromUrl,
+} from './searchUrl';
+import { buildSearchRequestV1 } from './buildSearchRequest';
+import SearchDebugPanel from './debug/SearchDebugPanel';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
   CircularProgress,
+  Collapse,
   Divider,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
+  IconButton,
   List,
   ListItemButton,
   ListItemText,
   Paper,
   Stack,
+  Switch,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
   Typography,
 } from '@mui/material';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 
 function clampLimit(n: number) {
   if (!Number.isFinite(n)) return 20;
   return Math.max(1, Math.min(50, Math.floor(n)));
 }
 
-function useQueryParam(name: string): string {
-  const { search } = useLocation();
-  return useMemo(() => new URLSearchParams(search).get(name) ?? '', [search, name]);
-}
-
 export default function SearchPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams();
-  const qParam = useQueryParam('q');
+  const dispatch = useAppDispatch();
+  const draft = useAppSelector(selectSearchDraft);
+  const committed = useAppSelector(selectSearchCommitted);
+  const selectedScope = useAppSelector((state) => state.search.selectedScope);
+  const lastUsedScope = useAppSelector(selectLastUsedScope);
+  const baseSpec = useAppSelector(selectSearchSpec);
+  const filtersOpen = useAppSelector(selectFiltersDialogOpen);
 
-  const [q, setQ] = useState('');
-  const [queryText, setQueryText] = useState<string>(q ?? '');
-  const [mode, setMode] = useState<SearchMode>('auto');
-  const [limit, setLimit] = useState<number>(20);
   const [activeRowIndex, setActiveRowIndex] = useState<number>(-1);
   const [overrideTopicId, setOverrideTopicId] = useState<string | null>(null);
   const [overrideSubjectId, setOverrideSubjectId] = useState<string | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-
+  const [draftCuisine, setDraftCuisine] = useState<string>('');
+  const [draftCategories, setDraftCategories] = useState<string[]>([]);
+  const [draftKeywords, setDraftKeywords] = useState<string[]>([]);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string>('');
+  const [explainEnabled, setExplainEnabled] = useState(false);
+  const [explainOpenById, setExplainOpenById] = useState<Record<string, boolean>>({});
   useEffect(() => {
-    const nextQ = qParam.trim();
-    if (nextQ !== q) setQ(nextQ);
-  }, [qParam, q]);
+    dispatch(
+      hydrateFromUrl(parseSearchQueryFromUrl(location.search, { fallbackScope: lastUsedScope })),
+    );
+  }, [dispatch, location.search, lastUsedScope]);
 
-  useEffect(() => {
-    setQueryText(q ?? '');
-  }, [q]);
+  const topicIdFromQuery = committed.filters.topicId ?? '';
+  const subjectIdFromQuery = committed.filters.subjectId ?? '';
+  const statusFromQuery = committed.filters.status ?? '';
+  const tagsFromQuery = committed.filters.tags ?? [];
+  const updatedFrom = committed.filters.updatedFrom ?? '';
+  const updatedTo = committed.filters.updatedTo ?? '';
+  const minSemanticScore = committed.filters.minSemanticScore;
+  const maxPrepMinutes = committed.filters.prepTimeMax;
+  const maxCookMinutes = committed.filters.cookTimeMax;
+  const maxTotalMinutes = committed.filters.totalTimeMax;
+  const cuisineValues = (committed.filters.cuisine ?? []).map((t) => t.trim()).filter(Boolean);
+  const categoryValues = (committed.filters.category ?? []).map((t) => t.trim()).filter(Boolean);
+  const keywordValues = (committed.filters.keywords ?? []).map((t) => t.trim()).filter(Boolean);
+  const isRecipeScope = selectedScope === 'recipes';
+  const { data: recipeFacets } = useGetRecipeFacetsQuery(undefined, { skip: !isRecipeScope });
+  const { data: savedSearchesData } = useGetSavedSearchesQuery();
+  const savedSearches = savedSearchesData?.items ?? [];
+  const [createSavedSearch, createSavedSearchState] = useCreateSavedSearchMutation();
+  const [deleteSavedSearch] = useDeleteSavedSearchMutation();
 
-  const urlParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const cuisineCounts = useMemo(() => {
+    return new Map((recipeFacets?.cuisines ?? []).map((b) => [b.value, b.count]));
+  }, [recipeFacets]);
 
-  const topicIdFromQuery = urlParams.get('topicId')?.trim() || '';
-  const subjectIdFromQuery = urlParams.get('subjectId')?.trim() || '';
-  const statusFromQuery = urlParams.get('status')?.trim() || '';
-  const tagsFromQueryRaw = urlParams.get('tags')?.trim() || '';
-  const tagsFromQuery = tagsFromQueryRaw
-    ? tagsFromQueryRaw.split(',').map((t) => t.trim()).filter(Boolean)
-    : [];
-  const updatedFrom = urlParams.get('updatedFrom')?.trim() || '';
-  const updatedTo = urlParams.get('updatedTo')?.trim() || '';
-  const minSemanticScoreFromQueryRaw = urlParams.get('minSemanticScore');
-  const minSemanticScoreFromQuery =
-    minSemanticScoreFromQueryRaw != null && minSemanticScoreFromQueryRaw.trim() !== ''
-      ? Number(minSemanticScoreFromQueryRaw)
-      : undefined;
-  const minSemanticScore = Number.isFinite(minSemanticScoreFromQuery as any)
-    ? Math.max(0, Math.min(1, minSemanticScoreFromQuery as number))
-    : undefined;
+  const categoryCounts = useMemo(() => {
+    return new Map((recipeFacets?.categories ?? []).map((b) => [b.value, b.count]));
+  }, [recipeFacets]);
 
-  const [draftMode, setDraftMode] = useState<string>(mode !== 'auto' ? mode : 'hybrid');
-  const [draftMinSemantic, setDraftMinSemantic] = useState<number | ''>(
-    minSemanticScore !== undefined ? minSemanticScore : '',
-  );
-  const [draftUpdatedFrom, setDraftUpdatedFrom] = useState<string>(updatedFrom || '');
-  const [draftUpdatedTo, setDraftUpdatedTo] = useState<string>(updatedTo || '');
+  const keywordCounts = useMemo(() => {
+    return new Map((recipeFacets?.keywords ?? []).map((b) => [b.value, b.count]));
+  }, [recipeFacets]);
+
+  const cuisineOptions = useMemo(() => {
+    const vals = new Set((recipeFacets?.cuisines ?? []).map((b) => b.value));
+    if (draftCuisine) vals.add(draftCuisine);
+    return Array.from(vals);
+  }, [recipeFacets, draftCuisine]);
+
+  const categoryOptions = useMemo(() => {
+    const vals = new Set((recipeFacets?.categories ?? []).map((b) => b.value));
+    draftCategories.forEach((v) => vals.add(v));
+    return Array.from(vals);
+  }, [recipeFacets, draftCategories]);
+
+  const keywordOptions = useMemo(() => {
+    const vals = new Set((recipeFacets?.keywords ?? []).map((b) => b.value));
+    draftKeywords.forEach((v) => vals.add(v));
+    return Array.from(vals);
+  }, [recipeFacets, draftKeywords]);
+
 
   const stateAny = (location.state ?? {}) as any;
   const topicIdFromState = String(stateAny.topicId ?? '').trim();
@@ -106,30 +168,145 @@ export default function SearchPage() {
       ? overrideSubjectId
       : subjectIdFromQuery || subjectIdFromState || subjectIdFromRoute || undefined;
 
-  const trimmedQ = q.trim();
+  const trimmedQ = committed.text.trim();
   const debouncedQ = useDebouncedValue(trimmedQ, 350);
-  const shouldQuery = debouncedQ.length > 0;
+  const normalizedQuery = debouncedQ.trim();
+  const isEmptyQuery = normalizedQuery.length === 0;
+  const treatedAsWildcard = isEmptyQuery || normalizedQuery === '*';
+  const shouldQuery = true;
   const highlightTokens = useMemo(
-    () => tokenizeForHighlight(debouncedQ || trimmedQ || q),
-    [debouncedQ, trimmedQ, q],
+    () => tokenizeForHighlight(debouncedQ || trimmedQ || committed.text),
+    [debouncedQ, trimmedQ, committed.text],
   );
 
-  const args = useMemo(
+  const effectiveScope = selectedScope;
+
+  const effectiveSpec = useMemo(
     () => ({
-      q: debouncedQ,
-      mode,
-      limit: clampLimit(limit),
-      ...(effectiveSubjectId ? { subjectId: effectiveSubjectId } : {}),
-      ...(effectiveTopicId ? { topicId: effectiveTopicId } : {}),
-      ...(minSemanticScore !== undefined ? { minSemanticScore } : {}),
+      ...baseSpec,
+      scope: effectiveScope,
+      filters: {
+        ...baseSpec.filters,
+        subjectId: effectiveSubjectId ?? baseSpec.filters.subjectId,
+        topicId: effectiveTopicId ?? baseSpec.filters.topicId,
+        minSemanticScore,
+        prepTimeMax: effectiveScope === 'recipes' ? maxPrepMinutes : undefined,
+        cookTimeMax: effectiveScope === 'recipes' ? maxCookMinutes : undefined,
+        totalTimeMax: effectiveScope === 'recipes' ? maxTotalMinutes : undefined,
+        cuisine: effectiveScope === 'recipes' ? cuisineValues : [],
+        category: effectiveScope === 'recipes' ? categoryValues : [],
+        keywords: effectiveScope === 'recipes' ? keywordValues : [],
+        includeIngredients:
+          effectiveScope === 'recipes'
+            ? (committed.filters.includeIngredients ?? []).map((t) => t.trim()).filter(Boolean)
+            : [],
+        excludeIngredients:
+          effectiveScope === 'recipes'
+            ? (committed.filters.excludeIngredients ?? []).map((t) => t.trim()).filter(Boolean)
+            : [],
+      },
     }),
-    [debouncedQ, mode, limit, effectiveSubjectId, effectiveTopicId, minSemanticScore],
+    [
+      baseSpec,
+      effectiveScope,
+      effectiveSubjectId,
+      effectiveTopicId,
+      minSemanticScore,
+      maxPrepMinutes,
+      maxCookMinutes,
+      maxTotalMinutes,
+      cuisineValues,
+      categoryValues,
+      keywordValues,
+      committed.filters.includeIngredients,
+      committed.filters.excludeIngredients,
+    ],
   );
 
-  const { data, error, isFetching } = useGetSearchQuery(args, { skip: !shouldQuery });
+  const resolvedIntent = useMemo(
+    () => ({
+      mode: treatedAsWildcard ? 'browse' : 'semantic',
+      normalizedQuery,
+      queryText: treatedAsWildcard ? null : normalizedQuery,
+      scope: effectiveScope,
+      filters: effectiveSpec.filters,
+      sort: treatedAsWildcard ? 'recent' : 'relevance',
+      debug: { isEmptyQuery, treatedAsWildcard },
+    }),
+    [
+      treatedAsWildcard,
+      normalizedQuery,
+      effectiveScope,
+      effectiveSpec.filters,
+      isEmptyQuery,
+    ],
+  );
+
+  const requestSpec = useMemo(
+    () => ({
+      ...effectiveSpec,
+      query: resolvedIntent.normalizedQuery,
+      mode: committed.mode as SearchMode,
+      limit: clampLimit(committed.limit),
+      explain: explainEnabled && committed.mode === 'hybrid',
+    }),
+    [
+      effectiveSpec,
+      resolvedIntent,
+      committed.mode,
+      committed.limit,
+      explainEnabled,
+    ],
+  );
+
+  const requestBody = useMemo(() => buildSearchRequestV1(requestSpec), [requestSpec]);
+  const requestForDebug = requestBody;
+  const requestKey = useMemo(() => JSON.stringify(requestBody), [requestBody]);
+
+  const [search, searchState] = useSearchMutation();
+  const { data, error, isLoading, isSuccess, isError, isUninitialized } = searchState;
+  const isFetching = isLoading;
   const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery();
 
-  const results = data?.results ?? [];
+  useEffect(() => {
+    search(requestBody);
+  }, [search, requestKey]);
+
+  type UiSearchResult = {
+    id: string;
+    title: string;
+    summary?: string;
+    snippet?: string;
+    subjectId?: string;
+    topicId?: string;
+    updatedAt?: string;
+    score: number;
+    semanticScore?: number;
+    textScore?: number;
+    docKind?: string;
+    sources: Array<'semantic' | 'keyword'>;
+    explain?: SearchExplain;
+  };
+
+  const results = useMemo<UiSearchResult[]>(
+    () =>
+      (data?.hits ?? []).map((hit: any) => ({
+        id: String(hit.id),
+        title: String(hit.title ?? ''),
+        summary: undefined,
+        snippet: hit.snippet ? String(hit.snippet) : undefined,
+        subjectId: hit.subjectId ? String(hit.subjectId) : undefined,
+        topicId: hit.topicId ? String(hit.topicId) : undefined,
+        updatedAt: hit.updatedAt ? String(hit.updatedAt) : undefined,
+        score: typeof hit.score === 'number' ? hit.score : Number(hit.score ?? 0),
+        semanticScore: undefined,
+        textScore: typeof hit.score === 'number' ? hit.score : Number(hit.score ?? 0),
+        docKind: hit.docKind ?? 'note',
+        sources: ['keyword'] as Array<'semantic' | 'keyword'>,
+        explain: undefined,
+      })),
+    [data?.hits],
+  );
   const { subjectName: effectiveSubjectName, topicName: effectiveTopicName } = useMemo(() => {
     if (!effectiveSubjectId && !effectiveTopicId) {
       return { subjectName: undefined, topicName: undefined };
@@ -163,7 +340,7 @@ export default function SearchPage() {
     | { kind: 'result'; id: string; r: (typeof results)[number] };
 
   const displayRows: DisplayRow[] = useMemo(() => {
-    if (mode !== 'hybrid') {
+    if (committed.mode !== 'hybrid') {
       return (results ?? []).map((r) => ({ kind: 'result' as const, id: r.id, r }));
     }
 
@@ -182,7 +359,7 @@ export default function SearchPage() {
     }
 
     return rows;
-  }, [mode, results, keywordResults, semanticOnlyResults]);
+  }, [committed.mode, results, keywordResults, semanticOnlyResults]);
 
   const selectableRowIndexes = useMemo(() => {
     const idxs: number[] = [];
@@ -192,114 +369,159 @@ export default function SearchPage() {
     return idxs;
   }, [displayRows]);
 
-  const currentParamMap = useMemo(
-    () =>
-      toParamMap({
-        q: trimmedQ,
-        mode,
-        subjectId: effectiveSubjectId,
-        topicId: effectiveTopicId,
-        status: statusFromQuery,
-        tags: tagsFromQuery,
-        updatedFrom,
-        updatedTo,
-        minSemanticScore,
-      }),
-    [
-      trimmedQ,
-      mode,
-      effectiveSubjectId,
-      effectiveTopicId,
-      statusFromQuery,
-      tagsFromQuery,
-      updatedFrom,
-      updatedTo,
-      minSemanticScore,
-    ],
+  const toggleExplainForId = useCallback((id: string) => {
+    setExplainOpenById((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  const formatExplainNumber = useCallback((value?: number) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return 'n/a';
+    return value.toFixed(4);
+  }, []);
+
+  const applyCommitted = useCallback(
+    (nextQuery: typeof committed) => {
+      dispatch(hydrateFromUrl(nextQuery));
+      navigate(buildSearchUrlFromQuery(nextQuery));
+    },
+    [dispatch, navigate],
   );
 
-  const goWithParams = useCallback(
-    (nextMap: Record<string, string | undefined | null>) => {
-      navigate(buildSearchUrl(nextMap));
-    },
-    [navigate],
-  );
+  const normalizeSavedQuery = useCallback((q: typeof committed) => {
+    const base = getDefaultSearchQuery();
+    return {
+      ...base,
+      ...q,
+      filters: {
+        ...base.filters,
+        ...(q?.filters ?? {}),
+      },
+    };
+  }, []);
 
   const onSubmitQuery = () => {
-    const parsed = parseSearchInput(queryText);
-    if (!parsed.q && Object.keys(parsed.params).length === 0) return;
-
-    const next = { ...currentParamMap };
-    if (parsed.q) next.q = parsed.q;
-    else delete (next as any).q;
-
-    for (const [k, v] of Object.entries(parsed.params)) {
-      if (v) (next as any)[k] = String(v);
-      else delete (next as any)[k];
+    const parsed = parseSearchInput(draft.text);
+    const nextText = (parsed.q ?? '').trim();
+    const scopeParam = (parsed.params.scope ?? '').trim().toLowerCase();
+    const scope =
+      scopeParam === 'recipes' || scopeParam === 'notes' || scopeParam === 'all'
+        ? scopeParam
+        : undefined;
+    if (scope) {
+      dispatch(setSelectedScope(scope as any));
     }
 
-    goWithParams(next);
+    const nextQuery = {
+      ...committed,
+      text: nextText,
+      scope: (scope ?? selectedScope) as any,
+      filters: {
+        ...committed.filters,
+        tags: parsed.params.tags
+          ? parsed.params.tags.split(',').map((t) => t.trim()).filter(Boolean)
+          : [],
+        status: parsed.params.status?.trim() || undefined,
+        updatedFrom: parsed.params.updatedFrom?.trim() || undefined,
+        updatedTo: parsed.params.updatedTo?.trim() || undefined,
+      },
+    };
+
+    applyCommitted(nextQuery);
   };
 
   const openFilters = () => {
-    setDraftMode(mode !== 'auto' ? mode : 'hybrid');
-    setDraftMinSemantic(minSemanticScore !== undefined ? minSemanticScore : '');
-    setDraftUpdatedFrom(updatedFrom || '');
-    setDraftUpdatedTo(updatedTo || '');
-    setFiltersOpen(true);
+    dispatch(resetDraftToCommitted());
+    setDraftCuisine(cuisineValues[0] ?? '');
+    setDraftCategories(categoryValues);
+    setDraftKeywords(keywordValues);
+    dispatch(setFiltersDialogOpen(true));
   };
 
   const applyDraftFilters = () => {
-    const next = { ...currentParamMap };
-    next.mode = draftMode;
-    setMode(draftMode as SearchMode);
+    const nextFilters = { ...draft.filters };
+    if (isRecipeScope) {
+      const cuisine = draftCuisine.trim();
+      nextFilters.cuisine = cuisine ? [cuisine] : [];
 
-    if (draftMinSemantic === '' || Number.isNaN(Number(draftMinSemantic))) {
-      delete (next as any).minSemanticScore;
-    } else {
-      next.minSemanticScore = String(draftMinSemantic);
+      const categories = draftCategories
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+      nextFilters.category = categories;
+
+      const keywords = draftKeywords
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+      nextFilters.keywords = keywords;
     }
 
-    if (!draftUpdatedFrom.trim()) delete (next as any).updatedFrom;
-    else next.updatedFrom = draftUpdatedFrom.trim();
-
-    if (!draftUpdatedTo.trim()) delete (next as any).updatedTo;
-    else next.updatedTo = draftUpdatedTo.trim();
-
-    goWithParams(next);
-    setFiltersOpen(false);
+    const nextQuery = { ...draft, filters: nextFilters };
+    dispatch(hydrateFromUrl(nextQuery));
+    navigate(buildSearchUrlFromQuery(nextQuery));
+    dispatch(setFiltersDialogOpen(false));
   };
 
   const clearDraftAndApply = () => {
-    const next = { ...currentParamMap };
-    delete (next as any).mode;
-    delete (next as any).minSemanticScore;
-    delete (next as any).updatedFrom;
-    delete (next as any).updatedTo;
-    setMode('auto');
-    goWithParams(next);
-    setFiltersOpen(false);
+    const nextQuery = {
+      ...committed,
+      mode: 'auto' as const,
+      filters: {
+        ...committed.filters,
+        minSemanticScore: undefined,
+        updatedFrom: undefined,
+        updatedTo: undefined,
+        ...(isRecipeScope
+          ? {
+            cuisine: [],
+            category: [],
+            keywords: [],
+          }
+          : {}),
+      },
+    };
+    setDraftCuisine('');
+    setDraftCategories([]);
+    setDraftKeywords([]);
+    applyCommitted(nextQuery);
+    dispatch(setFiltersDialogOpen(false));
   };
-
-  const removeParam = useCallback(
-    (key: string) => {
-      const next = { ...currentParamMap };
-      delete (next as any)[key];
-      goWithParams(next);
-    },
-    [currentParamMap, goWithParams],
-  );
 
   const hasAnyFilterChips = Boolean(
     effectiveSubjectId ||
-      effectiveTopicId ||
-      statusFromQuery ||
-      tagsFromQuery.length ||
-      updatedFrom ||
-      updatedTo ||
-      minSemanticScore !== undefined ||
-      (mode && mode !== 'auto'),
+    effectiveTopicId ||
+    statusFromQuery ||
+    tagsFromQuery.length ||
+    updatedFrom ||
+    updatedTo ||
+    minSemanticScore !== undefined ||
+    (isRecipeScope &&
+      (cuisineValues.length || categoryValues.length || keywordValues.length)) ||
+    (committed.mode && committed.mode !== 'auto'),
   );
+
+  const openSaveDialog = () => {
+    setSaveName('');
+    setSaveErrorMessage('');
+    setSaveDialogOpen(true);
+  };
+
+  const saveCurrentSearch = async () => {
+    const name = saveName.trim();
+    if (!name) return;
+    const queryToSave = committed;
+    try {
+      await createSavedSearch({ name, query: queryToSave }).unwrap();
+      setSaveDialogOpen(false);
+      setSaveName('');
+      setSaveErrorMessage('');
+    } catch (err: any) {
+      if (err?.status === 409) {
+        setSaveErrorMessage('A saved search with this name already exists.');
+      } else {
+        setSaveErrorMessage('Failed to save search.');
+      }
+    }
+  };
 
   useEffect(() => {
     setActiveRowIndex(-1);
@@ -358,7 +580,7 @@ export default function SearchPage() {
                 <Box sx={{ width: '100%' }}>
                   <TextField
                     label="Query (read-only)"
-                    value={q}
+                    value={committed.text}
                     placeholder="Type to search..."
                     autoFocus
                     fullWidth
@@ -378,10 +600,31 @@ export default function SearchPage() {
 
               <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
                 <ToggleButtonGroup
-                  value={mode}
+                  value={selectedScope}
                   exclusive
                   onChange={(_e, v) => {
-                    if (v) setMode(v);
+                    if (!v) return;
+                    dispatch(setSelectedScope(v as any));
+                    const nextQuery = {
+                      ...committed,
+                      scope: v as any,
+                    };
+                    applyCommitted(nextQuery);
+                  }}
+                  size="small"
+                >
+                  <ToggleButton value="all">All</ToggleButton>
+                  <ToggleButton value="notes">Notes</ToggleButton>
+                  <ToggleButton value="recipes">Recipes</ToggleButton>
+                </ToggleButtonGroup>
+
+                <ToggleButtonGroup
+                  value={committed.mode}
+                  exclusive
+                  onChange={(_e, v) => {
+                    if (!v) return;
+                    const nextQuery = { ...committed, mode: v as any };
+                    applyCommitted(nextQuery);
                   }}
                   size="small"
                 >
@@ -394,8 +637,12 @@ export default function SearchPage() {
                 <TextField
                   label="Limit"
                   type="number"
-                  value={limit}
-                  onChange={(e) => setLimit(Number(e.target.value))}
+                  value={committed.limit}
+                  onChange={(e) => {
+                    const nextLimit = clampLimit(Number(e.target.value));
+                    const nextQuery = { ...committed, limit: nextLimit };
+                    applyCommitted(nextQuery);
+                  }}
                   inputProps={{ min: 1, max: 50, step: 1 }}
                   size="small"
                   sx={{ width: 120 }}
@@ -414,12 +661,21 @@ export default function SearchPage() {
                   <Chip
                     label={`Within: ${[
                       effectiveSubjectName ??
-                        (effectiveSubjectId ? `Subject ${effectiveSubjectId}` : ''),
+                      (effectiveSubjectId ? `Subject ${effectiveSubjectId}` : ''),
                       effectiveTopicName ?? (effectiveTopicId ? `Topic ${effectiveTopicId}` : ''),
                     ]
                       .filter(Boolean)
                       .join(' / ')}`}
                     onDelete={() => {
+                      const nextQuery = {
+                        ...committed,
+                        filters: {
+                          ...committed.filters,
+                          subjectId: undefined,
+                          topicId: undefined,
+                        },
+                      };
+                      applyCommitted(nextQuery);
                       setOverrideSubjectId('');
                       setOverrideTopicId('');
                     }}
@@ -443,6 +699,57 @@ export default function SearchPage() {
           ) : null}
         </Stack>
       </Box>
+      <Box sx={{ mt: 2 }}>
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Stack spacing={1}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="subtitle2">Saved searches</Typography>
+              <Button size="small" variant="outlined" onClick={openSaveDialog}>
+                Save search…
+              </Button>
+            </Stack>
+            {savedSearches.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                None yet.
+              </Typography>
+            ) : (
+              <Stack spacing={0.5}>
+                {savedSearches.map((s) => (
+                  <Stack
+                    key={s.id}
+                    direction="row"
+                    spacing={1}
+                    alignItems="center"
+                    sx={{ width: '100%' }}
+                  >
+                    <Button
+                      size="small"
+                      variant="text"
+                      onClick={() => {
+                        const normalized = normalizeSavedQuery(s.query as any);
+                        applyCommitted(normalized);
+                      }}
+                      sx={{ justifyContent: 'flex-start', textTransform: 'none' }}
+                      fullWidth
+                    >
+                      {s.name}
+                    </Button>
+                    <Tooltip title="Delete saved search">
+                      <IconButton
+                        size="small"
+                        onClick={() => deleteSavedSearch(s.id)}
+                        aria-label={`Delete ${s.name}`}
+                      >
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                ))}
+              </Stack>
+            )}
+          </Stack>
+        </Paper>
+      </Box>
 
       <Box sx={{ flex: 1, minHeight: 0, mt: 2 }}>
         {shouldQuery ? (
@@ -450,15 +757,16 @@ export default function SearchPage() {
             <Box sx={{ px: 2, py: 1, flexShrink: 0 }}>
               <Typography variant="body2" color="text.secondary">
                 {results.length} result{results.length === 1 ? '' : 's'}
-                {data?.mode ? ` • mode: ${data.mode}` : ''}
+                {committed.mode ? ` • mode: ${committed.mode}` : ''}
+                {selectedScope !== 'all' ? ` • scope: ${selectedScope}` : ''}
               </Typography>
             </Box>
             <Box sx={{ px: 2, pb: 1, flexShrink: 0 }}>
               <SearchBox
-                value={queryText}
-                onChange={setQueryText}
+                value={draft.text}
+                onChange={(v) => dispatch(setDraftText(v))}
                 onSubmit={onSubmitQuery}
-                placeholder="Search notes…"
+                placeholder="Search…"
                 sx={(theme) => ({
                   width: '100%',
                   maxWidth: 720,
@@ -476,26 +784,38 @@ export default function SearchPage() {
                       <Chip
                         label={`Within: ${[
                           effectiveSubjectName ??
-                            (effectiveSubjectId ? `Subject ${effectiveSubjectId}` : ''),
+                          (effectiveSubjectId ? `Subject ${effectiveSubjectId}` : ''),
                           effectiveTopicName ?? (effectiveTopicId ? `Topic ${effectiveTopicId}` : ''),
                         ]
                           .filter(Boolean)
                           .join(' / ')}`}
                         onDelete={() => {
-                          const next = { ...currentParamMap };
-                          delete (next as any).subjectId;
-                          delete (next as any).topicId;
-                          goWithParams(next);
+                          const nextQuery = {
+                            ...committed,
+                            filters: {
+                              ...committed.filters,
+                              subjectId: undefined,
+                              topicId: undefined,
+                            },
+                          };
+                          applyCommitted(nextQuery);
+                          setOverrideSubjectId('');
+                          setOverrideTopicId('');
                         }}
                         size="small"
                         variant="outlined"
                       />
                     ) : null}
 
-                    {mode && mode !== 'auto' ? (
+                    {committed.mode && committed.mode !== 'auto' ? (
                       <Chip
-                        label={`Mode: ${mode}`}
-                        onDelete={() => removeParam('mode')}
+                        label={`Mode: ${committed.mode}`}
+                        onDelete={() =>
+                          applyCommitted({
+                            ...committed,
+                            mode: 'auto',
+                          })
+                        }
                         size="small"
                         variant="outlined"
                       />
@@ -504,7 +824,12 @@ export default function SearchPage() {
                     {minSemanticScore !== undefined ? (
                       <Chip
                         label={`Min semantic: ≥ ${minSemanticScore.toFixed(2)}`}
-                        onDelete={() => removeParam('minSemanticScore')}
+                        onDelete={() =>
+                          applyCommitted({
+                            ...committed,
+                            filters: { ...committed.filters, minSemanticScore: undefined },
+                          })
+                        }
                         size="small"
                         variant="outlined"
                       />
@@ -513,7 +838,12 @@ export default function SearchPage() {
                     {statusFromQuery ? (
                       <Chip
                         label={`Status: ${statusFromQuery}`}
-                        onDelete={() => removeParam('status')}
+                        onDelete={() =>
+                          applyCommitted({
+                            ...committed,
+                            filters: { ...committed.filters, status: undefined },
+                          })
+                        }
                         size="small"
                         variant="outlined"
                       />
@@ -525,18 +855,10 @@ export default function SearchPage() {
                         label={`Tag: ${t}`}
                         onDelete={() => {
                           const nextTags = tagsFromQuery.filter((x) => x !== t);
-                          const next = toParamMap({
-                            q: trimmedQ,
-                            mode,
-                            subjectId: effectiveSubjectId,
-                            topicId: effectiveTopicId,
-                            status: statusFromQuery,
-                            tags: nextTags,
-                            updatedFrom,
-                            updatedTo,
-                            minSemanticScore,
+                          applyCommitted({
+                            ...committed,
+                            filters: { ...committed.filters, tags: nextTags },
                           });
-                          goWithParams(next);
                         }}
                         size="small"
                         variant="outlined"
@@ -546,7 +868,12 @@ export default function SearchPage() {
                     {updatedFrom ? (
                       <Chip
                         label={`Content updated from: ${updatedFrom}`}
-                        onDelete={() => removeParam('updatedFrom')}
+                        onDelete={() =>
+                          applyCommitted({
+                            ...committed,
+                            filters: { ...committed.filters, updatedFrom: undefined },
+                          })
+                        }
                         size="small"
                         variant="outlined"
                       />
@@ -555,13 +882,92 @@ export default function SearchPage() {
                     {updatedTo ? (
                       <Chip
                         label={`Content updated to: ${updatedTo}`}
-                        onDelete={() => removeParam('updatedTo')}
+                        onDelete={() =>
+                          applyCommitted({
+                            ...committed,
+                            filters: { ...committed.filters, updatedTo: undefined },
+                          })
+                        }
                         size="small"
                         variant="outlined"
                       />
                     ) : null}
+
+                    {isRecipeScope
+                      ? cuisineValues.map((c) => (
+                        <Chip
+                          key={`cuisine-${c}`}
+                          label={`Cuisine: ${c}`}
+                          onDelete={() => {
+                            const nextCuisine = cuisineValues.filter((x) => x !== c);
+                            applyCommitted({
+                              ...committed,
+                              filters: {
+                                ...committed.filters,
+                                cuisine: nextCuisine.sort((a, b) => a.localeCompare(b)),
+                              },
+                            });
+                          }}
+                          size="small"
+                          variant="outlined"
+                        />
+                      ))
+                      : null}
+
+                    {isRecipeScope
+                      ? categoryValues.map((c) => (
+                        <Chip
+                          key={`category-${c}`}
+                          label={`Category: ${c}`}
+                          onDelete={() => {
+                            const nextCategories = categoryValues.filter((x) => x !== c);
+                            applyCommitted({
+                              ...committed,
+                              filters: {
+                                ...committed.filters,
+                                category: nextCategories.sort((a, b) => a.localeCompare(b)),
+                              },
+                            });
+                          }}
+                          size="small"
+                          variant="outlined"
+                        />
+                      ))
+                      : null}
+
+                    {isRecipeScope
+                      ? keywordValues.map((k) => (
+                        <Chip
+                          key={`keyword-${k}`}
+                          label={`Keyword: ${k}`}
+                          onDelete={() => {
+                            const nextKeywords = keywordValues.filter((x) => x !== k);
+                            applyCommitted({
+                              ...committed,
+                              filters: {
+                                ...committed.filters,
+                                keywords: nextKeywords.sort((a, b) => a.localeCompare(b)),
+                              },
+                            });
+                          }}
+                          size="small"
+                          variant="outlined"
+                        />
+                      ))
+                      : null}
                   </>
                 )}
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={explainEnabled}
+                      onChange={(_e, checked) => setExplainEnabled(checked)}
+                      disabled={committed.mode !== 'hybrid'}
+                    />
+                  }
+                  label="Explain results"
+                />
 
                 <Button size="small" variant="outlined" onClick={openFilters}>
                   Add filters…
@@ -595,60 +1001,168 @@ export default function SearchPage() {
 
                   const r = row.r;
                   const selected = i === activeRowIndex;
+                  const explain = r.explain;
+                  const canExplain = committed.mode === 'hybrid' && explainEnabled && !!explain;
+                  const explainOpen = Boolean(explainOpenById[r.id]);
 
                   return (
-                    <ListItemButton
-                      key={row.id}
-                      alignItems="flex-start"
-                      selected={selected}
-                      onMouseEnter={() => setActiveRowIndex(i)}
-                      onClick={() => {
-                        navigate(getNoteRoute(r.id));
-                      }}
-                    >
-                      <ListItemText
-                        primary={
-                          <Stack direction="row" spacing={1} alignItems="baseline" flexWrap="wrap">
-                            <Typography
-                              component="a"
-                              href={`/n/${r.id}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              variant="subtitle1"
-                              sx={{
-                                mr: 1,
-                                fontWeight: 600,
-                                textDecoration: 'none',
-                                color: 'inherit',
-                                '&:hover': { textDecoration: 'underline' },
-                              }}
-                            >
-                              {r.title || '(Untitled)'}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              score: {Number(r.score).toFixed(3)}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              • sources: {r.sources.join(', ')}
-                            </Typography>
-                          </Stack>
-                        }
-                        secondary={
-                          r.snippet ? (
-                            <Typography variant="body2" color="text.secondary">
-                              {r.sources?.includes('keyword')
-                                ? renderHighlightedSnippet(r.snippet, highlightTokens)
-                                : r.snippet}
-                            </Typography>
-                          ) : r.summary ? (
-                            <Typography variant="body2" color="text.secondary">
-                              {r.summary}
-                            </Typography>
-                          ) : null
-                        }
-                      />
-                    </ListItemButton>
+                    <Box key={row.id}>
+                      <ListItemButton
+                        alignItems="flex-start"
+                        selected={selected}
+                        onMouseEnter={() => setActiveRowIndex(i)}
+                        onClick={() => {
+                          navigate(getNoteRoute(r.id));
+                        }}
+                      >
+                        <ListItemText
+                          primary={
+                            <Stack direction="row" spacing={1} alignItems="baseline" flexWrap="wrap">
+                              <Typography
+                                component="a"
+                                href={`/n/${r.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                variant="subtitle1"
+                                sx={{
+                                  mr: 1,
+                                  fontWeight: 600,
+                                  textDecoration: 'none',
+                                  color: 'inherit',
+                                  '&:hover': { textDecoration: 'underline' },
+                                }}
+                              >
+                                {r.title || '(Untitled)'}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                score: {Number(r.score).toFixed(3)}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                • sources: {r.sources.join(', ')}
+                              </Typography>
+                              {canExplain ? (
+                                <Button
+                                  size="small"
+                                  variant="text"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    toggleExplainForId(r.id);
+                                  }}
+                                >
+                                  Why this matched
+                                </Button>
+                              ) : null}
+                            </Stack>
+                          }
+                          secondary={
+                            r.snippet ? (
+                              <Typography variant="body2" color="text.secondary">
+                                {r.sources?.includes('keyword')
+                                  ? renderHighlightedSnippet(r.snippet, highlightTokens)
+                                  : r.snippet}
+                              </Typography>
+                            ) : r.summary ? (
+                              <Typography variant="body2" color="text.secondary">
+                                {r.summary}
+                              </Typography>
+                            ) : null
+                          }
+                        />
+                      </ListItemButton>
+                      {canExplain ? (
+                        <Collapse in={explainOpen} timeout="auto" unmountOnExit>
+                          <Box sx={{ px: 2, pb: 1.5 }}>
+                            <Stack spacing={1}>
+                              <Box
+                                sx={{
+                                  bgcolor: 'action.hover',
+                                  px: 1,
+                                  py: 0.5,
+                                  borderRadius: 1,
+                                }}
+                              >
+                                <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                                  {explain?.sources?.keyword && explain?.sources?.semantic
+                                    ? 'Matched by keyword and semantic similarity'
+                                    : explain?.sources?.keyword
+                                    ? 'Matched by keyword only'
+                                    : 'Matched by semantic similarity only'}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {(() => {
+                                    const keywordContribution =
+                                      explain?.fusion?.contributions?.keyword;
+                                    const semanticContribution =
+                                      explain?.fusion?.contributions?.semantic;
+                                    if (keywordContribution == null || semanticContribution == null) {
+                                      return keywordContribution != null
+                                        ? 'Ranking dominated by keyword match'
+                                        : 'Ranking dominated by semantic similarity';
+                                    }
+                                    if (keywordContribution > semanticContribution) {
+                                      return 'Ranking dominated by keyword match';
+                                    }
+                                    if (semanticContribution > keywordContribution) {
+                                      return 'Ranking dominated by semantic similarity';
+                                    }
+                                    return 'Keyword and semantic contributed equally';
+                                  })()}
+                                </Typography>
+                              </Box>
+                              <Box>
+                                <Typography variant="overline" color="text.secondary">
+                                  Source details
+                                </Typography>
+                                <Stack spacing={0.5}>
+                                  {explain?.sources?.keyword?.rank != null ? (
+                                    <Typography variant="caption" color="text.secondary">
+                                      Keyword rank: {explain.sources.keyword.rank}
+                                      {explain?.fusion?.contributions?.keyword != null &&
+                                      explain?.fusion?.k != null
+                                        ? ` • 1 / (${explain.fusion.k} + ${explain.sources.keyword.rank}) = ${formatExplainNumber(
+                                            explain.fusion.contributions.keyword,
+                                          )}`
+                                        : ''}
+                                    </Typography>
+                                  ) : null}
+                                  {explain?.sources?.semantic?.rank != null ? (
+                                    <Typography variant="caption" color="text.secondary">
+                                      Semantic rank: {explain.sources.semantic.rank}
+                                      {explain?.sources?.semantic?.score != null
+                                        ? ` • raw score: ${formatExplainNumber(
+                                            explain.sources.semantic.score,
+                                          )}`
+                                        : ''}
+                                      {explain?.fusion?.contributions?.semantic != null &&
+                                      explain?.fusion?.k != null
+                                        ? ` • 1 / (${explain.fusion.k} + ${explain.sources.semantic.rank}) = ${formatExplainNumber(
+                                            explain.fusion.contributions.semantic,
+                                          )}`
+                                        : ''}
+                                    </Typography>
+                                  ) : null}
+                                </Stack>
+                              </Box>
+                              <Box>
+                                <Typography variant="overline" color="text.secondary">
+                                  Fusion result
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  Method: {explain?.fusion?.method ?? 'rrf'}
+                                  {explain?.fusion?.combinedScore != null
+                                    ? ` • combined score: ${formatExplainNumber(
+                                        explain.fusion.combinedScore,
+                                      )}`
+                                    : ''}
+                                </Typography>
+                              </Box>
+                            </Stack>
+                          </Box>
+                        </Collapse>
+                      ) : null}
+                    </Box>
                   );
                 })}
                 {results.length === 0 ? (
@@ -664,7 +1178,12 @@ export default function SearchPage() {
         ) : null}
       </Box>
 
-      <Dialog open={filtersOpen} onClose={() => setFiltersOpen(false)} fullWidth maxWidth="sm">
+      <Dialog
+        open={filtersOpen}
+        onClose={() => dispatch(setFiltersDialogOpen(false))}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>Filters</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
@@ -673,10 +1192,10 @@ export default function SearchPage() {
                 Mode
               </Typography>
               <ToggleButtonGroup
-                value={draftMode}
+                value={draft.mode}
                 exclusive
                 onChange={(_e, v) => {
-                  if (v) setDraftMode(v);
+                  if (v) dispatch(setDraftMode(v as any));
                 }}
                 size="small"
               >
@@ -690,11 +1209,11 @@ export default function SearchPage() {
               label="Min semantic score"
               type="number"
               inputProps={{ min: 0, max: 1, step: 0.01 }}
-              value={draftMinSemantic}
+              value={draft.filters.minSemanticScore ?? ''}
               onChange={(e) => {
                 const s = e.target.value;
-                if (s === '') setDraftMinSemantic('');
-                else setDraftMinSemantic(Math.max(0, Math.min(1, Number(s))));
+                if (s === '') dispatch(setDraftMinSemanticScore(undefined));
+                else dispatch(setDraftMinSemanticScore(Math.max(0, Math.min(1, Number(s)))));
               }}
               helperText="Applies to Semantic/Hybrid. Leave blank for default."
             />
@@ -703,30 +1222,153 @@ export default function SearchPage() {
               <TextField
                 label="Content updated from"
                 type="date"
-                value={draftUpdatedFrom}
-                onChange={(e) => setDraftUpdatedFrom(e.target.value)}
+                value={draft.filters.updatedFrom ?? ''}
+                onChange={(e) => dispatch(setDraftUpdatedFrom(e.target.value))}
                 InputLabelProps={{ shrink: true }}
                 fullWidth
               />
               <TextField
                 label="Content updated to"
                 type="date"
-                value={draftUpdatedTo}
-                onChange={(e) => setDraftUpdatedTo(e.target.value)}
+                value={draft.filters.updatedTo ?? ''}
+                onChange={(e) => dispatch(setDraftUpdatedTo(e.target.value))}
                 InputLabelProps={{ shrink: true }}
                 fullWidth
               />
             </Stack>
+
+            {isRecipeScope ? (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                  Recipe facets
+                </Typography>
+                <Stack spacing={2}>
+                  <Autocomplete
+                    options={cuisineOptions}
+                    value={draftCuisine || null}
+                    onChange={(_e, v) => setDraftCuisine(v ?? '')}
+                    getOptionLabel={(opt) => opt}
+                    renderOption={(props, option) => {
+                      const count = cuisineCounts.get(option);
+                      return (
+                        <li {...props}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography variant="body2">{option}</Typography>
+                            {count != null ? (
+                              <Typography variant="caption" color="text.secondary">
+                                ({count})
+                              </Typography>
+                            ) : null}
+                          </Stack>
+                        </li>
+                      );
+                    }}
+                    renderInput={(params) => <TextField {...params} label="Cuisine" />}
+                    size="small"
+                  />
+                  <Autocomplete
+                    multiple
+                    options={categoryOptions}
+                    value={draftCategories}
+                    onChange={(_e, v) => setDraftCategories(v)}
+                    getOptionLabel={(opt) => opt}
+                    renderOption={(props, option) => {
+                      const count = categoryCounts.get(option);
+                      return (
+                        <li {...props}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography variant="body2">{option}</Typography>
+                            {count != null ? (
+                              <Typography variant="caption" color="text.secondary">
+                                ({count})
+                              </Typography>
+                            ) : null}
+                          </Stack>
+                        </li>
+                      );
+                    }}
+                    renderInput={(params) => <TextField {...params} label="Category" />}
+                    size="small"
+                  />
+                  <Autocomplete
+                    multiple
+                    options={keywordOptions}
+                    value={draftKeywords}
+                    onChange={(_e, v) => setDraftKeywords(v)}
+                    getOptionLabel={(opt) => opt}
+                    renderOption={(props, option) => {
+                      const count = keywordCounts.get(option);
+                      return (
+                        <li {...props}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography variant="body2">{option}</Typography>
+                            {count != null ? (
+                              <Typography variant="caption" color="text.secondary">
+                                ({count})
+                              </Typography>
+                            ) : null}
+                          </Stack>
+                        </li>
+                      );
+                    }}
+                    renderInput={(params) => <TextField {...params} label="Keywords" />}
+                    size="small"
+                  />
+                </Stack>
+              </Box>
+            ) : null}
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={clearDraftAndApply}>Clear</Button>
-          <Button onClick={() => setFiltersOpen(false)}>Cancel</Button>
+          <Button onClick={() => dispatch(setFiltersDialogOpen(false))}>Cancel</Button>
           <Button variant="contained" onClick={applyDraftFilters}>
             Apply
           </Button>
         </DialogActions>
       </Dialog>
+      <Dialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Save search</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label="Name"
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              placeholder="e.g., Weeknight recipes"
+              fullWidth
+            />
+            {saveErrorMessage ? <Alert severity="error">{saveErrorMessage}</Alert> : null}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={saveCurrentSearch}
+            disabled={!saveName.trim() || createSavedSearchState.isLoading}
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <SearchDebugPanel
+        title="Search Debug"
+        spec={requestSpec}
+        request={requestForDebug}
+        queryState={{
+          isUninitialized,
+          isLoading,
+          isFetching,
+          isSuccess,
+          isError,
+          error,
+        }}
+        response={data}
+        explainEnabled={explainEnabled}
+        explainDisabled={committed.mode !== 'hybrid'}
+        onToggleExplain={setExplainEnabled}
+      />
     </Box>
   );
 }
@@ -792,41 +1434,4 @@ function renderHighlightedSnippet(snippet: string, tokens: string[]): ReactNode 
       })}
     </>
   );
-}
-
-function buildSearchUrl(next: Record<string, string | undefined | null>) {
-  const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(next)) {
-    if (v == null) continue;
-    const s = String(v).trim();
-    if (!s) continue;
-    params.set(k, s);
-  }
-  const qs = params.toString();
-  return qs ? `/search?${qs}` : '/search';
-}
-
-function toParamMap(args: {
-  q?: string;
-  mode?: string;
-  subjectId?: string;
-  topicId?: string;
-  status?: string;
-  tags?: string[];
-  updatedFrom?: string;
-  updatedTo?: string;
-  minSemanticScore?: number;
-}) {
-  return {
-    q: args.q,
-    mode: args.mode,
-    subjectId: args.subjectId,
-    topicId: args.topicId,
-    status: args.status,
-    tags: args.tags && args.tags.length ? args.tags.join(',') : undefined,
-    updatedFrom: args.updatedFrom,
-    updatedTo: args.updatedTo,
-    minSemanticScore:
-      args.minSemanticScore !== undefined ? String(args.minSemanticScore) : undefined,
-  };
 }

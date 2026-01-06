@@ -6,6 +6,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { chatalogApi } from '../features/api/chatalogApi';
 // existing imports...
 import settingsReducer from '../features/settings/settingsSlice'; // ⬅️ NEW
+import searchReducer from '../features/search/searchSlice';
 
 // If/when you add more slices, import and add to reducer below.
 // import uiReducer from '../features/ui/uiSlice';
@@ -18,6 +19,7 @@ export const store = configureStore({
     // other reducers here:
     // ui: uiReducer,
     settings: settingsReducer,
+    search: searchReducer,
   },
   middleware: (getDefault) =>
     getDefault().concat(chatalogApi.middleware),

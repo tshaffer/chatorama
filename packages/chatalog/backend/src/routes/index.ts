@@ -14,6 +14,7 @@ import noteAssetsRouter from './noteAssets';
 import quickNoteAssetsRouter from './quickNoteAssets';
 import recipesRouter from './recipes';
 import { searchRouter } from './search';
+import savedSearchesRouter from './savedSearches';
 
 export function createRoutes(app: Express) {
   const api = Router();
@@ -42,6 +43,7 @@ export function createRoutes(app: Express) {
   api.use('/quicknotes', quicknotesRouter);
   api.use('/quickNoteAssets', quickNoteAssetsRouter);
   api.use('/recipes', recipesRouter);
+  api.use('/saved-searches', savedSearchesRouter);
   api.use('/chat-registry', chatRegistryRouter);
 
   app.use('/api/v1', notesMoveRouter);

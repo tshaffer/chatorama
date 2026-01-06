@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "seed": "tsx scripts/seedFromData.ts",
     "seed:reset": "RESET_DB=1 tsx scripts/seedFromData.ts",
+    "backfill:docKind": "tsx src/scripts/backfillDocKind.ts",
     "audit:downloads": "tsx src/scripts/auditChatworthyDownloads.ts",
     "audit:aberrant": "tsx src/scripts/detectAberrantTurnBlocks.ts --out audit-aberrant-exports.json",
     "import:baseline": "tsx scripts/importChatRegistriesFromConversations.ts",

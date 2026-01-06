@@ -1,6 +1,21 @@
 import type { Request, Response, NextFunction } from 'express';
+import type { PipelineStage } from 'mongoose';
 import { NoteModel } from '../models/Note';
 import { normalizeIngredientLine } from '../utils/recipeNormalize';
+import {
+  buildIngredientFilterForSource,
+  buildNoteFilterFromSpec,
+  splitAndDedupTokens,
+} from '../utils/search/noteFilters';
+import { buildSearchSpec } from '@chatorama/chatalog-shared';
+import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
+
+type RecipeFacetBucket = { value: string; count: number };
+type RecipeFacetsResponse = {
+  cuisines: RecipeFacetBucket[];
+  categories: RecipeFacetBucket[];
+  keywords: RecipeFacetBucket[];
+};
 
 export async function normalizeRecipeIngredients(req: Request, res: Response, next: NextFunction) {
   try {
@@ -27,6 +42,14 @@ export async function normalizeRecipeIngredients(req: Request, res: Response, ne
     (note as any).recipe = recipe;
 
     await note.save();
+
+    try {
+      // Best-effort embedding update; consider background queue later.
+      await computeAndPersistEmbeddings(String(note._id));
+    } catch (err) {
+      console.error('[embeddings] normalizeRecipeIngredients failed', note._id, err);
+    }
+
     return res.json(note.toJSON());
   } catch (err) {
     next(err);
@@ -101,6 +124,133 @@ export async function searchRecipesByIngredients(req: Request, res: Response, ne
       .exec();
 
     return res.json(docs.map((doc) => doc.toJSON()));
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getRecipeFacets(req: Request, res: Response, next: NextFunction) {
+  try {
+    const includeTokens = splitAndDedupTokens(req.query.includeIngredients);
+    const excludeTokens = splitAndDedupTokens(req.query.excludeIngredients);
+
+    let ingredientSource: 'normalized' | 'raw' | null = null;
+    if (includeTokens.length || excludeTokens.length) {
+      const hasNormalized = await NoteModel.exists({ 'recipe.ingredients.0': { $exists: true } });
+      if (hasNormalized) ingredientSource = 'normalized';
+      else {
+        const hasRaw = await NoteModel.exists({ 'recipe.ingredientsRaw.0': { $exists: true } });
+        if (hasRaw) ingredientSource = 'raw';
+      }
+
+      if (!ingredientSource) {
+        const empty: RecipeFacetsResponse = {
+          cuisines: [],
+          categories: [],
+          keywords: [],
+        };
+        return res.json(empty);
+      }
+    }
+
+    const ingredientFilter =
+      ingredientSource && (includeTokens.length || excludeTokens.length)
+        ? buildIngredientFilterForSource(ingredientSource, includeTokens, excludeTokens)
+        : undefined;
+
+    const spec = buildSearchSpec({ ...(req.query as any), scope: 'recipes' });
+    const { combinedFilter } = buildNoteFilterFromSpec(spec, ingredientFilter);
+
+    const pipeline: PipelineStage[] = [
+      { $match: combinedFilter },
+      {
+        $project: {
+          cuisineNorm: {
+            $toLower: {
+              $trim: {
+                input: { $ifNull: ['$recipe.cuisine', ''] },
+              },
+            },
+          },
+          categoriesNorm: {
+            $filter: {
+              input: {
+                $map: {
+                  input: { $ifNull: ['$recipe.category', []] },
+                  as: 'c',
+                  in: {
+                    $toLower: {
+                      $trim: {
+                        input: { $ifNull: ['$$c', ''] },
+                      },
+                    },
+                  },
+                },
+              },
+              as: 'c',
+              cond: { $ne: ['$$c', ''] },
+            },
+          },
+          keywordsNorm: {
+            $filter: {
+              input: {
+                $map: {
+                  input: { $ifNull: ['$recipe.keywords', []] },
+                  as: 'k',
+                  in: {
+                    $toLower: {
+                      $trim: {
+                        input: { $ifNull: ['$$k', ''] },
+                      },
+                    },
+                  },
+                },
+              },
+              as: 'k',
+              cond: { $ne: ['$$k', ''] },
+            },
+          },
+        },
+      },
+      {
+        $facet: {
+          cuisines: [
+            { $match: { cuisineNorm: { $ne: '' } } },
+            { $group: { _id: '$cuisineNorm', count: { $sum: 1 } } },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: 50 },
+            { $project: { _id: 0, value: '$_id', count: 1 } },
+          ],
+          categories: [
+            { $unwind: '$categoriesNorm' },
+            { $match: { categoriesNorm: { $ne: '' } } },
+            { $group: { _id: '$categoriesNorm', count: { $sum: 1 } } },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: 100 },
+            { $project: { _id: 0, value: '$_id', count: 1 } },
+          ],
+          keywords: [
+            { $unwind: '$keywordsNorm' },
+            { $match: { keywordsNorm: { $ne: '' } } },
+            { $group: { _id: '$keywordsNorm', count: { $sum: 1 } } },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: 100 },
+            { $project: { _id: 0, value: '$_id', count: 1 } },
+          ],
+        },
+      },
+    ];
+
+    const [agg] = await NoteModel.aggregate(pipeline).exec();
+    const facets = agg ?? { cuisines: [], categories: [], keywords: [] };
+
+    const response: RecipeFacetsResponse = {
+      cuisines: facets.cuisines ?? [],
+      categories: facets.categories ?? [],
+      keywords: facets.keywords ?? [],
+    };
+
+    return res.json(response);
   } catch (err) {
     next(err);
   }

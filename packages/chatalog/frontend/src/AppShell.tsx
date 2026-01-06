@@ -17,6 +17,10 @@ import QuickCaptureDialog from './features/quickNotes/QuickCaptureDialog';
 import SettingsDialog from './features/settings/SettingsDialog';
 import SearchBox from './components/SearchBox';
 import { parseSearchInput } from './features/search/queryParser';
+import { useAppDispatch, useAppSelector } from './store';
+import { selectSearchDraft, selectSearchDraftText } from './features/search/searchSelectors';
+import { hydrateFromUrl, setDraftText } from './features/search/searchSlice';
+import { buildSearchUrlFromQuery } from './features/search/searchUrl';
 
 import ImportAiClassificationButton from './features/imports/ImportAiClassificationButton';
 
@@ -61,9 +65,11 @@ export default function AppShell() {
   const location = useLocation();
   const { pathname } = location;
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
+  const searchDraft = useAppSelector(selectSearchDraft);
+  const searchDraftText = useAppSelector(selectSearchDraftText);
   const [qcOpen, setQcOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [searchText, setSearchText] = useState('');
 
   useEffect(() => {
     fetchJSON<{ ok: boolean }>('/health')
@@ -86,22 +92,39 @@ export default function AppShell() {
   const topicSlug = (m?.params as any)?.topicSlug as string | undefined;
 
   const goSearch = () => {
-    const parsed = parseSearchInput(searchText);
-    if (!parsed.q && Object.keys(parsed.params).length === 0) return;
+    const parsed = parseSearchInput(searchDraftText);
+    const nextText = (parsed.q ?? '').trim();
 
-    const params = new URLSearchParams();
-    if (parsed.q) params.set('q', parsed.q);
-    for (const [k, v] of Object.entries(parsed.params)) {
-      if (v) params.set(k, v);
-    }
+    const scopeParam = (parsed.params.scope ?? '').trim().toLowerCase();
+    const scope =
+      scopeParam === 'recipes' || scopeParam === 'notes' || scopeParam === 'all'
+        ? scopeParam
+        : undefined;
+    const effectiveScope = scope ?? searchDraft.scope ?? 'notes';
+
+    const nextQuery = {
+      ...searchDraft,
+      text: nextText,
+      ...(effectiveScope ? { scope: effectiveScope as any } : {}),
+      filters: {
+        ...searchDraft.filters,
+        tags: parsed.params.tags
+          ? parsed.params.tags.split(',').map((t) => t.trim()).filter(Boolean)
+          : [],
+        status: parsed.params.status?.trim() || undefined,
+        updatedFrom: parsed.params.updatedFrom?.trim() || undefined,
+        updatedTo: parsed.params.updatedTo?.trim() || undefined,
+      },
+    };
 
     const subjectId = takeObjectId(subjectSlug);
     const topicId = takeObjectId(topicSlug);
 
-    if (subjectId) params.set('subjectId', subjectId);
-    if (topicId) params.set('topicId', topicId);
+    if (subjectId) nextQuery.filters.subjectId = subjectId;
+    if (topicId) nextQuery.filters.topicId = topicId;
 
-    navigate(`/search?${params.toString()}`);
+    dispatch(hydrateFromUrl(nextQuery));
+    navigate(buildSearchUrlFromQuery(nextQuery));
   };
 
   return (
@@ -120,10 +143,10 @@ export default function AppShell() {
           </Typography>
 
           <SearchBox
-            value={searchText}
-            onChange={setSearchText}
+            value={searchDraftText}
+            onChange={(v) => dispatch(setDraftText(v))}
             onSubmit={goSearch}
-            placeholder="Search notes…"
+            placeholder="Search…"
             sx={(theme) => ({
               ml: 2,
               width: 360,

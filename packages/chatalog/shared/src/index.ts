@@ -1,5 +1,5 @@
 // Explicit .js extensions keep ESM resolvable at runtime
-export * from './types.js';
+export * from './types/types.js';
 export * from './utilities.js';
-export * from './search/searchTypes.js';
-export * from './searchTypes.js';
+export * from './types/searchTypes.js';
+export * from './search/buildSearchSpec.js';

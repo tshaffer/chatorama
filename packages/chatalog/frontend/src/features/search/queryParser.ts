@@ -38,6 +38,14 @@ export function parseSearchInput(input: string): ParsedSearch {
 
     const lower = token.toLowerCase();
 
+    if (lower.startsWith('is:')) {
+      const rest = token.slice(3).trim().toLowerCase();
+      if (rest === 'recipe' || rest === 'recipes') params.scope = 'recipes';
+      else if (rest === 'note' || rest === 'notes') params.scope = 'notes';
+      else if (rest === 'all') params.scope = 'all';
+      continue;
+    }
+
     if (lower.startsWith('tag:')) {
       const rest = token.slice(4).trim();
       if (rest) {

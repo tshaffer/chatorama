@@ -14,6 +14,7 @@ export const chatalogApi = createApi({
     'QuickNoteAsset',
     'TopicNotes',
     'ImportBatch',
+    'SavedSearch',
   ],
   endpoints: () => ({}), // no queries/mutations here — use injectEndpoints elsewhere
 });
