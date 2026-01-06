@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Box,
   Button,
   Dialog,
@@ -14,9 +11,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import ReplayIcon from '@mui/icons-material/Replay';
 import DeleteIcon from '@mui/icons-material/Delete';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import type { Note, RecipeIngredient } from '@chatorama/chatalog-shared';
 import { useUpdateNoteMutation } from './notesApi';
 
@@ -29,6 +24,8 @@ type Props = {
 export default function EditIngredientsDialog({ open, onClose, note }: Props) {
   const [updateNote, { isLoading }] = useUpdateNoteMutation();
   const [editedDraft, setEditedDraft] = useState<RecipeIngredient[]>([]);
+
+  const norm = (s?: string) => (s ?? '').trim();
 
   const originalIngredients = useMemo<RecipeIngredient[]>(() => {
     if (note.recipe?.ingredients?.length) {
@@ -46,29 +43,17 @@ export default function EditIngredientsDialog({ open, onClose, note }: Props) {
     }
   }, [open, note.recipe?.ingredientsEdited, originalIngredients]);
 
-  const deletedOriginals = useMemo(() => {
-    const out: { index: number; ingredient: RecipeIngredient }[] = [];
-    for (let i = 0; i < originalIngredients.length; i += 1) {
-      if (!editedDraft[i]) out.push({ index: i, ingredient: originalIngredients[i] });
-    }
-    return out;
-  }, [editedDraft, originalIngredients]);
-
   const handleSave = async () => {
-    const cleaned = editedDraft
-      .map((ing) => ({
-        ...ing,
-        raw: (ing.raw ?? '').trim(),
-      }))
-      .filter((ing) => ing.raw);
-
     await updateNote({
       noteId: note.id,
       patch: {
         recipe: {
           ...note.recipe,
-          ingredientsEdited: cleaned,
-          ingredientsEditedRaw: cleaned.map((ing) => ing.raw ?? ''),
+          ingredientsEdited: editedDraft.map((ing) => ({
+            ...ing,
+            raw: norm(ing.raw),
+          })),
+          ingredientsEditedRaw: editedDraft.map((ing) => norm(ing.raw)),
         },
       },
     }).unwrap();
@@ -83,9 +68,11 @@ export default function EditIngredientsDialog({ open, onClose, note }: Props) {
         <Stack spacing={1.5}>
           {editedDraft.length ? (
             editedDraft.map((ing, idx) => {
-              const originalRaw = (originalIngredients[idx]?.raw ?? '').trim();
-              const editedRaw = (ing.raw ?? '').trim();
-              const canReset = Boolean(originalIngredients[idx]) && originalRaw !== editedRaw;
+              const origRaw = norm(originalIngredients[idx]?.raw);
+              const curRaw = norm(ing.raw);
+              const isOriginalRow = idx < originalIngredients.length;
+              const isDeletedOriginal = isOriginalRow && curRaw === '';
+              const isChangedOriginal = isOriginalRow && curRaw !== '' && curRaw !== origRaw;
 
               return (
                 <Stack key={`edit-row-${idx}`} direction="row" spacing={1} alignItems="center">
@@ -100,25 +87,44 @@ export default function EditIngredientsDialog({ open, onClose, note }: Props) {
                     fullWidth
                     size="small"
                   />
-                  <IconButton
-                    size="small"
-                    aria-label="Reset ingredient"
-                    disabled={!canReset}
-                    onClick={() => {
-                      if (!originalIngredients[idx]) return;
-                      const next = [...editedDraft];
-                      next[idx] = { ...originalIngredients[idx] };
-                      setEditedDraft(next);
-                    }}
-                  >
-                    <ReplayIcon fontSize="small" />
-                  </IconButton>
+                  {isDeletedOriginal ? (
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        if (!originalIngredients[idx]) return;
+                        const next = [...editedDraft];
+                        next[idx] = { ...originalIngredients[idx] };
+                        setEditedDraft(next);
+                      }}
+                    >
+                      Restore
+                    </Button>
+                  ) : isChangedOriginal ? (
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        if (!originalIngredients[idx]) return;
+                        const next = [...editedDraft];
+                        next[idx] = { ...originalIngredients[idx] };
+                        setEditedDraft(next);
+                      }}
+                    >
+                      Reset
+                    </Button>
+                  ) : null}
                   <IconButton
                     size="small"
                     aria-label="Delete ingredient"
                     onClick={() => {
-                      const next = editedDraft.filter((_, i) => i !== idx);
-                      setEditedDraft(next);
+                      setEditedDraft((prev) => {
+                        const next = [...prev];
+                        if (idx < originalIngredients.length) {
+                          next[idx] = { raw: '' };
+                          return next;
+                        }
+                        next.splice(idx, 1);
+                        return next;
+                      });
                     }}
                   >
                     <DeleteIcon fontSize="small" />
@@ -141,46 +147,6 @@ export default function EditIngredientsDialog({ open, onClose, note }: Props) {
               Add ingredient
             </Button>
           </Box>
-
-          {deletedOriginals.length ? (
-            <Accordion>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="subtitle2">
-                  Deleted originals ({deletedOriginals.length})
-                </Typography>
-              </AccordionSummary>
-              <AccordionDetails>
-                <Stack spacing={1}>
-                  {deletedOriginals.map(({ index, ingredient }) => (
-                    <Stack
-                      key={`deleted-${index}`}
-                      direction="row"
-                      spacing={1}
-                      alignItems="center"
-                    >
-                      <Typography variant="body2" sx={{ flex: 1 }}>
-                        {ingredient.raw}
-                      </Typography>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => {
-                          const next = [...editedDraft];
-                          while (next.length < index) {
-                            next.push({ raw: '' });
-                          }
-                          next.splice(index, 0, { ...ingredient });
-                          setEditedDraft(next);
-                        }}
-                      >
-                        Restore
-                      </Button>
-                    </Stack>
-                  ))}
-                </Stack>
-              </AccordionDetails>
-            </Accordion>
-          ) : null}
         </Stack>
       </DialogContent>
       <DialogActions>

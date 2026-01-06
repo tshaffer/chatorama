@@ -63,25 +63,46 @@ export default function RecipeView({
 
   const DiffList = () => (
     <Box sx={{ mt: 1 }}>
-      {currentIngredients.map((ing, i) => {
-        const left = normalize(ing.raw);
-        const orig = normalize(originalIngredients[i]?.raw);
-        const hasEdit = editedIngredients != null && left !== orig;
-        const right = hasEdit ? orig : '';
+      {originalIngredients.map((origIng, i) => {
+        const orig = normalize(origIng.raw);
+        const cur = editedIngredients ? normalize(editedIngredients[i]?.raw) : orig;
+        const changed = editedIngredients != null && cur !== orig;
         return (
           <Box
-            key={`${i}-${left}`}
+            key={`${i}-${orig}`}
             sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 2 }}
           >
             <Typography variant="body2" sx={{ pl: 2, textIndent: '-0.9em' }}>
-              • {left}
+              • {orig}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              {right ? `• ${right}` : ''}
+              {changed && cur ? `• ${cur}` : changed ? '' : ''}
             </Typography>
           </Box>
         );
       })}
+      {editedIngredients && editedIngredients.length > originalIngredients.length && (
+        <>
+          {editedIngredients.slice(originalIngredients.length).map((ing, j) => {
+            const cur = normalize(ing.raw);
+            if (!cur) return null;
+            const idx = originalIngredients.length + j;
+            return (
+              <Box
+                key={`added-${idx}-${cur}`}
+                sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 2 }}
+              >
+                <Typography variant="body2" sx={{ pl: 2, textIndent: '-0.9em' }}>
+                  •
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  • {cur}
+                </Typography>
+              </Box>
+            );
+          })}
+        </>
+      )}
     </Box>
   );
 
