@@ -42,6 +42,9 @@ const UNIT_WORDS = new Set([
   'slice', 'slices',
 ]);
 
+export const RECIPE_INGREDIENTS_TOKEN = '{{RECIPE_INGREDIENTS}}';
+export const RECIPE_STEPS_TOKEN = '{{RECIPE_STEPS}}';
+
 export function normalizeIngredientLine(raw: string) {
   let line = raw.trim();
   if (!line) return { raw };
@@ -105,3 +108,32 @@ export function normalizeIngredientLine(raw: string) {
   };
 }
 
+export function buildRecipeMarkdown(opts: {
+  title: string;
+  sourceUrl: string;
+  description?: string;
+}): string {
+  const { title, sourceUrl, description } = opts;
+  const lines: string[] = [];
+
+  lines.push(`# ${title}`);
+  lines.push('');
+  lines.push(`**Source:** ${sourceUrl}`);
+
+  if (description) {
+    lines.push('');
+    lines.push(description.trim());
+  }
+
+  lines.push('');
+  lines.push('## Ingredients');
+  lines.push('');
+  lines.push(RECIPE_INGREDIENTS_TOKEN);
+  lines.push('');
+  lines.push('## Steps');
+  lines.push('');
+  lines.push(RECIPE_STEPS_TOKEN);
+  lines.push('');
+
+  return lines.join('\n');
+}

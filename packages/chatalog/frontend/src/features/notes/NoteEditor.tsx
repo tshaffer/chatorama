@@ -1028,13 +1028,6 @@ export default function NoteEditor({
         </Box>
       )}
 
-      {isRecipeNote && note && (
-        <Box sx={{ mb: 2 }}>
-          <RecipeView note={note as Note} />
-          <Divider sx={{ mt: 2 }} />
-        </Box>
-      )}
-
       <Box sx={{ mt: 1 }}>
         {isRecipeNote && (
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
@@ -1054,19 +1047,23 @@ export default function NoteEditor({
             </Button>
           </Stack>
         )}
-        <MarkdownBody
-          markdown={previewBody}
-          enableImageSizingUi={editing}
-          onRequestResizeImage={handleRequestResizeImage}
-        />
+        {isRecipeNote && note ? (
+          <RecipeView
+            note={note as Note}
+            markdown={previewBody}
+            enableImageSizingUi={editing}
+            onRequestResizeImage={handleRequestResizeImage}
+          />
+        ) : (
+          <MarkdownBody
+            markdown={previewBody}
+            enableImageSizingUi={editing}
+            onRequestResizeImage={handleRequestResizeImage}
+          />
+        )}
       </Box>
     </>
   );
-
-  if (isRecipeNote) {
-    console.log(note);
-    // debugger;
-  }
 
   return (
     <Box
