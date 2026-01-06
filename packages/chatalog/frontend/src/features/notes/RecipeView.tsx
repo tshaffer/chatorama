@@ -4,6 +4,8 @@ import {
   AccordionDetails,
   AccordionSummary,
   Box,
+  Chip,
+  Divider,
   Stack,
   ToggleButton,
   ToggleButtonGroup,
@@ -13,6 +15,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import type { Note, RecipeIngredient } from '@chatorama/chatalog-shared';
 import MarkdownBody from '../../components/MarkdownBody';
 import CookedHistoryPanel from './CookedHistoryPanel';
+import { computeIngredientDiffGroups } from './ingredientsDiff';
 
 type Props = {
   note: Note;
@@ -22,6 +25,7 @@ type Props = {
 };
 
 type IngredientsListMode = 'current' | 'original' | 'diff';
+type DiffStyle = 'groupedChanges' | 'twoColumnAll' | 'twoColumnOnlyChanged';
 
 export default function RecipeView({
   note,
@@ -31,6 +35,7 @@ export default function RecipeView({
 }: Props) {
   const [ingredientsListMode, setIngredientsListMode] =
     useState<IngredientsListMode>('current');
+  const [diffStyle] = useState<DiffStyle>('groupedChanges');
 
   const originalIngredients = useMemo<RecipeIngredient[]>(() => {
     if (note.recipe?.ingredients?.length) {
@@ -42,6 +47,10 @@ export default function RecipeView({
   const editedIngredients = note.recipe?.ingredientsEdited ?? null;
   const currentIngredients = editedIngredients ?? originalIngredients;
   const steps = note.recipe?.stepsRaw ?? [];
+  const diff = computeIngredientDiffGroups({
+    original: originalIngredients,
+    edited: editedIngredients,
+  });
 
   const normalize = (s?: string) => (s ?? '').trim();
   const currentRows = (currentIngredients ?? [])
@@ -49,12 +58,6 @@ export default function RecipeView({
     .map((ing) => normalize(ing.raw))
     .filter(Boolean);
   const originalRows = originalIngredients.map((ing) => normalize(ing.raw)).filter(Boolean);
-
-  const currentRawAt = (i: number) => {
-    if (!editedIngredients) return normalize(originalIngredients[i]?.raw);
-    if (editedIngredients[i]?.deleted) return '';
-    return normalize(editedIngredients[i]?.raw);
-  };
 
   const BulletList = ({ rows }: { rows: string[] }) => (
     <Box sx={{ mt: 1 }}>
@@ -70,49 +73,20 @@ export default function RecipeView({
     </Box>
   );
 
-  const DiffList = () => (
-    <Box sx={{ mt: 1 }}>
-      {originalIngredients.map((origIng, i) => {
-        const orig = normalize(origIng.raw);
-        const cur = currentRawAt(i);
-        const changed = editedIngredients != null && cur !== orig;
-        return (
-          <Box
-            key={`${i}-${orig}`}
-            sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 2 }}
-          >
-            <Typography variant="body2" sx={{ pl: 2, textIndent: '-0.9em' }}>
-              • {orig}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {changed && cur ? `• ${cur}` : changed ? '' : ''}
-            </Typography>
-          </Box>
-        );
-      })}
-      {editedIngredients && editedIngredients.length > originalIngredients.length && (
-        <>
-          {editedIngredients.slice(originalIngredients.length).map((ing, j) => {
-            const cur = normalize(ing.raw);
-            if (!cur) return null;
-            const idx = originalIngredients.length + j;
-            return (
-              <Box
-                key={`added-${idx}-${cur}`}
-                sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 2 }}
-              >
-                <Typography variant="body2" sx={{ pl: 2, textIndent: '-0.9em' }}>
-                  •
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  • {cur}
-                </Typography>
-              </Box>
-            );
-          })}
-        </>
-      )}
-    </Box>
+  const BulletRow = ({
+    text,
+    color,
+  }: {
+    text: string;
+    color?: 'text.primary' | 'text.secondary';
+  }) => (
+    <Typography
+      variant="body2"
+      color={color ?? 'text.primary'}
+      sx={{ pl: 2, textIndent: '-0.9em' }}
+    >
+      • {text}
+    </Typography>
   );
 
   const ingredientsTokenNode = (
@@ -131,7 +105,81 @@ export default function RecipeView({
 
       {ingredientsListMode === 'current' && <BulletList rows={currentRows} />}
       {ingredientsListMode === 'original' && <BulletList rows={originalRows} />}
-      {ingredientsListMode === 'diff' && <DiffList />}
+      {ingredientsListMode === 'diff' && diffStyle === 'groupedChanges' && (
+        <Box sx={{ mt: 1 }}>
+          {!editedIngredients ? (
+            <Typography variant="body2" color="text.secondary">
+              No ingredient edits yet.
+            </Typography>
+          ) : (
+            <Stack spacing={2}>
+              <Box>
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                  <Typography variant="subtitle2">Modified</Typography>
+                  <Chip size="small" label={diff.modified.length} />
+                </Stack>
+                {!diff.modified.length ? (
+                  <Typography variant="body2" color="text.secondary">
+                    None
+                  </Typography>
+                ) : (
+                  <Stack spacing={0.75}>
+                    {diff.modified.map((m) => (
+                      <Box key={`mod-${m.index}`}>
+                        <BulletRow text={`${m.original} -> ${m.current}`} />
+                      </Box>
+                    ))}
+                  </Stack>
+                )}
+              </Box>
+
+              <Divider />
+
+              <Box>
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                  <Typography variant="subtitle2">Deleted</Typography>
+                  <Chip size="small" label={diff.deleted.length} />
+                </Stack>
+                {!diff.deleted.length ? (
+                  <Typography variant="body2" color="text.secondary">
+                    None
+                  </Typography>
+                ) : (
+                  <Stack spacing={0.25}>
+                    {diff.deleted.map((d) => (
+                      <Box key={`del-${d.index}`}>
+                        <BulletRow text={d.original} color="text.secondary" />
+                      </Box>
+                    ))}
+                  </Stack>
+                )}
+              </Box>
+
+              <Divider />
+
+              <Box>
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                  <Typography variant="subtitle2">Added</Typography>
+                  <Chip size="small" label={diff.added.length} />
+                </Stack>
+                {!diff.added.length ? (
+                  <Typography variant="body2" color="text.secondary">
+                    None
+                  </Typography>
+                ) : (
+                  <Stack spacing={0.25}>
+                    {diff.added.map((a) => (
+                      <Box key={`add-${a.index}`}>
+                        <BulletRow text={a.current} />
+                      </Box>
+                    ))}
+                  </Stack>
+                )}
+              </Box>
+            </Stack>
+          )}
+        </Box>
+      )}
     </Box>
   );
 
