@@ -6,6 +6,7 @@ import {
   Box,
   Chip,
   Divider,
+  Link,
   Stack,
   ToggleButton,
   ToggleButtonGroup,
@@ -36,6 +37,19 @@ export default function RecipeView({
   const [ingredientsListMode, setIngredientsListMode] =
     useState<IngredientsListMode>('current');
   const [diffStyle] = useState<DiffStyle>('groupedChanges');
+
+  const formatMinutes = (min?: number): string | null => {
+    if (min == null || Number.isNaN(min)) return null;
+    if (min < 60) return `${min} min`;
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return m ? `${h} hr ${m} min` : `${h} hr`;
+  };
+
+  const prep = formatMinutes(note.recipe?.prepTimeMinutes);
+  const cook = formatMinutes(note.recipe?.cookTimeMinutes);
+  const total = formatMinutes(note.recipe?.totalTimeMinutes);
+  const hasAnyTime = Boolean(prep || cook || total);
 
   const originalIngredients = useMemo<RecipeIngredient[]>(() => {
     if (note.recipe?.ingredients?.length) {
@@ -195,6 +209,30 @@ export default function RecipeView({
 
   return (
     <Stack spacing={2}>
+      {note.recipe?.sourceUrl && (
+        <Box>
+          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+            Source
+          </Typography>
+          <Link href={note.recipe.sourceUrl} target="_blank" rel="noopener noreferrer">
+            {note.recipe.sourceUrl}
+          </Link>
+        </Box>
+      )}
+
+      {hasAnyTime && (
+        <Box>
+          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+            Times
+          </Typography>
+          <Stack direction="row" spacing={2} flexWrap="wrap">
+            {prep && <Typography variant="body2">Prep: {prep}</Typography>}
+            {cook && <Typography variant="body2">Cook: {cook}</Typography>}
+            {total && <Typography variant="body2">Total: {total}</Typography>}
+          </Stack>
+        </Box>
+      )}
+
       <MarkdownBody
         markdown={markdown}
         enableImageSizingUi={enableImageSizingUi}
