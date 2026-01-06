@@ -44,16 +44,21 @@ export default function EditIngredientsDialog({ open, onClose, note }: Props) {
   }, [open, note.recipe?.ingredientsEdited, originalIngredients]);
 
   const handleSave = async () => {
+    const nextEdited = editedDraft.map((ing, i) => {
+      const raw = norm(ing.raw) || norm(originalIngredients[i]?.raw);
+      return {
+        ...ing,
+        raw: raw || '',
+        deleted: Boolean(ing.deleted),
+      };
+    });
     await updateNote({
       noteId: note.id,
       patch: {
         recipe: {
           ...note.recipe,
-          ingredientsEdited: editedDraft.map((ing) => ({
-            ...ing,
-            raw: norm(ing.raw),
-          })),
-          ingredientsEditedRaw: editedDraft.map((ing) => norm(ing.raw)),
+          ingredientsEdited: nextEdited,
+          ingredientsEditedRaw: nextEdited.map((ing) => (ing.deleted ? '' : norm(ing.raw))),
         },
       },
     }).unwrap();
@@ -71,17 +76,19 @@ export default function EditIngredientsDialog({ open, onClose, note }: Props) {
               const origRaw = norm(originalIngredients[idx]?.raw);
               const curRaw = norm(ing.raw);
               const isOriginalRow = idx < originalIngredients.length;
-              const isDeletedOriginal = isOriginalRow && curRaw === '';
-              const isChangedOriginal = isOriginalRow && curRaw !== '' && curRaw !== origRaw;
+              const isDeletedOriginal = isOriginalRow && Boolean(ing.deleted);
+              const isChangedOriginal =
+                isOriginalRow && !isDeletedOriginal && curRaw !== '' && curRaw !== origRaw;
 
               return (
                 <Stack key={`edit-row-${idx}`} direction="row" spacing={1} alignItems="center">
                   <TextField
                     label={`Ingredient ${idx + 1}`}
                     value={ing.raw ?? ''}
+                    disabled={isDeletedOriginal}
                     onChange={(e) => {
                       const next = [...editedDraft];
-                      next[idx] = { ...next[idx], raw: e.target.value };
+                      next[idx] = { ...next[idx], raw: e.target.value, deleted: false };
                       setEditedDraft(next);
                     }}
                     fullWidth
@@ -89,28 +96,28 @@ export default function EditIngredientsDialog({ open, onClose, note }: Props) {
                   />
                   {isDeletedOriginal ? (
                     <Button
-                      size="small"
-                      onClick={() => {
-                        if (!originalIngredients[idx]) return;
-                        const next = [...editedDraft];
-                        next[idx] = { ...originalIngredients[idx] };
-                        setEditedDraft(next);
-                      }}
-                    >
-                      Restore
-                    </Button>
+                    size="small"
+                    onClick={() => {
+                      if (!originalIngredients[idx]) return;
+                      const next = [...editedDraft];
+                      next[idx] = { ...originalIngredients[idx], deleted: false };
+                      setEditedDraft(next);
+                    }}
+                  >
+                    Restore
+                  </Button>
                   ) : isChangedOriginal ? (
                     <Button
-                      size="small"
-                      onClick={() => {
-                        if (!originalIngredients[idx]) return;
-                        const next = [...editedDraft];
-                        next[idx] = { ...originalIngredients[idx] };
-                        setEditedDraft(next);
-                      }}
-                    >
-                      Reset
-                    </Button>
+                    size="small"
+                    onClick={() => {
+                      if (!originalIngredients[idx]) return;
+                      const next = [...editedDraft];
+                      next[idx] = { ...originalIngredients[idx], deleted: false };
+                      setEditedDraft(next);
+                    }}
+                  >
+                    Reset
+                  </Button>
                   ) : null}
                   <IconButton
                     size="small"
@@ -119,7 +126,12 @@ export default function EditIngredientsDialog({ open, onClose, note }: Props) {
                       setEditedDraft((prev) => {
                         const next = [...prev];
                         if (idx < originalIngredients.length) {
-                          next[idx] = { raw: '' };
+                          const orig = originalIngredients[idx];
+                          next[idx] = {
+                            ...(next[idx] ?? orig ?? { raw: '' }),
+                            raw: next[idx]?.raw ?? orig?.raw ?? '',
+                            deleted: true,
+                          };
                           return next;
                         }
                         next.splice(idx, 1);

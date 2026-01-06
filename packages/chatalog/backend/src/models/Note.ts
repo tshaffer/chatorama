@@ -80,6 +80,7 @@ const RelationSchema = new Schema<NoteRelation>(
 const RecipeIngredientSchema = new Schema<RecipeIngredient>(
   {
     raw: { type: String, required: true },
+    deleted: { type: Boolean, default: false },
     name: String,
     amount: Number,
     unit: String,

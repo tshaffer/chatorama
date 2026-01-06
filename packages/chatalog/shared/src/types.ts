@@ -40,6 +40,7 @@ export interface NoteRelation {
 
 export type RecipeIngredient = {
   raw: string;
+  deleted?: boolean;
   name?: string;
   amount?: number;
   unit?: string;

@@ -44,8 +44,17 @@ export default function RecipeView({
   const steps = note.recipe?.stepsRaw ?? [];
 
   const normalize = (s?: string) => (s ?? '').trim();
-  const currentRows = currentIngredients.map((ing) => normalize(ing.raw)).filter(Boolean);
+  const currentRows = (currentIngredients ?? [])
+    .filter((ing) => !ing.deleted)
+    .map((ing) => normalize(ing.raw))
+    .filter(Boolean);
   const originalRows = originalIngredients.map((ing) => normalize(ing.raw)).filter(Boolean);
+
+  const currentRawAt = (i: number) => {
+    if (!editedIngredients) return normalize(originalIngredients[i]?.raw);
+    if (editedIngredients[i]?.deleted) return '';
+    return normalize(editedIngredients[i]?.raw);
+  };
 
   const BulletList = ({ rows }: { rows: string[] }) => (
     <Box sx={{ mt: 1 }}>
@@ -65,7 +74,7 @@ export default function RecipeView({
     <Box sx={{ mt: 1 }}>
       {originalIngredients.map((origIng, i) => {
         const orig = normalize(origIng.raw);
-        const cur = editedIngredients ? normalize(editedIngredients[i]?.raw) : orig;
+        const cur = currentRawAt(i);
         const changed = editedIngredients != null && cur !== orig;
         return (
           <Box
