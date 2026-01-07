@@ -326,7 +326,44 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     const minSemanticScore =
       minSemanticScoreParam !== undefined ? minSemanticScoreParam : defaultMinSemanticScore;
 
-    const { atlasFilter, postFilter, combinedFilter } = buildNoteFilterFromQuery(req.query);
+    const scope = String(req.query.scope ?? '').trim().toLowerCase();
+    const includeTokens = splitAndDedupTokens(req.query.includeIngredients);
+    const excludeTokens = splitAndDedupTokens(req.query.excludeIngredients);
+
+    let ingredientSource: 'normalized' | 'raw' | null = null;
+    if (scope === 'recipes' && (includeTokens.length || excludeTokens.length)) {
+      const hasNormalized = await NoteModel.exists({ 'recipe.ingredients.0': { $exists: true } });
+      if (hasNormalized) ingredientSource = 'normalized';
+      else {
+        const hasRaw = await NoteModel.exists({ 'recipe.ingredientsRaw.0': { $exists: true } });
+        if (hasRaw) ingredientSource = 'raw';
+      }
+
+      if (!ingredientSource) {
+        return res.json({
+          query: q,
+          mode: mode as any,
+          limit,
+          filters: {
+            scope,
+            includeIngredients: includeTokens,
+            excludeIngredients: excludeTokens,
+            ...(minSemanticScore !== undefined ? { minSemanticScore } : {}),
+          },
+          results: [],
+        });
+      }
+    }
+
+    const ingredientFilter =
+      ingredientSource && (includeTokens.length || excludeTokens.length)
+        ? buildIngredientFilterForSource(ingredientSource, includeTokens, excludeTokens)
+        : undefined;
+
+    const { atlasFilter, postFilter, combinedFilter } = buildNoteFilterFromQuery(
+      req.query,
+      ingredientFilter,
+    );
 
     if (isMatchAll && atlasFilter.recipe?.$exists === true) {
       const docs = await NoteModel.find(combinedFilter)
@@ -784,13 +821,16 @@ function toKeywordOnlyResults(hits: SearchHit[], limit: number) {
   }));
 }
 
-function buildNoteFilterFromQuery(query: any): {
+function buildNoteFilterFromQuery(
+  query: any,
+  ingredientFilter?: Record<string, any>,
+): {
   atlasFilter: Record<string, any>;
   postFilter: Record<string, any>;
   combinedFilter: Record<string, any>;
 } {
   const atlasFilter: Record<string, any> = {};
-  const postFilter: Record<string, any> = {};
+  let postFilter: Record<string, any> = {};
 
   const scope = String(query.scope ?? '').trim().toLowerCase();
   if (scope === 'recipes') {
@@ -846,22 +886,8 @@ function buildNoteFilterFromQuery(query: any): {
     atlasFilter['recipe.keywords'] = inFilter([keyword]);
   }
 
-  const includeTokens = splitAndDedupTokens(query.includeIngredients);
-  const excludeTokens = splitAndDedupTokens(query.excludeIngredients);
-
-  if (includeTokens.length) {
-    const includeClauses = includeTokens.map((t) => buildIngredientsFilter(t));
-    postFilter.$and = [
-      ...(Array.isArray(postFilter.$and) ? postFilter.$and : []),
-      ...includeClauses,
-    ];
-  }
-
-  if (excludeTokens.length) {
-    atlasFilter.$and = [
-      ...(Array.isArray(atlasFilter.$and) ? atlasFilter.$and : []),
-      { 'recipe.ingredientsRaw': { $nin: excludeTokens } },
-    ];
+  if (ingredientFilter) {
+    postFilter = combineFilters(postFilter, ingredientFilter);
   }
 
   const combinedFilter = mergeFilters(atlasFilter, postFilter);
@@ -877,13 +903,12 @@ function splitAndDedupTokens(raw: unknown): string[] {
   if (!s) return [];
   const parts = s
     .split(',')
-    .map((t) => t.trim())
+    .map((t) => t.trim().toLowerCase())
     .filter(Boolean);
   const seen = new Set<string>();
   return parts.filter((t) => {
-    const k = t.toLowerCase();
-    if (seen.has(k)) return false;
-    seen.add(k);
+    if (seen.has(t)) return false;
+    seen.add(t);
     return true;
   });
 }
@@ -892,25 +917,57 @@ function escapeRegex(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function wordBoundaryRegex(token: string): RegExp {
+function ingredientRegex(token: string): RegExp {
   const e = escapeRegex(token);
-  const pattern = token.length >= 3 ? `\\b${e}\\b` : e;
-  return new RegExp(pattern, 'i');
+  return new RegExp(e, 'i');
 }
 
-function buildIngredientsFilter(token: string) {
-  const re = wordBoundaryRegex(token);
-  const clause = { $regex: re };
-  return {
-    $or: [
-      { 'recipe.ingredientsEditedRaw': { $elemMatch: clause } },
-      { 'recipe.ingredientsRaw': { $elemMatch: clause } },
-      { 'recipe.ingredientsEdited.name': clause },
-      { 'recipe.ingredients.name': clause },
-      { 'recipe.ingredientsEdited.raw': clause },
-      { 'recipe.ingredients.raw': clause },
-    ],
-  };
+function buildIngredientFilterForSource(
+  source: 'normalized' | 'raw',
+  includeTokens: string[],
+  excludeTokens: string[],
+) {
+  const clauses: Record<string, any>[] = [];
+
+  const includeClauses = includeTokens.map((t) => {
+    const re = ingredientRegex(t);
+    if (source === 'raw') {
+      return { 'recipe.ingredientsRaw': { $elemMatch: { $regex: re } } };
+    }
+    return {
+      'recipe.ingredients': {
+        $elemMatch: {
+          name: { $regex: re },
+          deleted: { $ne: true },
+        },
+      },
+    };
+  });
+  if (includeClauses.length) clauses.push(...includeClauses);
+
+  const excludeClauses = excludeTokens.map((t) => {
+    const re = ingredientRegex(t);
+    if (source === 'raw') {
+      return {
+        'recipe.ingredientsRaw': { $not: { $elemMatch: { $regex: re } } },
+      };
+    }
+    return {
+      'recipe.ingredients': {
+        $not: {
+          $elemMatch: {
+            name: { $regex: re },
+            deleted: { $ne: true },
+          },
+        },
+      },
+    };
+  });
+  if (excludeClauses.length) clauses.push(...excludeClauses);
+
+  if (!clauses.length) return {};
+  if (clauses.length === 1) return clauses[0];
+  return { $and: clauses };
 }
 
 function eqFilter(v: string) {
@@ -927,6 +984,15 @@ function mergeFilters(atlasFilter: Record<string, any>, postFilter: Record<strin
   if (hasAtlas && hasPost) return { $and: [atlasFilter, postFilter] };
   if (hasAtlas) return atlasFilter;
   if (hasPost) return postFilter;
+  return {};
+}
+
+function combineFilters(a: Record<string, any>, b: Record<string, any>) {
+  const hasA = isNonEmptyFilter(a);
+  const hasB = isNonEmptyFilter(b);
+  if (hasA && hasB) return { $and: [a, b] };
+  if (hasA) return a;
+  if (hasB) return b;
   return {};
 }
 
