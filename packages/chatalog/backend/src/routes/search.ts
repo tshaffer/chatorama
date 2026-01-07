@@ -871,19 +871,23 @@ function buildNoteFilterFromQuery(
     atlasFilter['recipe.totalTimeMinutes'] = { $lte: maxTotalMinutes };
   }
 
-  const cuisine = String(query.cuisine ?? '').trim();
-  if (cuisine) {
-    atlasFilter['recipe.cuisine'] = eqFilter(cuisine);
+  const cuisineVals = parseCsvParam(query.cuisine);
+  if (cuisineVals.length) {
+    const expanded = expandVariants(cuisineVals);
+    if (expanded.length === 1) atlasFilter['recipe.cuisine'] = eqFilter(expanded[0]);
+    else if (expanded.length > 1) atlasFilter['recipe.cuisine'] = inFilter(expanded);
   }
 
-  const category = String(query.category ?? '').trim();
-  if (category) {
-    atlasFilter['recipe.category'] = inFilter([category]);
+  const categoryVals = parseCsvParam(query.category);
+  if (categoryVals.length) {
+    const expanded = expandVariants(categoryVals);
+    if (expanded.length) atlasFilter['recipe.category'] = inFilter(expanded);
   }
 
-  const keyword = String(query.keyword ?? '').trim();
-  if (keyword) {
-    atlasFilter['recipe.keywords'] = inFilter([keyword]);
+  const keywordVals = parseCsvParam(query.keywords ?? query.keyword);
+  if (keywordVals.length) {
+    const expanded = expandVariants(keywordVals);
+    if (expanded.length) atlasFilter['recipe.keywords'] = inFilter(expanded);
   }
 
   if (ingredientFilter) {
@@ -911,6 +915,36 @@ function splitAndDedupTokens(raw: unknown): string[] {
     seen.add(t);
     return true;
   });
+}
+
+function parseCsvParam(raw: unknown): string[] {
+  const s = String(raw ?? '').trim();
+  if (!s) return [];
+  return s
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function titleCase(s: string) {
+  return s
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.slice(0, 1).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+function expandVariants(vals: string[]): string[] {
+  const out = new Set<string>();
+  for (const v of vals) {
+    const base = v.trim();
+    if (!base) continue;
+    out.add(base);
+    out.add(base.toLowerCase());
+    out.add(titleCase(base));
+  }
+  return Array.from(out);
 }
 
 function escapeRegex(s: string) {
