@@ -788,31 +788,17 @@ function buildNoteFilterFromQuery(query: any): Record<string, any> {
 
   const cuisine = String(query.cuisine ?? '').trim();
   if (cuisine) {
-    filter['recipe.cuisine'] = { $regex: escapeRegex(cuisine), $options: 'i' };
+    filter['recipe.cuisine'] = eqFilter(cuisine);
   }
 
   const category = String(query.category ?? '').trim();
   if (category) {
-    const catRe = { $regex: escapeRegex(category), $options: 'i' };
-    const clause = {
-      $or: [
-        { 'recipe.category': { $elemMatch: catRe } },
-        { 'recipe.category': catRe },
-      ],
-    };
-    filter.$and = [...(Array.isArray(filter.$and) ? filter.$and : []), clause];
+    filter['recipe.category'] = inFilter([category]);
   }
 
   const keyword = String(query.keyword ?? '').trim();
   if (keyword) {
-    const keyRe = { $regex: escapeRegex(keyword), $options: 'i' };
-    const clause = {
-      $or: [
-        { 'recipe.keywords': { $elemMatch: keyRe } },
-        { 'recipe.keywords': keyRe },
-      ],
-    };
-    filter.$and = [...(Array.isArray(filter.$and) ? filter.$and : []), clause];
+    filter['recipe.keywords'] = inFilter([keyword]);
   }
 
   const includeTokens = splitAndDedupTokens(query.includeIngredients);
@@ -820,16 +806,16 @@ function buildNoteFilterFromQuery(query: any): Record<string, any> {
 
   if (includeTokens.length) {
     const includeClauses = includeTokens.map((t) => ({
-      $or: buildIngredientTokenOrClause(t),
+      'recipe.ingredientsRaw': inFilter([t]),
     }));
     filter.$and = [...(Array.isArray(filter.$and) ? filter.$and : []), ...includeClauses];
   }
 
   if (excludeTokens.length) {
-    const excludeClauses = excludeTokens.map((t) => ({
-      $or: buildIngredientTokenOrClause(t),
-    }));
-    filter.$nor = [...(Array.isArray(filter.$nor) ? filter.$nor : []), ...excludeClauses];
+    filter.$and = [
+      ...(Array.isArray(filter.$and) ? filter.$and : []),
+      { 'recipe.ingredientsRaw': { $nin: excludeTokens } },
+    ];
   }
 
   return filter;
@@ -855,23 +841,12 @@ function splitAndDedupTokens(raw: unknown): string[] {
   });
 }
 
-function escapeRegex(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function eqFilter(v: string) {
+  return { $eq: v };
 }
 
-function wordBoundaryRegex(token: string): string {
-  const e = escapeRegex(token);
-  return token.length >= 3 ? `\\b${e}\\b` : e;
-}
-
-function buildIngredientTokenOrClause(token: string) {
-  const pattern = wordBoundaryRegex(token);
-  const clause = { $regex: pattern, $options: 'i' };
-  return [
-    { 'recipe.ingredients.name': clause },
-    { 'recipe.ingredients.raw': clause },
-    { 'recipe.ingredientsRaw': { $elemMatch: clause } },
-  ];
+function inFilter(vals: string[]) {
+  return { $in: vals };
 }
 
 function escapeRegExp(s: string) {
