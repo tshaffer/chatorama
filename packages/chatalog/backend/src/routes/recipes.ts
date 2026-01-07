@@ -5,6 +5,7 @@ import { TopicModel } from '../models/Topic';
 import { slugifyStandard } from '@chatorama/chatalog-shared';
 import {
   addCookedEvent,
+  getRecipeFacets,
   normalizeRecipeIngredients,
   searchRecipesByIngredients,
 } from '../controllers/recipesController';
@@ -25,6 +26,9 @@ recipesRouter.post('/:noteId/cooked', addCookedEvent);
 
 // GET /api/v1/recipes/search?query=...&mode=any|all
 recipesRouter.get('/search', searchRecipesByIngredients);
+
+// GET /api/v1/recipes/facets
+recipesRouter.get('/facets', getRecipeFacets);
 
 function isValidUrl(value: string): boolean {
   try {

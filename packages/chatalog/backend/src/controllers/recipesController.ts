@@ -1,6 +1,22 @@
 import type { Request, Response, NextFunction } from 'express';
+import type { PipelineStage } from 'mongoose';
 import { NoteModel } from '../models/Note';
 import { normalizeIngredientLine } from '../utils/recipeNormalize';
+import {
+  buildIngredientFilterForSource,
+  buildNoteFilterFromQuery,
+  splitAndDedupTokens,
+} from '../utils/search/noteFilters';
+
+type RecipeFacetBucket = { value: string; count: number };
+type RecipeFacetsResponse = {
+  filters: any;
+  facets: {
+    cuisines: RecipeFacetBucket[];
+    categories: RecipeFacetBucket[];
+    keywords: RecipeFacetBucket[];
+  };
+};
 
 export async function normalizeRecipeIngredients(req: Request, res: Response, next: NextFunction) {
   try {
@@ -101,6 +117,125 @@ export async function searchRecipesByIngredients(req: Request, res: Response, ne
       .exec();
 
     return res.json(docs.map((doc) => doc.toJSON()));
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getRecipeFacets(req: Request, res: Response, next: NextFunction) {
+  try {
+    const includeTokens = splitAndDedupTokens(req.query.includeIngredients);
+    const excludeTokens = splitAndDedupTokens(req.query.excludeIngredients);
+
+    let ingredientSource: 'normalized' | 'raw' | null = null;
+    if (includeTokens.length || excludeTokens.length) {
+      const hasNormalized = await NoteModel.exists({ 'recipe.ingredients.0': { $exists: true } });
+      if (hasNormalized) ingredientSource = 'normalized';
+      else {
+        const hasRaw = await NoteModel.exists({ 'recipe.ingredientsRaw.0': { $exists: true } });
+        if (hasRaw) ingredientSource = 'raw';
+      }
+
+      if (!ingredientSource) {
+        const empty: RecipeFacetsResponse = {
+          filters: {
+            scope: 'recipes',
+            includeIngredients: includeTokens,
+            excludeIngredients: excludeTokens,
+          },
+          facets: { cuisines: [], categories: [], keywords: [] },
+        };
+        return res.json(empty);
+      }
+    }
+
+    const ingredientFilter =
+      ingredientSource && (includeTokens.length || excludeTokens.length)
+        ? buildIngredientFilterForSource(ingredientSource, includeTokens, excludeTokens)
+        : undefined;
+
+    const { combinedFilter } = buildNoteFilterFromQuery(
+      { ...req.query, scope: 'recipes' },
+      ingredientFilter,
+    );
+
+    const normalizeExpr = (input: any) => ({
+      $trim: {
+        input: {
+          $regexReplace: {
+            input: { $toLower: { $toString: { $ifNull: [input, ''] } } },
+            regex: '\\s+',
+            replacement: ' ',
+          },
+        },
+      },
+    });
+
+    const normalizeArrayExpr = (input: any) => ({
+      $filter: {
+        input: {
+          $map: {
+            input: { $ifNull: [input, []] },
+            as: 'v',
+            in: normalizeExpr('$$v'),
+          },
+        },
+        as: 'v',
+        cond: { $ne: ['$$v', ''] },
+      },
+    });
+
+    const pipeline: PipelineStage[] = [
+      { $match: combinedFilter },
+      {
+        $project: {
+          cuisineNorm: normalizeExpr('$recipe.cuisine'),
+          categoriesNorm: normalizeArrayExpr('$recipe.category'),
+          keywordsNorm: normalizeArrayExpr('$recipe.keywords'),
+        },
+      },
+      {
+        $facet: {
+          cuisines: [
+            { $match: { cuisineNorm: { $ne: '' } } },
+            { $group: { _id: '$cuisineNorm', count: { $sum: 1 } } },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: 50 },
+            { $project: { _id: 0, value: '$_id', count: 1 } },
+          ],
+          categories: [
+            { $unwind: '$categoriesNorm' },
+            { $match: { categoriesNorm: { $ne: '' } } },
+            { $group: { _id: '$categoriesNorm', count: { $sum: 1 } } },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: 100 },
+            { $project: { _id: 0, value: '$_id', count: 1 } },
+          ],
+          keywords: [
+            { $unwind: '$keywordsNorm' },
+            { $match: { keywordsNorm: { $ne: '' } } },
+            { $group: { _id: '$keywordsNorm', count: { $sum: 1 } } },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: 100 },
+            { $project: { _id: 0, value: '$_id', count: 1 } },
+          ],
+        },
+      },
+    ];
+
+    const [agg] = await NoteModel.aggregate(pipeline).exec();
+    const facets = agg ?? { cuisines: [], categories: [], keywords: [] };
+
+    const response: RecipeFacetsResponse = {
+      filters: combinedFilter,
+      facets: {
+        cuisines: facets.cuisines ?? [],
+        categories: facets.categories ?? [],
+        keywords: facets.keywords ?? [],
+      },
+    };
+
+    return res.json(response);
   } catch (err) {
     next(err);
   }

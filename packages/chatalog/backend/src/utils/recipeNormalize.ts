@@ -137,3 +137,8 @@ export function buildRecipeMarkdown(opts: {
 
   return lines.join('\n');
 }
+
+export function normalizeFacetValue(s: unknown): string {
+  const str = String(s ?? '').trim().toLowerCase();
+  return str.replace(/\s+/g, ' ');
+}
