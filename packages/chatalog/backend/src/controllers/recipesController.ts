@@ -159,39 +159,55 @@ export async function getRecipeFacets(req: Request, res: Response, next: NextFun
       ingredientFilter,
     );
 
-    const normalizeExpr = (input: any) => ({
-      $trim: {
-        input: {
-          $regexReplace: {
-            input: { $toLower: { $toString: { $ifNull: [input, ''] } } },
-            regex: '\\s+',
-            replacement: ' ',
-          },
-        },
-      },
-    });
-
-    const normalizeArrayExpr = (input: any) => ({
-      $filter: {
-        input: {
-          $map: {
-            input: { $ifNull: [input, []] },
-            as: 'v',
-            in: normalizeExpr('$$v'),
-          },
-        },
-        as: 'v',
-        cond: { $ne: ['$$v', ''] },
-      },
-    });
-
     const pipeline: PipelineStage[] = [
       { $match: combinedFilter },
       {
         $project: {
-          cuisineNorm: normalizeExpr('$recipe.cuisine'),
-          categoriesNorm: normalizeArrayExpr('$recipe.category'),
-          keywordsNorm: normalizeArrayExpr('$recipe.keywords'),
+          cuisineNorm: {
+            $toLower: {
+              $trim: {
+                input: { $ifNull: ['$recipe.cuisine', ''] },
+              },
+            },
+          },
+          categoriesNorm: {
+            $filter: {
+              input: {
+                $map: {
+                  input: { $ifNull: ['$recipe.category', []] },
+                  as: 'c',
+                  in: {
+                    $toLower: {
+                      $trim: {
+                        input: { $ifNull: ['$$c', ''] },
+                      },
+                    },
+                  },
+                },
+              },
+              as: 'c',
+              cond: { $ne: ['$$c', ''] },
+            },
+          },
+          keywordsNorm: {
+            $filter: {
+              input: {
+                $map: {
+                  input: { $ifNull: ['$recipe.keywords', []] },
+                  as: 'k',
+                  in: {
+                    $toLower: {
+                      $trim: {
+                        input: { $ifNull: ['$$k', ''] },
+                      },
+                    },
+                  },
+                },
+              },
+              as: 'k',
+              cond: { $ne: ['$$k', ''] },
+            },
+          },
         },
       },
       {
