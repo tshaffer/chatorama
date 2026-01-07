@@ -82,13 +82,17 @@ export function parseSearchQueryFromUrl(search: string): SearchQuery {
     category: splitCsv(sp.get('category')),
     keywords: splitCsv(sp.get('keywords')),
 
-    prepTimeMax: numOrUndef(sp.get('prepMax')),
-    cookTimeMax: numOrUndef(sp.get('cookMax')),
-    totalTimeMax: numOrUndef(sp.get('totalMax')),
+    prepTimeMax: numOrUndef(sp.get('maxPrepMinutes')) ?? numOrUndef(sp.get('prepMax')),
+    cookTimeMax: numOrUndef(sp.get('maxCookMinutes')) ?? numOrUndef(sp.get('cookMax')),
+    totalTimeMax: numOrUndef(sp.get('maxTotalMinutes')) ?? numOrUndef(sp.get('totalMax')),
 
-    includeIngredients: splitCsv(sp.get('includeIng')),
-    excludeIngredients: splitCsv(sp.get('excludeIng')),
+    includeIngredients: splitCsv(sp.get('includeIngredients') ?? sp.get('includeIng')),
+    excludeIngredients: splitCsv(sp.get('excludeIngredients') ?? sp.get('excludeIng')),
   };
+
+  if (!filters.keywords.length) {
+    filters.keywords = splitCsv(sp.get('keyword'));
+  }
 
   return { text, scope, mode, limit, filters };
 }

@@ -73,6 +73,20 @@ export default function SearchPage() {
   const updatedFrom = committed.filters.updatedFrom ?? '';
   const updatedTo = committed.filters.updatedTo ?? '';
   const minSemanticScore = committed.filters.minSemanticScore;
+  const maxPrepMinutes = committed.filters.prepTimeMax;
+  const maxCookMinutes = committed.filters.cookTimeMax;
+  const maxTotalMinutes = committed.filters.totalTimeMax;
+  const cuisine = committed.filters.cuisine?.[0]?.trim() || '';
+  const category = committed.filters.category?.[0]?.trim() || '';
+  const keyword = committed.filters.keywords?.[0]?.trim() || '';
+  const includeIngredients = (committed.filters.includeIngredients ?? [])
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .join(',');
+  const excludeIngredients = (committed.filters.excludeIngredients ?? [])
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .join(',');
 
   const stateAny = (location.state ?? {}) as any;
   const topicIdFromState = String(stateAny.topicId ?? '').trim();
@@ -108,6 +122,14 @@ export default function SearchPage() {
       ...(effectiveSubjectId ? { subjectId: effectiveSubjectId } : {}),
       ...(effectiveTopicId ? { topicId: effectiveTopicId } : {}),
       ...(minSemanticScore !== undefined ? { minSemanticScore } : {}),
+      ...(maxPrepMinutes !== undefined ? { maxPrepMinutes } : {}),
+      ...(maxCookMinutes !== undefined ? { maxCookMinutes } : {}),
+      ...(maxTotalMinutes !== undefined ? { maxTotalMinutes } : {}),
+      ...(cuisine ? { cuisine } : {}),
+      ...(category ? { category } : {}),
+      ...(keyword ? { keyword } : {}),
+      ...(includeIngredients ? { includeIngredients } : {}),
+      ...(excludeIngredients ? { excludeIngredients } : {}),
     }),
     [
       debouncedQ,
@@ -117,6 +139,14 @@ export default function SearchPage() {
       effectiveSubjectId,
       effectiveTopicId,
       minSemanticScore,
+      maxPrepMinutes,
+      maxCookMinutes,
+      maxTotalMinutes,
+      cuisine,
+      category,
+      keyword,
+      includeIngredients,
+      excludeIngredients,
     ],
   );
 

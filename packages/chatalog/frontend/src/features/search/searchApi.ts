@@ -14,12 +14,36 @@ export type GetSearchArgs = {
   subjectId?: string;
   topicId?: string;
   minSemanticScore?: number;
+  maxPrepMinutes?: number;
+  maxCookMinutes?: number;
+  maxTotalMinutes?: number;
+  cuisine?: string;
+  category?: string;
+  keyword?: string;
+  includeIngredients?: string;
+  excludeIngredients?: string;
 };
 
 export const searchApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
     getSearch: build.query<SearchResponse, GetSearchArgs>({
-      query: ({ q, mode, limit, scope, subjectId, topicId, minSemanticScore }) => {
+      query: ({
+        q,
+        mode,
+        limit,
+        scope,
+        subjectId,
+        topicId,
+        minSemanticScore,
+        maxPrepMinutes,
+        maxCookMinutes,
+        maxTotalMinutes,
+        cuisine,
+        category,
+        keyword,
+        includeIngredients,
+        excludeIngredients,
+      }) => {
         const params = new URLSearchParams();
         params.set('q', q);
         if (mode) params.set('mode', mode);
@@ -29,6 +53,24 @@ export const searchApi = baseApi.injectEndpoints({
         if (topicId) params.set('topicId', topicId);
         if (minSemanticScore != null) {
           params.set('minSemanticScore', String(minSemanticScore));
+        }
+        if (Number.isFinite(maxPrepMinutes as any)) {
+          params.set('maxPrepMinutes', String(maxPrepMinutes));
+        }
+        if (Number.isFinite(maxCookMinutes as any)) {
+          params.set('maxCookMinutes', String(maxCookMinutes));
+        }
+        if (Number.isFinite(maxTotalMinutes as any)) {
+          params.set('maxTotalMinutes', String(maxTotalMinutes));
+        }
+        if (cuisine && cuisine.trim()) params.set('cuisine', cuisine.trim());
+        if (category && category.trim()) params.set('category', category.trim());
+        if (keyword && keyword.trim()) params.set('keyword', keyword.trim());
+        if (includeIngredients && includeIngredients.trim()) {
+          params.set('includeIngredients', includeIngredients.trim());
+        }
+        if (excludeIngredients && excludeIngredients.trim()) {
+          params.set('excludeIngredients', excludeIngredients.trim());
         }
 
         return { url: `search?${params.toString()}` };
