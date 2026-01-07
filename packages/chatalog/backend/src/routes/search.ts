@@ -326,10 +326,10 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     const minSemanticScore =
       minSemanticScoreParam !== undefined ? minSemanticScoreParam : defaultMinSemanticScore;
 
-    const filter = buildNoteFilterFromQuery(req.query);
+    const { atlasFilter, postFilter, combinedFilter } = buildNoteFilterFromQuery(req.query);
 
-    if (isMatchAll && filter.recipe?.$exists === true) {
-      const docs = await NoteModel.find(filter)
+    if (isMatchAll && atlasFilter.recipe?.$exists === true) {
+      const docs = await NoteModel.find(combinedFilter)
         .sort({ contentUpdatedAt: -1, updatedAt: -1 })
         .limit(limit)
         .lean()
@@ -354,7 +354,7 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
         mode: mode as any,
         limit,
         filters: {
-          ...filter,
+          ...combinedFilter,
           ...(minSemanticScore !== undefined ? { minSemanticScore } : {}),
         },
         results,
@@ -371,8 +371,10 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
 
     // Kick off in parallel where possible
     const [semantic, keyword] = await Promise.all([
-      runSemantic ? semanticSearchNotes(q, semanticLimit, filter) : Promise.resolve([]),
-      runKeyword ? keywordSearchNotes(q, keywordLimit, filter) : Promise.resolve([]),
+      runSemantic
+        ? semanticSearchNotes(q, semanticLimit, atlasFilter, postFilter)
+        : Promise.resolve([]),
+      runKeyword ? keywordSearchNotes(q, keywordLimit, combinedFilter) : Promise.resolve([]),
     ]);
 
     let semanticResults = semantic;
@@ -396,7 +398,7 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
       mode: mode as any,
       limit,
       filters: {
-        ...filter,
+        ...combinedFilter,
         ...(minSemanticScore !== undefined ? { minSemanticScore } : {}),
       },
       results,
@@ -656,7 +658,8 @@ type SearchHit = {
 async function semanticSearchNotes(
   q: string,
   limit: number,
-  filter: Record<string, any>,
+  atlasFilter: Record<string, any>,
+  postFilter?: Record<string, any>,
 ): Promise<SearchHit[]> {
   if (limit <= 0) return [];
 
@@ -672,13 +675,14 @@ async function semanticSearchNotes(
     limit,
   };
 
-  if (isNonEmptyFilter(filter)) {
+  if (isNonEmptyFilter(atlasFilter)) {
     // Pre-filter documents for vector search.
-    vectorStage.filter = filter;
+    vectorStage.filter = atlasFilter;
   }
 
   const pipeline: any[] = [
     { $vectorSearch: vectorStage },
+    ...(isNonEmptyFilter(postFilter) ? [{ $match: postFilter }] : []),
     {
       $project: {
         _id: 1,
@@ -780,21 +784,26 @@ function toKeywordOnlyResults(hits: SearchHit[], limit: number) {
   }));
 }
 
-function buildNoteFilterFromQuery(query: any): Record<string, any> {
-  const filter: Record<string, any> = {};
+function buildNoteFilterFromQuery(query: any): {
+  atlasFilter: Record<string, any>;
+  postFilter: Record<string, any>;
+  combinedFilter: Record<string, any>;
+} {
+  const atlasFilter: Record<string, any> = {};
+  const postFilter: Record<string, any> = {};
 
   const scope = String(query.scope ?? '').trim().toLowerCase();
   if (scope === 'recipes') {
-    filter.recipe = { $exists: true };
+    atlasFilter.recipe = { $exists: true };
   } else if (scope === 'notes') {
-    filter.recipe = { $exists: false };
+    atlasFilter.recipe = { $exists: false };
   }
 
   const subjectId = String(query.subjectId ?? '').trim();
-  if (subjectId) filter.subjectId = subjectId;
+  if (subjectId) atlasFilter.subjectId = subjectId;
 
   const topicId = String(query.topicId ?? '').trim();
-  if (topicId) filter.topicId = topicId;
+  if (topicId) atlasFilter.topicId = topicId;
 
   // tags=tag1,tag2,tag3  => match ANY tag
   const tagsRaw = String(query.tags ?? '').trim();
@@ -804,57 +813,59 @@ function buildNoteFilterFromQuery(query: any): Record<string, any> {
       .map((t) => t.trim())
       .filter(Boolean);
 
-    if (tags.length) filter.tags = { $in: tags };
+    if (tags.length) atlasFilter.tags = { $in: tags };
   }
 
   const maxPrepMinutes = clampIntOpt(query.maxPrepMinutes, 0, 72460);
   if (maxPrepMinutes != null) {
-    filter['recipe.prepTimeMinutes'] = { $lte: maxPrepMinutes };
+    atlasFilter['recipe.prepTimeMinutes'] = { $lte: maxPrepMinutes };
   }
 
   const maxCookMinutes = clampIntOpt(query.maxCookMinutes, 0, 72460);
   if (maxCookMinutes != null) {
-    filter['recipe.cookTimeMinutes'] = { $lte: maxCookMinutes };
+    atlasFilter['recipe.cookTimeMinutes'] = { $lte: maxCookMinutes };
   }
 
   const maxTotalMinutes = clampIntOpt(query.maxTotalMinutes, 0, 72460);
   if (maxTotalMinutes != null) {
-    filter['recipe.totalTimeMinutes'] = { $lte: maxTotalMinutes };
+    atlasFilter['recipe.totalTimeMinutes'] = { $lte: maxTotalMinutes };
   }
 
   const cuisine = String(query.cuisine ?? '').trim();
   if (cuisine) {
-    filter['recipe.cuisine'] = eqFilter(cuisine);
+    atlasFilter['recipe.cuisine'] = eqFilter(cuisine);
   }
 
   const category = String(query.category ?? '').trim();
   if (category) {
-    filter['recipe.category'] = inFilter([category]);
+    atlasFilter['recipe.category'] = inFilter([category]);
   }
 
   const keyword = String(query.keyword ?? '').trim();
   if (keyword) {
-    filter['recipe.keywords'] = inFilter([keyword]);
+    atlasFilter['recipe.keywords'] = inFilter([keyword]);
   }
 
   const includeTokens = splitAndDedupTokens(query.includeIngredients);
   const excludeTokens = splitAndDedupTokens(query.excludeIngredients);
 
   if (includeTokens.length) {
-    const includeClauses = includeTokens.map((t) => ({
-      'recipe.ingredientsRaw': inFilter([t]),
-    }));
-    filter.$and = [...(Array.isArray(filter.$and) ? filter.$and : []), ...includeClauses];
+    const includeClauses = includeTokens.map((t) => buildIngredientsFilter(t));
+    postFilter.$and = [
+      ...(Array.isArray(postFilter.$and) ? postFilter.$and : []),
+      ...includeClauses,
+    ];
   }
 
   if (excludeTokens.length) {
-    filter.$and = [
-      ...(Array.isArray(filter.$and) ? filter.$and : []),
+    atlasFilter.$and = [
+      ...(Array.isArray(atlasFilter.$and) ? atlasFilter.$and : []),
       { 'recipe.ingredientsRaw': { $nin: excludeTokens } },
     ];
   }
 
-  return filter;
+  const combinedFilter = mergeFilters(atlasFilter, postFilter);
+  return { atlasFilter, postFilter, combinedFilter };
 }
 
 function isNonEmptyFilter(filter: Record<string, any> | undefined | null): boolean {
@@ -877,12 +888,46 @@ function splitAndDedupTokens(raw: unknown): string[] {
   });
 }
 
+function escapeRegex(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function wordBoundaryRegex(token: string): RegExp {
+  const e = escapeRegex(token);
+  const pattern = token.length >= 3 ? `\\b${e}\\b` : e;
+  return new RegExp(pattern, 'i');
+}
+
+function buildIngredientsFilter(token: string) {
+  const re = wordBoundaryRegex(token);
+  const clause = { $regex: re };
+  return {
+    $or: [
+      { 'recipe.ingredientsEditedRaw': { $elemMatch: clause } },
+      { 'recipe.ingredientsRaw': { $elemMatch: clause } },
+      { 'recipe.ingredientsEdited.name': clause },
+      { 'recipe.ingredients.name': clause },
+      { 'recipe.ingredientsEdited.raw': clause },
+      { 'recipe.ingredients.raw': clause },
+    ],
+  };
+}
+
 function eqFilter(v: string) {
   return { $eq: v };
 }
 
 function inFilter(vals: string[]) {
   return { $in: vals };
+}
+
+function mergeFilters(atlasFilter: Record<string, any>, postFilter: Record<string, any>) {
+  const hasAtlas = isNonEmptyFilter(atlasFilter);
+  const hasPost = isNonEmptyFilter(postFilter);
+  if (hasAtlas && hasPost) return { $and: [atlasFilter, postFilter] };
+  if (hasAtlas) return atlasFilter;
+  if (hasPost) return postFilter;
+  return {};
 }
 
 function escapeRegExp(s: string) {
