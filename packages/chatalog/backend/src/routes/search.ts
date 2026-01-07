@@ -311,8 +311,9 @@ searchRouter.get('/semantic', async (req: Request, res: Response, next: NextFunc
  */
 const hybridSearchHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const q = String(req.query.q ?? '').trim();
-    if (!q) return res.status(400).json({ error: 'q is required' });
+    const rawQ = String(req.query.q ?? '').trim();
+    const q = rawQ;
+    const isMatchAll = q === '*' || q === '';
 
     const limit = clampInt(req.query.limit, 1, 50, 20);
     const modeRaw = String(req.query.mode ?? 'auto').toLowerCase();
@@ -326,6 +327,41 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
       minSemanticScoreParam !== undefined ? minSemanticScoreParam : defaultMinSemanticScore;
 
     const filter = buildNoteFilterFromQuery(req.query);
+
+    if (isMatchAll && filter.recipe?.$exists === true) {
+      const docs = await NoteModel.find(filter)
+        .sort({ contentUpdatedAt: -1, updatedAt: -1 })
+        .limit(limit)
+        .lean()
+        .exec();
+
+      const results = (docs ?? []).map((d: any) => ({
+        id: String(d._id),
+        title: String(d.title ?? ''),
+        summary: d.summary ? String(d.summary) : undefined,
+        snippet: undefined,
+        subjectId: d.subjectId ? String(d.subjectId) : undefined,
+        topicId: d.topicId ? String(d.topicId) : undefined,
+        updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
+        score: 0,
+        semanticScore: undefined,
+        textScore: undefined,
+        sources: ['browse'],
+      }));
+
+      return res.json({
+        query: q,
+        mode: mode as any,
+        limit,
+        filters: {
+          ...filter,
+          ...(minSemanticScore !== undefined ? { minSemanticScore } : {}),
+        },
+        results,
+      });
+    }
+
+    if (!q) return res.status(400).json({ error: 'q is required' });
 
     const runSemantic = mode === 'semantic' || mode === 'hybrid' || mode === 'auto';
     const runKeyword = mode === 'keyword' || mode === 'hybrid' || mode === 'auto';
