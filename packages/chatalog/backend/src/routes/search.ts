@@ -589,6 +589,12 @@ function clampInt(value: any, min: number, max: number, fallback: number): numbe
   return Math.max(min, Math.min(max, Math.floor(n)));
 }
 
+function clampIntOpt(value: any, min: number, max: number): number | undefined {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
 function parseMinSemanticScore(raw: unknown): number | undefined {
   if (raw == null) return undefined;
   const n = Number(raw);
@@ -765,11 +771,107 @@ function buildNoteFilterFromQuery(query: any): Record<string, any> {
     if (tags.length) filter.tags = { $in: tags };
   }
 
+  const maxPrepMinutes = clampIntOpt(query.maxPrepMinutes, 0, 72460);
+  if (maxPrepMinutes != null) {
+    filter['recipe.prepTimeMinutes'] = { $lte: maxPrepMinutes };
+  }
+
+  const maxCookMinutes = clampIntOpt(query.maxCookMinutes, 0, 72460);
+  if (maxCookMinutes != null) {
+    filter['recipe.cookTimeMinutes'] = { $lte: maxCookMinutes };
+  }
+
+  const maxTotalMinutes = clampIntOpt(query.maxTotalMinutes, 0, 72460);
+  if (maxTotalMinutes != null) {
+    filter['recipe.totalTimeMinutes'] = { $lte: maxTotalMinutes };
+  }
+
+  const cuisine = String(query.cuisine ?? '').trim();
+  if (cuisine) {
+    filter['recipe.cuisine'] = { $regex: escapeRegex(cuisine), $options: 'i' };
+  }
+
+  const category = String(query.category ?? '').trim();
+  if (category) {
+    const catRe = { $regex: escapeRegex(category), $options: 'i' };
+    const clause = {
+      $or: [
+        { 'recipe.category': { $elemMatch: catRe } },
+        { 'recipe.category': catRe },
+      ],
+    };
+    filter.$and = [...(Array.isArray(filter.$and) ? filter.$and : []), clause];
+  }
+
+  const keyword = String(query.keyword ?? '').trim();
+  if (keyword) {
+    const keyRe = { $regex: escapeRegex(keyword), $options: 'i' };
+    const clause = {
+      $or: [
+        { 'recipe.keywords': { $elemMatch: keyRe } },
+        { 'recipe.keywords': keyRe },
+      ],
+    };
+    filter.$and = [...(Array.isArray(filter.$and) ? filter.$and : []), clause];
+  }
+
+  const includeTokens = splitAndDedupTokens(query.includeIngredients);
+  const excludeTokens = splitAndDedupTokens(query.excludeIngredients);
+
+  if (includeTokens.length) {
+    const includeClauses = includeTokens.map((t) => ({
+      $or: buildIngredientTokenOrClause(t),
+    }));
+    filter.$and = [...(Array.isArray(filter.$and) ? filter.$and : []), ...includeClauses];
+  }
+
+  if (excludeTokens.length) {
+    const excludeClauses = excludeTokens.map((t) => ({
+      $or: buildIngredientTokenOrClause(t),
+    }));
+    filter.$nor = [...(Array.isArray(filter.$nor) ? filter.$nor : []), ...excludeClauses];
+  }
+
   return filter;
 }
 
 function isNonEmptyFilter(filter: Record<string, any> | undefined | null): boolean {
   return !!filter && Object.keys(filter).length > 0;
+}
+
+function splitAndDedupTokens(raw: unknown): string[] {
+  const s = String(raw ?? '').trim();
+  if (!s) return [];
+  const parts = s
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  return parts.filter((t) => {
+    const k = t.toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+function escapeRegex(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function wordBoundaryRegex(token: string): string {
+  const e = escapeRegex(token);
+  return token.length >= 3 ? `\\b${e}\\b` : e;
+}
+
+function buildIngredientTokenOrClause(token: string) {
+  const pattern = wordBoundaryRegex(token);
+  const clause = { $regex: pattern, $options: 'i' };
+  return [
+    { 'recipe.ingredients.name': clause },
+    { 'recipe.ingredients.raw': clause },
+    { 'recipe.ingredientsRaw': { $elemMatch: clause } },
+  ];
 }
 
 function escapeRegExp(s: string) {
