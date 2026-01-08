@@ -45,6 +45,21 @@ export interface SearchResponse {
   filters: SearchFilters;
   results: SearchResultItem[];
 
+  debug?: {
+    fusion: 'rrf';
+    semanticCount: number;
+    keywordCount: number;
+    overlapCount: number;
+    fusedCount: number;
+    returnedCount: number;
+    timingsMs: {
+      semantic: number;
+      keyword: number;
+      fuse: number;
+      total: number;
+    };
+  };
+
   // Reserved for later (pagination)
   nextCursor?: string;
 }

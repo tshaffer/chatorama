@@ -416,9 +416,29 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     const semanticSpec: SearchSpec = { ...spec, limit: semanticLimit };
     const keywordSpec: SearchSpec = { ...spec, limit: keywordLimit };
 
+    const isHybridMode = mode === 'hybrid';
+    const totalStart = Date.now();
+    let semanticMs = 0;
+    let keywordMs = 0;
+    let fuseMs = 0;
+
     const [semantic, keyword] = await Promise.all([
-      runSemantic ? semanticSearchNotes(semanticSpec, ingredientFilter) : Promise.resolve([]),
-      runKeyword ? keywordSearchNotes(keywordSpec, ingredientFilter) : Promise.resolve([]),
+      runSemantic
+        ? (async () => {
+            const start = Date.now();
+            const hits = await semanticSearchNotes(semanticSpec, ingredientFilter);
+            semanticMs = Date.now() - start;
+            return hits;
+          })()
+        : Promise.resolve([]),
+      runKeyword
+        ? (async () => {
+            const start = Date.now();
+            const hits = await keywordSearchNotes(keywordSpec, ingredientFilter);
+            keywordMs = Date.now() - start;
+            return hits;
+          })()
+        : Promise.resolve([]),
     ]);
 
     let semanticResults = semantic;
@@ -433,9 +453,39 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     } else if (mode === 'keyword') {
       results = toKeywordOnlyResults(keyword, limit);
     } else {
+      const fuseStart = Date.now();
       // hybrid/auto: RRF fusion + raw-score explainability
       results = fuseByRRF(semanticResults, keyword, limit);
+      fuseMs = Date.now() - fuseStart;
     }
+
+    const overlapCount = (() => {
+      if (!isHybridMode) return 0;
+      const semanticIds = new Set(semanticResults.map((r) => r.id));
+      let overlap = 0;
+      for (const r of keyword) {
+        if (semanticIds.has(r.id)) overlap += 1;
+      }
+      return overlap;
+    })();
+
+    const debug =
+      isHybridMode
+        ? {
+            fusion: 'rrf' as const,
+            semanticCount: semanticResults.length,
+            keywordCount: keyword.length,
+            overlapCount,
+            fusedCount: results.length,
+            returnedCount: Math.min(results.length, limit),
+            timingsMs: {
+              semantic: semanticMs,
+              keyword: keywordMs,
+              fuse: fuseMs,
+              total: Date.now() - totalStart,
+            },
+          }
+        : undefined;
 
     return res.json({
       query: q,
@@ -446,6 +496,7 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
         ...(minSemanticScore !== undefined ? { minSemanticScore } : {}),
       },
       results,
+      ...(debug ? { debug } : {}),
     });
   } catch (err) {
     next(err);

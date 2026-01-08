@@ -610,23 +610,6 @@ export default function SearchPage() {
           ) : null}
         </Stack>
       </Box>
-
-      {/* <SearchDebugPanel
-        title="Search Debug"
-        spec={baseSpec}
-        request={requestForDebug}
-        queryState={{
-          isUninitialized,
-          isLoading,
-          isFetching,
-          isSuccess,
-          isError,
-          error,
-        }}
-        response={data}
-      />
- */}
-
       <Box sx={{ mt: 2 }}>
         <Paper variant="outlined" sx={{ p: 2 }}>
           <Stack spacing={1}>
@@ -687,6 +670,7 @@ export default function SearchPage() {
                 {results.length} result{results.length === 1 ? '' : 's'}
                 {data?.mode ? ` • mode: ${data.mode}` : ''}
                 {committed.scope !== 'all' ? ` • scope: ${committed.scope}` : ''}
+                {committed.mode === 'hybrid' ? ' • hybrid: RRF' : ''}
               </Typography>
             </Box>
             <Box sx={{ px: 2, pb: 1, flexShrink: 0 }}>

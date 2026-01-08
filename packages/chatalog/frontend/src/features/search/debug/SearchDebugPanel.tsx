@@ -145,6 +145,24 @@ export default function SearchDebugPanel(props: SearchDebugPanelProps) {
                 {safeStringify(responseSummary, 2000).text}
               </Typography>
             </Box>
+            {response && typeof response === 'object' && (response as any)?.debug ? (
+              <Box>
+                <Typography variant="subtitle2">Hybrid Debug</Typography>
+                <Box
+                  component="pre"
+                  sx={{
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontSize: 12,
+                    bgcolor: 'action.hover',
+                    p: 1,
+                    borderRadius: 1,
+                  }}
+                >
+                  {safeStringify((response as any).debug, 5000).text}
+                </Box>
+              </Box>
+            ) : null}
             <Divider />
             <Box>
               <Typography variant="subtitle2">Payload</Typography>
