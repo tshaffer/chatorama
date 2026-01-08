@@ -1004,37 +1004,90 @@ export default function SearchPage() {
                       {canExplain ? (
                         <Collapse in={explainOpen} timeout="auto" unmountOnExit>
                           <Box sx={{ px: 2, pb: 1.5 }}>
-                            <Stack spacing={0.5}>
-                              <Typography variant="caption" color="text.secondary">
-                                Fusion: RRF (k={explain?.fusion?.k})
-                              </Typography>
-                              {explain?.sources?.keyword?.rank != null ? (
-                                <Typography variant="caption" color="text.secondary">
-                                  Keyword rank: {explain.sources.keyword.rank}
+                            <Stack spacing={1}>
+                              <Box
+                                sx={{
+                                  bgcolor: 'action.hover',
+                                  px: 1,
+                                  py: 0.5,
+                                  borderRadius: 1,
+                                }}
+                              >
+                                <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                                  {explain?.sources?.keyword && explain?.sources?.semantic
+                                    ? 'Matched by keyword and semantic similarity'
+                                    : explain?.sources?.keyword
+                                    ? 'Matched by keyword only'
+                                    : 'Matched by semantic similarity only'}
                                 </Typography>
-                              ) : null}
-                              {explain?.sources?.semantic?.rank != null ? (
                                 <Typography variant="caption" color="text.secondary">
-                                  Semantic rank: {explain.sources.semantic.rank}
+                                  {(() => {
+                                    const keywordContribution =
+                                      explain?.fusion?.contributions?.keyword;
+                                    const semanticContribution =
+                                      explain?.fusion?.contributions?.semantic;
+                                    if (keywordContribution == null || semanticContribution == null) {
+                                      return keywordContribution != null
+                                        ? 'Ranking dominated by keyword match'
+                                        : 'Ranking dominated by semantic similarity';
+                                    }
+                                    if (keywordContribution > semanticContribution) {
+                                      return 'Ranking dominated by keyword match';
+                                    }
+                                    if (semanticContribution > keywordContribution) {
+                                      return 'Ranking dominated by semantic similarity';
+                                    }
+                                    return 'Keyword and semantic contributed equally';
+                                  })()}
                                 </Typography>
-                              ) : null}
-                              {explain?.fusion?.contributions?.keyword != null ? (
+                              </Box>
+                              <Box>
+                                <Typography variant="overline" color="text.secondary">
+                                  Source details
+                                </Typography>
+                                <Stack spacing={0.5}>
+                                  {explain?.sources?.keyword?.rank != null ? (
+                                    <Typography variant="caption" color="text.secondary">
+                                      Keyword rank: {explain.sources.keyword.rank}
+                                      {explain?.fusion?.contributions?.keyword != null &&
+                                      explain?.fusion?.k != null
+                                        ? ` • 1 / (${explain.fusion.k} + ${explain.sources.keyword.rank}) = ${formatExplainNumber(
+                                            explain.fusion.contributions.keyword,
+                                          )}`
+                                        : ''}
+                                    </Typography>
+                                  ) : null}
+                                  {explain?.sources?.semantic?.rank != null ? (
+                                    <Typography variant="caption" color="text.secondary">
+                                      Semantic rank: {explain.sources.semantic.rank}
+                                      {explain?.sources?.semantic?.score != null
+                                        ? ` • raw score: ${formatExplainNumber(
+                                            explain.sources.semantic.score,
+                                          )}`
+                                        : ''}
+                                      {explain?.fusion?.contributions?.semantic != null &&
+                                      explain?.fusion?.k != null
+                                        ? ` • 1 / (${explain.fusion.k} + ${explain.sources.semantic.rank}) = ${formatExplainNumber(
+                                            explain.fusion.contributions.semantic,
+                                          )}`
+                                        : ''}
+                                    </Typography>
+                                  ) : null}
+                                </Stack>
+                              </Box>
+                              <Box>
+                                <Typography variant="overline" color="text.secondary">
+                                  Fusion result
+                                </Typography>
                                 <Typography variant="caption" color="text.secondary">
-                                  Keyword contribution:{' '}
-                                  {formatExplainNumber(explain.fusion.contributions.keyword)}
+                                  Method: {explain?.fusion?.method ?? 'rrf'}
+                                  {explain?.fusion?.combinedScore != null
+                                    ? ` • combined score: ${formatExplainNumber(
+                                        explain.fusion.combinedScore,
+                                      )}`
+                                    : ''}
                                 </Typography>
-                              ) : null}
-                              {explain?.fusion?.contributions?.semantic != null ? (
-                                <Typography variant="caption" color="text.secondary">
-                                  Semantic contribution:{' '}
-                                  {formatExplainNumber(explain.fusion.contributions.semantic)}
-                                </Typography>
-                              ) : null}
-                              {explain?.fusion?.combinedScore != null ? (
-                                <Typography variant="caption" color="text.secondary">
-                                  Combined score: {formatExplainNumber(explain.fusion.combinedScore)}
-                                </Typography>
-                              ) : null}
+                              </Box>
                             </Stack>
                           </Box>
                         </Collapse>
