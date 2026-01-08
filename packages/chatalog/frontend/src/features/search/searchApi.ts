@@ -19,9 +19,16 @@ export type GetSearchArgs = {
   maxTotalMinutes?: number;
   cuisine?: string;
   category?: string;
-  keyword?: string;
+  keywords?: string;
   includeIngredients?: string;
   excludeIngredients?: string;
+};
+
+export type RecipeFacetBucket = { value: string; count: number };
+export type RecipeFacetsResponse = {
+  cuisines: RecipeFacetBucket[];
+  categories: RecipeFacetBucket[];
+  keywords: RecipeFacetBucket[];
 };
 
 export const searchApi = baseApi.injectEndpoints({
@@ -40,7 +47,7 @@ export const searchApi = baseApi.injectEndpoints({
         maxTotalMinutes,
         cuisine,
         category,
-        keyword,
+        keywords,
         includeIngredients,
         excludeIngredients,
       }) => {
@@ -65,7 +72,7 @@ export const searchApi = baseApi.injectEndpoints({
         }
         if (cuisine && cuisine.trim()) params.set('cuisine', cuisine.trim());
         if (category && category.trim()) params.set('category', category.trim());
-        if (keyword && keyword.trim()) params.set('keyword', keyword.trim());
+        if (keywords && keywords.trim()) params.set('keywords', keywords.trim());
         if (includeIngredients && includeIngredients.trim()) {
           params.set('includeIngredients', includeIngredients.trim());
         }
@@ -83,7 +90,10 @@ export const searchApi = baseApi.injectEndpoints({
         body,
       }),
     }),
+    getRecipeFacets: build.query<RecipeFacetsResponse, void>({
+      query: () => ({ url: 'recipes/facets' }),
+    }),
   }),
 });
 
-export const { useGetSearchQuery, useSearchMutation } = searchApi;
+export const { useGetSearchQuery, useSearchMutation, useGetRecipeFacetsQuery } = searchApi;

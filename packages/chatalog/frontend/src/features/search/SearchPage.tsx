@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { SearchMode } from '@chatorama/chatalog-shared';
-import { useGetSearchQuery } from './searchApi';
+import { useGetRecipeFacetsQuery, useGetSearchQuery } from './searchApi';
 import { useGetSubjectsWithTopicsQuery, resolveSubjectAndTopicNames } from '../subjects/subjectsApi';
 import SearchBox from '../../components/SearchBox';
 import { parseSearchInput } from './queryParser';
@@ -24,6 +24,7 @@ import {
 import { buildSearchUrlFromQuery, parseSearchQueryFromUrl } from './searchUrl';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -62,6 +63,9 @@ export default function SearchPage() {
   const [activeRowIndex, setActiveRowIndex] = useState<number>(-1);
   const [overrideTopicId, setOverrideTopicId] = useState<string | null>(null);
   const [overrideSubjectId, setOverrideSubjectId] = useState<string | null>(null);
+  const [draftCuisine, setDraftCuisine] = useState<string>('');
+  const [draftCategories, setDraftCategories] = useState<string[]>([]);
+  const [draftKeywords, setDraftKeywords] = useState<string[]>([]);
   useEffect(() => {
     dispatch(hydrateFromUrl(parseSearchQueryFromUrl(location.search)));
   }, [dispatch, location.search]);
@@ -76,9 +80,9 @@ export default function SearchPage() {
   const maxPrepMinutes = committed.filters.prepTimeMax;
   const maxCookMinutes = committed.filters.cookTimeMax;
   const maxTotalMinutes = committed.filters.totalTimeMax;
-  const cuisine = committed.filters.cuisine?.[0]?.trim() || '';
-  const category = committed.filters.category?.[0]?.trim() || '';
-  const keyword = committed.filters.keywords?.[0]?.trim() || '';
+  const cuisineValues = (committed.filters.cuisine ?? []).map((t) => t.trim()).filter(Boolean);
+  const categoryValues = (committed.filters.category ?? []).map((t) => t.trim()).filter(Boolean);
+  const keywordValues = (committed.filters.keywords ?? []).map((t) => t.trim()).filter(Boolean);
   const includeIngredients = (committed.filters.includeIngredients ?? [])
     .map((t) => t.trim())
     .filter(Boolean)
@@ -87,6 +91,51 @@ export default function SearchPage() {
     .map((t) => t.trim())
     .filter(Boolean)
     .join(',');
+  const isRecipeScope = committed.scope === 'recipes';
+  const { data: recipeFacets } = useGetRecipeFacetsQuery(undefined, { skip: !isRecipeScope });
+  
+  const cuisineCounts = useMemo(() => {
+    return new Map((recipeFacets?.cuisines ?? []).map((b) => [b.value, b.count]));
+  }, [recipeFacets]);
+
+  const categoryCounts = useMemo(() => {
+    return new Map((recipeFacets?.categories ?? []).map((b) => [b.value, b.count]));
+  }, [recipeFacets]);
+
+  const keywordCounts = useMemo(() => {
+    return new Map((recipeFacets?.keywords ?? []).map((b) => [b.value, b.count]));
+  }, [recipeFacets]);
+
+  const cuisineOptions = useMemo(() => {
+    const vals = new Set((recipeFacets?.cuisines ?? []).map((b) => b.value));
+    if (draftCuisine) vals.add(draftCuisine);
+    return Array.from(vals);
+  }, [recipeFacets, draftCuisine]);
+
+  const categoryOptions = useMemo(() => {
+    const vals = new Set((recipeFacets?.categories ?? []).map((b) => b.value));
+    draftCategories.forEach((v) => vals.add(v));
+    return Array.from(vals);
+  }, [recipeFacets, draftCategories]);
+
+  const keywordOptions = useMemo(() => {
+    const vals = new Set((recipeFacets?.keywords ?? []).map((b) => b.value));
+    draftKeywords.forEach((v) => vals.add(v));
+    return Array.from(vals);
+  }, [recipeFacets, draftKeywords]);
+
+  const cuisineParam = useMemo(
+    () => cuisineValues.slice().sort((a, b) => a.localeCompare(b)).join(','),
+    [cuisineValues],
+  );
+  const categoryParam = useMemo(
+    () => categoryValues.slice().sort((a, b) => a.localeCompare(b)).join(','),
+    [categoryValues],
+  );
+  const keywordsParam = useMemo(
+    () => keywordValues.slice().sort((a, b) => a.localeCompare(b)).join(','),
+    [keywordValues],
+  );
 
   const stateAny = (location.state ?? {}) as any;
   const topicIdFromState = String(stateAny.topicId ?? '').trim();
@@ -125,9 +174,9 @@ export default function SearchPage() {
       ...(maxPrepMinutes !== undefined ? { maxPrepMinutes } : {}),
       ...(maxCookMinutes !== undefined ? { maxCookMinutes } : {}),
       ...(maxTotalMinutes !== undefined ? { maxTotalMinutes } : {}),
-      ...(cuisine ? { cuisine } : {}),
-      ...(category ? { category } : {}),
-      ...(keyword ? { keyword } : {}),
+      ...(isRecipeScope && cuisineParam ? { cuisine: cuisineParam } : {}),
+      ...(isRecipeScope && categoryParam ? { category: categoryParam } : {}),
+      ...(isRecipeScope && keywordsParam ? { keywords: keywordsParam } : {}),
       ...(includeIngredients ? { includeIngredients } : {}),
       ...(excludeIngredients ? { excludeIngredients } : {}),
     }),
@@ -142,9 +191,10 @@ export default function SearchPage() {
       maxPrepMinutes,
       maxCookMinutes,
       maxTotalMinutes,
-      cuisine,
-      category,
-      keyword,
+      cuisineParam,
+      categoryParam,
+      keywordsParam,
+      isRecipeScope,
       includeIngredients,
       excludeIngredients,
     ],
@@ -254,11 +304,32 @@ export default function SearchPage() {
 
   const openFilters = () => {
     dispatch(resetDraftToCommitted());
+    setDraftCuisine(cuisineValues[0] ?? '');
+    setDraftCategories(categoryValues);
+    setDraftKeywords(keywordValues);
     dispatch(setFiltersDialogOpen(true));
   };
 
   const applyDraftFilters = () => {
-    const nextQuery = draft;
+    const nextFilters = { ...draft.filters };
+    if (isRecipeScope) {
+      const cuisine = draftCuisine.trim();
+      nextFilters.cuisine = cuisine ? [cuisine] : [];
+
+      const categories = draftCategories
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+      nextFilters.category = categories;
+
+      const keywords = draftKeywords
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+      nextFilters.keywords = keywords;
+    }
+
+    const nextQuery = { ...draft, filters: nextFilters };
     dispatch(hydrateFromUrl(nextQuery));
     navigate(buildSearchUrlFromQuery(nextQuery));
     dispatch(setFiltersDialogOpen(false));
@@ -273,8 +344,18 @@ export default function SearchPage() {
         minSemanticScore: undefined,
         updatedFrom: undefined,
         updatedTo: undefined,
+        ...(isRecipeScope
+          ? {
+              cuisine: [],
+              category: [],
+              keywords: [],
+            }
+          : {}),
       },
     };
+    setDraftCuisine('');
+    setDraftCategories([]);
+    setDraftKeywords([]);
     applyCommitted(nextQuery);
     dispatch(setFiltersDialogOpen(false));
   };
@@ -287,6 +368,8 @@ export default function SearchPage() {
       updatedFrom ||
       updatedTo ||
       minSemanticScore !== undefined ||
+      (isRecipeScope &&
+        (cuisineValues.length || categoryValues.length || keywordValues.length)) ||
       (committed.mode && committed.mode !== 'auto'),
   );
 
@@ -371,7 +454,14 @@ export default function SearchPage() {
                   exclusive
                   onChange={(_e, v) => {
                     if (!v) return;
-                    const nextQuery = { ...committed, scope: v as any };
+                    const nextQuery = {
+                      ...committed,
+                      scope: v as any,
+                      filters:
+                        v === 'recipes'
+                          ? committed.filters
+                          : { ...committed.filters, cuisine: [], category: [], keywords: [] },
+                    };
                     applyCommitted(nextQuery);
                   }}
                   size="small"
@@ -385,9 +475,9 @@ export default function SearchPage() {
                   exclusive
                   onChange={(_e, v) => {
                     if (!v) return;
-                  const nextQuery = { ...committed, mode: v as any };
-                  applyCommitted(nextQuery);
-                }}
+                    const nextQuery = { ...committed, mode: v as any };
+                    applyCommitted(nextQuery);
+                  }}
                   size="small"
                 >
                   <ToggleButton value="auto">Auto</ToggleButton>
@@ -603,6 +693,69 @@ export default function SearchPage() {
                         variant="outlined"
                       />
                     ) : null}
+
+                    {isRecipeScope
+                      ? cuisineValues.map((c) => (
+                          <Chip
+                            key={`cuisine-${c}`}
+                            label={`Cuisine: ${c}`}
+                            onDelete={() => {
+                              const nextCuisine = cuisineValues.filter((x) => x !== c);
+                              applyCommitted({
+                                ...committed,
+                                filters: {
+                                  ...committed.filters,
+                                  cuisine: nextCuisine.sort((a, b) => a.localeCompare(b)),
+                                },
+                              });
+                            }}
+                            size="small"
+                            variant="outlined"
+                          />
+                        ))
+                      : null}
+
+                    {isRecipeScope
+                      ? categoryValues.map((c) => (
+                          <Chip
+                            key={`category-${c}`}
+                            label={`Category: ${c}`}
+                            onDelete={() => {
+                              const nextCategories = categoryValues.filter((x) => x !== c);
+                              applyCommitted({
+                                ...committed,
+                                filters: {
+                                  ...committed.filters,
+                                  category: nextCategories.sort((a, b) => a.localeCompare(b)),
+                                },
+                              });
+                            }}
+                            size="small"
+                            variant="outlined"
+                          />
+                        ))
+                      : null}
+
+                    {isRecipeScope
+                      ? keywordValues.map((k) => (
+                          <Chip
+                            key={`keyword-${k}`}
+                            label={`Keyword: ${k}`}
+                            onDelete={() => {
+                              const nextKeywords = keywordValues.filter((x) => x !== k);
+                              applyCommitted({
+                                ...committed,
+                                filters: {
+                                  ...committed.filters,
+                                  keywords: nextKeywords.sort((a, b) => a.localeCompare(b)),
+                                },
+                              });
+                            }}
+                            size="small"
+                            variant="outlined"
+                          />
+                        ))
+                      : null}
                   </>
                 )}
 
@@ -765,6 +918,87 @@ export default function SearchPage() {
                   fullWidth
                 />
             </Stack>
+
+            {isRecipeScope ? (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                  Recipe facets
+                </Typography>
+                <Stack spacing={2}>
+                  <Autocomplete
+                    options={cuisineOptions}
+                    value={draftCuisine || null}
+                    onChange={(_e, v) => setDraftCuisine(v ?? '')}
+                    getOptionLabel={(opt) => opt}
+                    renderOption={(props, option) => {
+                      const count = cuisineCounts.get(option);
+                      return (
+                        <li {...props}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography variant="body2">{option}</Typography>
+                            {count != null ? (
+                              <Typography variant="caption" color="text.secondary">
+                                ({count})
+                              </Typography>
+                            ) : null}
+                          </Stack>
+                        </li>
+                      );
+                    }}
+                    renderInput={(params) => <TextField {...params} label="Cuisine" />}
+                    size="small"
+                  />
+                  <Autocomplete
+                    multiple
+                    options={categoryOptions}
+                    value={draftCategories}
+                    onChange={(_e, v) => setDraftCategories(v)}
+                    getOptionLabel={(opt) => opt}
+                    renderOption={(props, option) => {
+                      const count = categoryCounts.get(option);
+                      return (
+                        <li {...props}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography variant="body2">{option}</Typography>
+                            {count != null ? (
+                              <Typography variant="caption" color="text.secondary">
+                                ({count})
+                              </Typography>
+                            ) : null}
+                          </Stack>
+                        </li>
+                      );
+                    }}
+                    renderInput={(params) => <TextField {...params} label="Category" />}
+                    size="small"
+                  />
+                  <Autocomplete
+                    multiple
+                    options={keywordOptions}
+                    value={draftKeywords}
+                    onChange={(_e, v) => setDraftKeywords(v)}
+                    getOptionLabel={(opt) => opt}
+                    renderOption={(props, option) => {
+                      const count = keywordCounts.get(option);
+                      return (
+                        <li {...props}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography variant="body2">{option}</Typography>
+                            {count != null ? (
+                              <Typography variant="caption" color="text.secondary">
+                                ({count})
+                              </Typography>
+                            ) : null}
+                          </Stack>
+                        </li>
+                      );
+                    }}
+                    renderInput={(params) => <TextField {...params} label="Keywords" />}
+                    size="small"
+                  />
+                </Stack>
+              </Box>
+            ) : null}
           </Stack>
         </DialogContent>
         <DialogActions>
