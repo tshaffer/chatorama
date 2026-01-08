@@ -10,12 +10,9 @@ import {
 
 type RecipeFacetBucket = { value: string; count: number };
 type RecipeFacetsResponse = {
-  filters: any;
-  facets: {
-    cuisines: RecipeFacetBucket[];
-    categories: RecipeFacetBucket[];
-    keywords: RecipeFacetBucket[];
-  };
+  cuisines: RecipeFacetBucket[];
+  categories: RecipeFacetBucket[];
+  keywords: RecipeFacetBucket[];
 };
 
 export async function normalizeRecipeIngredients(req: Request, res: Response, next: NextFunction) {
@@ -138,12 +135,9 @@ export async function getRecipeFacets(req: Request, res: Response, next: NextFun
 
       if (!ingredientSource) {
         const empty: RecipeFacetsResponse = {
-          filters: {
-            scope: 'recipes',
-            includeIngredients: includeTokens,
-            excludeIngredients: excludeTokens,
-          },
-          facets: { cuisines: [], categories: [], keywords: [] },
+          cuisines: [],
+          categories: [],
+          keywords: [],
         };
         return res.json(empty);
       }
@@ -243,12 +237,9 @@ export async function getRecipeFacets(req: Request, res: Response, next: NextFun
     const facets = agg ?? { cuisines: [], categories: [], keywords: [] };
 
     const response: RecipeFacetsResponse = {
-      filters: combinedFilter,
-      facets: {
-        cuisines: facets.cuisines ?? [],
-        categories: facets.categories ?? [],
-        keywords: facets.keywords ?? [],
-      },
+      cuisines: facets.cuisines ?? [],
+      categories: facets.categories ?? [],
+      keywords: facets.keywords ?? [],
     };
 
     return res.json(response);
