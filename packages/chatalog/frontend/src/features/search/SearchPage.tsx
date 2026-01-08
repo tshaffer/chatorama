@@ -33,6 +33,8 @@ import {
   getDefaultSearchQuery,
   parseSearchQueryFromUrl,
 } from './searchUrl';
+import { buildSearchRequest } from './buildSearchRequest';
+import SearchDebugPanel from './debug/SearchDebugPanel';
 import {
   Alert,
   Autocomplete,
@@ -106,7 +108,7 @@ export default function SearchPage() {
   const savedSearches = savedSearchesData?.items ?? [];
   const [createSavedSearch, createSavedSearchState] = useCreateSavedSearchMutation();
   const [deleteSavedSearch] = useDeleteSavedSearchMutation();
-  
+
   const cuisineCounts = useMemo(() => {
     return new Map((recipeFacets?.cuisines ?? []).map((b) => [b.value, b.count]));
   }, [recipeFacets]);
@@ -211,7 +213,17 @@ export default function SearchPage() {
     [effectiveSpec, debouncedQ, committed.mode, committed.limit],
   );
 
-  const { data, error, isFetching } = useGetSearchQuery(requestSpec, { skip: !shouldQuery });
+  const requestForDebug = useMemo(() => buildSearchRequest(requestSpec), [requestSpec]);
+
+  const {
+    data,
+    error,
+    isFetching,
+    isLoading,
+    isSuccess,
+    isError,
+    isUninitialized,
+  } = useGetSearchQuery(requestSpec, { skip: !shouldQuery });
   const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery();
 
   const results = data?.results ?? [];
@@ -369,10 +381,10 @@ export default function SearchPage() {
         updatedTo: undefined,
         ...(isRecipeScope
           ? {
-              cuisine: [],
-              category: [],
-              keywords: [],
-            }
+            cuisine: [],
+            category: [],
+            keywords: [],
+          }
           : {}),
       },
     };
@@ -385,15 +397,15 @@ export default function SearchPage() {
 
   const hasAnyFilterChips = Boolean(
     effectiveSubjectId ||
-      effectiveTopicId ||
-      statusFromQuery ||
-      tagsFromQuery.length ||
-      updatedFrom ||
-      updatedTo ||
-      minSemanticScore !== undefined ||
-      (isRecipeScope &&
-        (cuisineValues.length || categoryValues.length || keywordValues.length)) ||
-      (committed.mode && committed.mode !== 'auto'),
+    effectiveTopicId ||
+    statusFromQuery ||
+    tagsFromQuery.length ||
+    updatedFrom ||
+    updatedTo ||
+    minSemanticScore !== undefined ||
+    (isRecipeScope &&
+      (cuisineValues.length || categoryValues.length || keywordValues.length)) ||
+    (committed.mode && committed.mode !== 'auto'),
   );
 
   const openSaveDialog = () => {
@@ -560,7 +572,7 @@ export default function SearchPage() {
                   <Chip
                     label={`Within: ${[
                       effectiveSubjectName ??
-                        (effectiveSubjectId ? `Subject ${effectiveSubjectId}` : ''),
+                      (effectiveSubjectId ? `Subject ${effectiveSubjectId}` : ''),
                       effectiveTopicName ?? (effectiveTopicId ? `Topic ${effectiveTopicId}` : ''),
                     ]
                       .filter(Boolean)
@@ -598,6 +610,22 @@ export default function SearchPage() {
           ) : null}
         </Stack>
       </Box>
+
+      {/* <SearchDebugPanel
+        title="Search Debug"
+        spec={baseSpec}
+        request={requestForDebug}
+        queryState={{
+          isUninitialized,
+          isLoading,
+          isFetching,
+          isSuccess,
+          isError,
+          error,
+        }}
+        response={data}
+      />
+ */}
 
       <Box sx={{ mt: 2 }}>
         <Paper variant="outlined" sx={{ p: 2 }}>
@@ -684,7 +712,7 @@ export default function SearchPage() {
                       <Chip
                         label={`Within: ${[
                           effectiveSubjectName ??
-                            (effectiveSubjectId ? `Subject ${effectiveSubjectId}` : ''),
+                          (effectiveSubjectId ? `Subject ${effectiveSubjectId}` : ''),
                           effectiveTopicName ?? (effectiveTopicId ? `Topic ${effectiveTopicId}` : ''),
                         ]
                           .filter(Boolean)
@@ -795,65 +823,65 @@ export default function SearchPage() {
 
                     {isRecipeScope
                       ? cuisineValues.map((c) => (
-                          <Chip
-                            key={`cuisine-${c}`}
-                            label={`Cuisine: ${c}`}
-                            onDelete={() => {
-                              const nextCuisine = cuisineValues.filter((x) => x !== c);
-                              applyCommitted({
-                                ...committed,
-                                filters: {
-                                  ...committed.filters,
-                                  cuisine: nextCuisine.sort((a, b) => a.localeCompare(b)),
-                                },
-                              });
-                            }}
-                            size="small"
-                            variant="outlined"
-                          />
-                        ))
+                        <Chip
+                          key={`cuisine-${c}`}
+                          label={`Cuisine: ${c}`}
+                          onDelete={() => {
+                            const nextCuisine = cuisineValues.filter((x) => x !== c);
+                            applyCommitted({
+                              ...committed,
+                              filters: {
+                                ...committed.filters,
+                                cuisine: nextCuisine.sort((a, b) => a.localeCompare(b)),
+                              },
+                            });
+                          }}
+                          size="small"
+                          variant="outlined"
+                        />
+                      ))
                       : null}
 
                     {isRecipeScope
                       ? categoryValues.map((c) => (
-                          <Chip
-                            key={`category-${c}`}
-                            label={`Category: ${c}`}
-                            onDelete={() => {
-                              const nextCategories = categoryValues.filter((x) => x !== c);
-                              applyCommitted({
-                                ...committed,
-                                filters: {
-                                  ...committed.filters,
-                                  category: nextCategories.sort((a, b) => a.localeCompare(b)),
-                                },
-                              });
-                            }}
-                            size="small"
-                            variant="outlined"
-                          />
-                        ))
+                        <Chip
+                          key={`category-${c}`}
+                          label={`Category: ${c}`}
+                          onDelete={() => {
+                            const nextCategories = categoryValues.filter((x) => x !== c);
+                            applyCommitted({
+                              ...committed,
+                              filters: {
+                                ...committed.filters,
+                                category: nextCategories.sort((a, b) => a.localeCompare(b)),
+                              },
+                            });
+                          }}
+                          size="small"
+                          variant="outlined"
+                        />
+                      ))
                       : null}
 
                     {isRecipeScope
                       ? keywordValues.map((k) => (
-                          <Chip
-                            key={`keyword-${k}`}
-                            label={`Keyword: ${k}`}
-                            onDelete={() => {
-                              const nextKeywords = keywordValues.filter((x) => x !== k);
-                              applyCommitted({
-                                ...committed,
-                                filters: {
-                                  ...committed.filters,
-                                  keywords: nextKeywords.sort((a, b) => a.localeCompare(b)),
-                                },
-                              });
-                            }}
-                            size="small"
-                            variant="outlined"
-                          />
-                        ))
+                        <Chip
+                          key={`keyword-${k}`}
+                          label={`Keyword: ${k}`}
+                          onDelete={() => {
+                            const nextKeywords = keywordValues.filter((x) => x !== k);
+                            applyCommitted({
+                              ...committed,
+                              filters: {
+                                ...committed.filters,
+                                keywords: nextKeywords.sort((a, b) => a.localeCompare(b)),
+                              },
+                            });
+                          }}
+                          size="small"
+                          variant="outlined"
+                        />
+                      ))
                       : null}
                   </>
                 )}
@@ -986,36 +1014,36 @@ export default function SearchPage() {
               </ToggleButtonGroup>
             </Box>
 
-              <TextField
-                label="Min semantic score"
-                type="number"
-                inputProps={{ min: 0, max: 1, step: 0.01 }}
-                value={draft.filters.minSemanticScore ?? ''}
-                onChange={(e) => {
-                  const s = e.target.value;
-                  if (s === '') dispatch(setDraftMinSemanticScore(undefined));
-                  else dispatch(setDraftMinSemanticScore(Math.max(0, Math.min(1, Number(s)))));
-                }}
-                helperText="Applies to Semantic/Hybrid. Leave blank for default."
-              />
+            <TextField
+              label="Min semantic score"
+              type="number"
+              inputProps={{ min: 0, max: 1, step: 0.01 }}
+              value={draft.filters.minSemanticScore ?? ''}
+              onChange={(e) => {
+                const s = e.target.value;
+                if (s === '') dispatch(setDraftMinSemanticScore(undefined));
+                else dispatch(setDraftMinSemanticScore(Math.max(0, Math.min(1, Number(s)))));
+              }}
+              helperText="Applies to Semantic/Hybrid. Leave blank for default."
+            />
 
             <Stack direction="row" spacing={2}>
-                <TextField
-                  label="Content updated from"
-                  type="date"
-                  value={draft.filters.updatedFrom ?? ''}
-                  onChange={(e) => dispatch(setDraftUpdatedFrom(e.target.value))}
-                  InputLabelProps={{ shrink: true }}
-                  fullWidth
-                />
-                <TextField
-                  label="Content updated to"
-                  type="date"
-                  value={draft.filters.updatedTo ?? ''}
-                  onChange={(e) => dispatch(setDraftUpdatedTo(e.target.value))}
-                  InputLabelProps={{ shrink: true }}
-                  fullWidth
-                />
+              <TextField
+                label="Content updated from"
+                type="date"
+                value={draft.filters.updatedFrom ?? ''}
+                onChange={(e) => dispatch(setDraftUpdatedFrom(e.target.value))}
+                InputLabelProps={{ shrink: true }}
+                fullWidth
+              />
+              <TextField
+                label="Content updated to"
+                type="date"
+                value={draft.filters.updatedTo ?? ''}
+                onChange={(e) => dispatch(setDraftUpdatedTo(e.target.value))}
+                InputLabelProps={{ shrink: true }}
+                fullWidth
+              />
             </Stack>
 
             {isRecipeScope ? (
@@ -1133,6 +1161,20 @@ export default function SearchPage() {
           </Button>
         </DialogActions>
       </Dialog>
+      <SearchDebugPanel
+        title="Search Debug"
+        spec={baseSpec}
+        request={requestForDebug}
+        queryState={{
+          isUninitialized,
+          isLoading,
+          isFetching,
+          isSuccess,
+          isError,
+          error,
+        }}
+        response={data}
+      />
     </Box>
   );
 }
