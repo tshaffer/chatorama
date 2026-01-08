@@ -4,7 +4,9 @@ import {
   Button,
   Divider,
   Drawer,
+  FormControlLabel,
   Stack,
+  Switch,
   Typography,
 } from '@mui/material';
 import { IS_DEV } from './isDev';
@@ -22,6 +24,9 @@ export type SearchDebugPanelProps = {
   response?: unknown;
   spec?: unknown;
   title?: string;
+  explainEnabled?: boolean;
+  explainDisabled?: boolean;
+  onToggleExplain?: (next: boolean) => void;
 };
 
 type StringifyResult = {
@@ -81,6 +86,7 @@ function summarizeResponse(response: unknown) {
 
 export default function SearchDebugPanel(props: SearchDebugPanelProps) {
   const { request, queryState, response, spec, title } = props;
+  const { explainEnabled, explainDisabled, onToggleExplain } = props;
   const [open, setOpen] = useState(false);
   const [showMore, setShowMore] = useState(false);
 
@@ -98,6 +104,14 @@ export default function SearchDebugPanel(props: SearchDebugPanelProps) {
   }, []);
 
   const responseSummary = useMemo(() => summarizeResponse(response), [response]);
+  const explainRows = useMemo(() => {
+    const results = (response as any)?.results;
+    if (!Array.isArray(results)) return [];
+    return results
+      .map((r: any, idx: number) => ({ ...r, __idx: idx }))
+      .filter((r: any) => r?.explain)
+      .slice(0, 10);
+  }, [response]);
   const stringified = useMemo(
     () =>
       safeStringify({ spec, request, queryState, response }, showMore ? 200000 : 50000),
@@ -139,12 +153,61 @@ export default function SearchDebugPanel(props: SearchDebugPanelProps) {
                   .join(' • ') || 'idle'}
               </Typography>
             </Box>
+            {onToggleExplain ? (
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={Boolean(explainEnabled)}
+                    onChange={(_e, checked) => onToggleExplain(checked)}
+                    disabled={Boolean(explainDisabled)}
+                  />
+                }
+                label="Explain"
+              />
+            ) : null}
             <Box>
               <Typography variant="subtitle2">Response Summary</Typography>
               <Typography variant="body2" color="text.secondary">
                 {safeStringify(responseSummary, 2000).text}
               </Typography>
             </Box>
+            {explainRows.length ? (
+              <Box>
+                <Typography variant="subtitle2">Explain (top 10)</Typography>
+                <Box
+                  component="pre"
+                  sx={{
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontSize: 12,
+                    bgcolor: 'action.hover',
+                    p: 1,
+                    borderRadius: 1,
+                  }}
+                >
+                  {explainRows
+                    .map((r: any) => {
+                      const keywordRank = r?.explain?.sources?.keyword?.rank;
+                      const semanticRank = r?.explain?.sources?.semantic?.rank;
+                      const keywordContribution = r?.explain?.fusion?.contributions?.keyword;
+                      const semanticContribution = r?.explain?.fusion?.contributions?.semantic;
+                      const combinedScore = r?.explain?.fusion?.combinedScore;
+                      const formatScore = (v: any) =>
+                        typeof v === 'number' ? v.toFixed(6) : 'n/a';
+                      return [
+                        `${r.__idx + 1}. ${r.id}`,
+                        `keywordRank: ${keywordRank ?? 'n/a'}`,
+                        `semanticRank: ${semanticRank ?? 'n/a'}`,
+                        `keywordRRF: ${formatScore(keywordContribution)}`,
+                        `semanticRRF: ${formatScore(semanticContribution)}`,
+                        `combined: ${formatScore(combinedScore)}`,
+                      ].join(' | ');
+                    })
+                    .join('\n')}
+                </Box>
+              </Box>
+            ) : null}
             {response && typeof response === 'object' && (response as any)?.debug ? (
               <Box>
                 <Typography variant="subtitle2">Hybrid Debug</Typography>

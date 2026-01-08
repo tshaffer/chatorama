@@ -418,6 +418,8 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     const keywordSpec: SearchSpec = { ...spec, limit: keywordLimit };
 
     const isHybridMode = mode === 'hybrid';
+    const explainRequested = String(req.query.explain ?? '') === '1';
+    const explain = isHybridMode && explainRequested;
     const totalStart = Date.now();
     let semanticMs = 0;
     let keywordMs = 0;
@@ -467,6 +469,12 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     if (runSemantic && minSemanticScore !== undefined) {
       semanticResults = semanticResults.filter((r) => (r.semanticScore ?? 0) >= minSemanticScore);
     }
+    const keywordRankById = explain
+      ? new Map(keyword.map((hit, idx) => [hit.id, idx + 1]))
+      : undefined;
+    const semanticRankById = explain
+      ? new Map(semanticResults.map((hit, idx) => [hit.id, idx + 1]))
+      : undefined;
     if (semanticDebug && semanticDebug.attempted && semanticDebug.ok && !semanticDebug.reason) {
       if (semanticResults.length === 0) {
         if (semanticRawCount > 0 && minSemanticScore !== undefined) {
@@ -487,7 +495,11 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     } else {
       const fuseStart = Date.now();
       // hybrid/auto: RRF fusion + raw-score explainability
-      results = fuseByRRF(semanticResults, keyword, limit);
+      results = fuseByRRF(semanticResults, keyword, limit, {
+        explain,
+        keywordRankById,
+        semanticRankById,
+      });
       fuseMs = Date.now() - fuseStart;
     }
 
@@ -982,10 +994,22 @@ function makeKeywordSnippet(markdown: string, tokens: string[], maxLen = 200): s
  *
  * This is simple, robust, and works well without needing to normalize different score types.
  */
-function fuseByRRF(semantic: SearchHit[], keyword: SearchHit[], limit: number) {
+type FuseExplainOptions = {
+  explain?: boolean;
+  keywordRankById?: Map<string, number>;
+  semanticRankById?: Map<string, number>;
+};
+
+function fuseByRRF(
+  semantic: SearchHit[],
+  keyword: SearchHit[],
+  limit: number,
+  opts: FuseExplainOptions = {},
+) {
   const k = 60; // common RRF constant
   const wSemantic = 1.0; // tune later if desired
   const wKeyword = 1.0; // tune later if desired
+  const explain = Boolean(opts.explain);
 
   const map = new Map<
     string,
@@ -1065,6 +1089,33 @@ function fuseByRRF(semantic: SearchHit[], keyword: SearchHit[], limit: number) {
       textScore: x.textScore,
       snippet: x.snippet,
       sources: Array.from(x.sources),
+      explain: explain
+        ? (() => {
+            const keywordRank = opts.keywordRankById?.get(x.id);
+            const semanticRank = opts.semanticRankById?.get(x.id);
+            const keywordContribution =
+              keywordRank != null ? 1 / (k + keywordRank) : undefined;
+            const semanticContribution =
+              semanticRank != null ? 1 / (k + semanticRank) : undefined;
+            return {
+              sources: {
+                ...(keywordRank != null ? { keyword: { rank: keywordRank } } : {}),
+                ...(semanticRank != null
+                  ? { semantic: { rank: semanticRank, score: x.semanticScore } }
+                  : {}),
+              },
+              fusion: {
+                method: 'rrf' as const,
+                k,
+                contributions: {
+                  ...(keywordContribution != null ? { keyword: keywordContribution } : {}),
+                  ...(semanticContribution != null ? { semantic: semanticContribution } : {}),
+                },
+                combinedScore: (keywordContribution ?? 0) + (semanticContribution ?? 0),
+              },
+            };
+          })()
+        : undefined,
     }));
 
   return fused;

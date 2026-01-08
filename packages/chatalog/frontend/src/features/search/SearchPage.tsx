@@ -85,6 +85,7 @@ export default function SearchPage() {
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saveErrorMessage, setSaveErrorMessage] = useState<string>('');
+  const [explainEnabled, setExplainEnabled] = useState(false);
   useEffect(() => {
     dispatch(hydrateFromUrl(parseSearchQueryFromUrl(location.search)));
   }, [dispatch, location.search]);
@@ -209,8 +210,9 @@ export default function SearchPage() {
       query: debouncedQ,
       mode: committed.mode as SearchMode,
       limit: clampLimit(committed.limit),
+      explain: explainEnabled && committed.mode === 'hybrid',
     }),
-    [effectiveSpec, debouncedQ, committed.mode, committed.limit],
+    [effectiveSpec, debouncedQ, committed.mode, committed.limit, explainEnabled],
   );
 
   const requestForDebug = useMemo(() => buildSearchRequest(requestSpec), [requestSpec]);
@@ -1147,7 +1149,7 @@ export default function SearchPage() {
       </Dialog>
       <SearchDebugPanel
         title="Search Debug"
-        spec={baseSpec}
+        spec={requestSpec}
         request={requestForDebug}
         queryState={{
           isUninitialized,
@@ -1158,6 +1160,9 @@ export default function SearchPage() {
           error,
         }}
         response={data}
+        explainEnabled={explainEnabled}
+        explainDisabled={committed.mode !== 'hybrid'}
+        onToggleExplain={setExplainEnabled}
       />
     </Box>
   );

@@ -36,7 +36,29 @@ export interface SearchResultItem {
   // Explainability (present when available):
   semanticScore?: number;
   textScore?: number;
+  explain?: SearchExplain;
 }
+
+export type SearchExplain = {
+  sources: {
+    keyword?: {
+      rank: number;
+    };
+    semantic?: {
+      rank: number;
+      score?: number;
+    };
+  };
+  fusion: {
+    method: 'rrf';
+    k: number;
+    contributions: {
+      keyword?: number;
+      semantic?: number;
+    };
+    combinedScore: number;
+  };
+};
 
 export interface SearchResponse {
   query: string;
@@ -158,6 +180,7 @@ export type SearchSpec = {
   limit: number;
   scope: SearchScope;
   filters: SearchQueryFilters;
+  explain?: boolean;
 };
 
 export type SavedSearch = {

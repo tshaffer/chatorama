@@ -18,6 +18,7 @@ export function buildSearchRequest(spec: SearchSpec): SearchRequestForDebug {
   params.set('q', spec.query);
   if (spec.mode) params.set('mode', spec.mode);
   if (spec.limit != null) params.set('limit', String(spec.limit));
+  if (spec.explain) params.set('explain', '1');
   if (spec.scope && spec.scope !== 'all') params.set('scope', spec.scope);
   if (spec.filters.subjectId) params.set('subjectId', spec.filters.subjectId);
   if (spec.filters.topicId) params.set('topicId', spec.filters.topicId);
