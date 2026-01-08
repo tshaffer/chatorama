@@ -4,9 +4,10 @@ import { NoteModel } from '../models/Note';
 import { normalizeIngredientLine } from '../utils/recipeNormalize';
 import {
   buildIngredientFilterForSource,
-  buildNoteFilterFromQuery,
+  buildNoteFilterFromSpec,
   splitAndDedupTokens,
 } from '../utils/search/noteFilters';
+import { buildSearchSpec } from '@chatorama/chatalog-shared';
 
 type RecipeFacetBucket = { value: string; count: number };
 type RecipeFacetsResponse = {
@@ -148,10 +149,8 @@ export async function getRecipeFacets(req: Request, res: Response, next: NextFun
         ? buildIngredientFilterForSource(ingredientSource, includeTokens, excludeTokens)
         : undefined;
 
-    const { combinedFilter } = buildNoteFilterFromQuery(
-      { ...req.query, scope: 'recipes' },
-      ingredientFilter,
-    );
+    const spec = buildSearchSpec({ ...(req.query as any), scope: 'recipes' });
+    const { combinedFilter } = buildNoteFilterFromSpec(spec, ingredientFilter);
 
     const pipeline: PipelineStage[] = [
       { $match: combinedFilter },

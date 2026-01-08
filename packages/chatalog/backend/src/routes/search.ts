@@ -7,13 +7,15 @@ import type {
   SearchRequestV1,
   SearchResponseV1,
   SearchHitNoteV1,
+  SearchSpec,
 } from '@chatorama/chatalog-shared';
+import { buildSearchSpec } from '@chatorama/chatalog-shared';
 import {
   buildIngredientFilterForSource,
-  buildNoteFilterFromQuery,
-  isNonEmptyFilter,
+  buildNoteFilterFromSpec,
   splitAndDedupTokens,
 } from '../utils/search/noteFilters';
+import { buildSearchPipeline } from '../search/buildSearchPipeline';
 
 export const searchRouter = Router();
 
@@ -317,14 +319,12 @@ searchRouter.get('/semantic', async (req: Request, res: Response, next: NextFunc
  */
 const hybridSearchHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const rawQ = String(req.query.q ?? '').trim();
-    const q = rawQ;
+    const spec = buildSearchSpec({ ...(req.query as any), query: req.query.q });
+    const q = spec.query;
     const isMatchAll = q === '*' || q === '';
 
-    const limit = clampInt(req.query.limit, 1, 50, 20);
-    const modeRaw = String(req.query.mode ?? 'auto').toLowerCase();
-    const mode =
-      modeRaw === 'semantic' || modeRaw === 'keyword' || modeRaw === 'hybrid' ? modeRaw : 'auto';
+    const limit = spec.limit;
+    const mode = spec.mode;
 
     const minSemanticScoreParam = parseMinSemanticScore((req.query as any).minSemanticScore);
     const defaultMinSemanticScore =
@@ -332,9 +332,9 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     const minSemanticScore =
       minSemanticScoreParam !== undefined ? minSemanticScoreParam : defaultMinSemanticScore;
 
-    const scope = String(req.query.scope ?? '').trim().toLowerCase();
-    const includeTokens = splitAndDedupTokens(req.query.includeIngredients);
-    const excludeTokens = splitAndDedupTokens(req.query.excludeIngredients);
+    const scope = spec.scope;
+    const includeTokens = splitAndDedupTokens(spec.filters.includeIngredients);
+    const excludeTokens = splitAndDedupTokens(spec.filters.excludeIngredients);
 
     let ingredientSource: 'normalized' | 'raw' | null = null;
     if (scope === 'recipes' && (includeTokens.length || excludeTokens.length)) {
@@ -366,8 +366,8 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
         ? buildIngredientFilterForSource(ingredientSource, includeTokens, excludeTokens)
         : undefined;
 
-    const { atlasFilter, postFilter, combinedFilter } = buildNoteFilterFromQuery(
-      req.query,
+    const { atlasFilter, postFilter, combinedFilter } = buildNoteFilterFromSpec(
+      spec,
       ingredientFilter,
     );
 
@@ -413,11 +413,12 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     const keywordLimit = runKeyword ? limit : 0;
 
     // Kick off in parallel where possible
+    const semanticSpec: SearchSpec = { ...spec, limit: semanticLimit };
+    const keywordSpec: SearchSpec = { ...spec, limit: keywordLimit };
+
     const [semantic, keyword] = await Promise.all([
-      runSemantic
-        ? semanticSearchNotes(q, semanticLimit, atlasFilter, postFilter)
-        : Promise.resolve([]),
-      runKeyword ? keywordSearchNotes(q, keywordLimit, combinedFilter) : Promise.resolve([]),
+      runSemantic ? semanticSearchNotes(semanticSpec, ingredientFilter) : Promise.resolve([]),
+      runKeyword ? keywordSearchNotes(keywordSpec, ingredientFilter) : Promise.resolve([]),
     ]);
 
     let semanticResults = semantic;
@@ -693,46 +694,23 @@ type SearchHit = {
 };
 
 async function semanticSearchNotes(
-  q: string,
-  limit: number,
-  atlasFilter: Record<string, any>,
-  postFilter?: Record<string, any>,
+  spec: SearchSpec,
+  ingredientFilter?: Record<string, any>,
 ): Promise<SearchHit[]> {
-  if (limit <= 0) return [];
+  if (spec.limit <= 0) return [];
 
-  const { vector: queryVector } = await embedText(q, { model: 'text-embedding-3-small' });
+  const { vector: queryVector } = await embedText(spec.query, { model: 'text-embedding-3-small' });
 
   const indexName = 'notes_vector_index';
-
   const vectorStage: any = {
     index: indexName,
     path: 'embedding',
     queryVector,
-    numCandidates: Math.max(limit * 10, 100),
-    limit,
+    numCandidates: Math.max(spec.limit * 10, 100),
+    limit: spec.limit,
   };
 
-  if (isNonEmptyFilter(atlasFilter)) {
-    // Pre-filter documents for vector search.
-    vectorStage.filter = atlasFilter;
-  }
-
-  const pipeline: any[] = [
-    { $vectorSearch: vectorStage },
-    ...(isNonEmptyFilter(postFilter) ? [{ $match: postFilter }] : []),
-    {
-      $project: {
-        _id: 1,
-        title: 1,
-        summary: 1,
-        subjectId: 1,
-        topicId: 1,
-        updatedAt: 1,
-        score: { $meta: 'vectorSearchScore' },
-      },
-    },
-    { $sort: { score: -1 } },
-  ];
+  const pipeline = buildSearchPipeline(spec, { vectorStage, ingredientFilter });
 
   const docs = await NoteModel.aggregate(pipeline).exec();
 
@@ -749,30 +727,15 @@ async function semanticSearchNotes(
 }
 
 async function keywordSearchNotes(
-  q: string,
-  limit: number,
-  filter: Record<string, any>,
+  spec: SearchSpec,
+  ingredientFilter?: Record<string, any>,
 ): Promise<SearchHit[]> {
-  if (limit <= 0) return [];
-  const tokens = tokenizeQuery(q);
+  if (spec.limit <= 0) return [];
+  const tokens = tokenizeQuery(spec.query);
 
-  // MongoDB text search. Requires the text index already defined on NoteSchema.
-  const docs = await NoteModel.find(
-    { $text: { $search: q }, ...(isNonEmptyFilter(filter) ? filter : {}) },
-    {
-      score: { $meta: 'textScore' },
-      title: 1,
-      summary: 1,
-      markdown: 1,
-      subjectId: 1,
-      topicId: 1,
-      updatedAt: 1,
-    },
-  )
-    .sort({ score: { $meta: 'textScore' } })
-    .limit(limit)
-    .lean()
-    .exec();
+  const pipeline = buildSearchPipeline(spec, { ingredientFilter, includeMarkdown: true });
+
+  const docs = await NoteModel.aggregate(pipeline).exec();
 
   return (docs ?? []).map((d: any) => ({
     id: String(d._id),

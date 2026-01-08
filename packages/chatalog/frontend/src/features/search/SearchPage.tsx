@@ -26,6 +26,7 @@ import {
   selectFiltersDialogOpen,
   selectSearchCommitted,
   selectSearchDraft,
+  selectSearchSpec,
 } from './searchSelectors';
 import {
   buildSearchUrlFromQuery,
@@ -70,6 +71,7 @@ export default function SearchPage() {
   const dispatch = useAppDispatch();
   const draft = useAppSelector(selectSearchDraft);
   const committed = useAppSelector(selectSearchCommitted);
+  const baseSpec = useAppSelector(selectSearchSpec);
   const filtersOpen = useAppSelector(selectFiltersDialogOpen);
 
   const [activeRowIndex, setActiveRowIndex] = useState<number>(-1);
@@ -98,14 +100,6 @@ export default function SearchPage() {
   const cuisineValues = (committed.filters.cuisine ?? []).map((t) => t.trim()).filter(Boolean);
   const categoryValues = (committed.filters.category ?? []).map((t) => t.trim()).filter(Boolean);
   const keywordValues = (committed.filters.keywords ?? []).map((t) => t.trim()).filter(Boolean);
-  const includeIngredients = (committed.filters.includeIngredients ?? [])
-    .map((t) => t.trim())
-    .filter(Boolean)
-    .join(',');
-  const excludeIngredients = (committed.filters.excludeIngredients ?? [])
-    .map((t) => t.trim())
-    .filter(Boolean)
-    .join(',');
   const isRecipeScope = committed.scope === 'recipes';
   const { data: recipeFacets } = useGetRecipeFacetsQuery(undefined, { skip: !isRecipeScope });
   const { data: savedSearchesData } = useGetSavedSearchesQuery();
@@ -143,18 +137,6 @@ export default function SearchPage() {
     return Array.from(vals);
   }, [recipeFacets, draftKeywords]);
 
-  const cuisineParam = useMemo(
-    () => cuisineValues.slice().sort((a, b) => a.localeCompare(b)).join(','),
-    [cuisineValues],
-  );
-  const categoryParam = useMemo(
-    () => categoryValues.slice().sort((a, b) => a.localeCompare(b)).join(','),
-    [categoryValues],
-  );
-  const keywordsParam = useMemo(
-    () => keywordValues.slice().sort((a, b) => a.localeCompare(b)).join(','),
-    [keywordValues],
-  );
 
   const stateAny = (location.state ?? {}) as any;
   const topicIdFromState = String(stateAny.topicId ?? '').trim();
@@ -181,45 +163,55 @@ export default function SearchPage() {
     [debouncedQ, trimmedQ, committed.text],
   );
 
-  const args = useMemo(
+  const effectiveSpec = useMemo(
     () => ({
-      q: debouncedQ,
-      mode: committed.mode as SearchMode,
-      limit: clampLimit(committed.limit),
-      scope: committed.scope,
-      ...(effectiveSubjectId ? { subjectId: effectiveSubjectId } : {}),
-      ...(effectiveTopicId ? { topicId: effectiveTopicId } : {}),
-      ...(minSemanticScore !== undefined ? { minSemanticScore } : {}),
-      ...(maxPrepMinutes !== undefined ? { maxPrepMinutes } : {}),
-      ...(maxCookMinutes !== undefined ? { maxCookMinutes } : {}),
-      ...(maxTotalMinutes !== undefined ? { maxTotalMinutes } : {}),
-      ...(isRecipeScope && cuisineParam ? { cuisine: cuisineParam } : {}),
-      ...(isRecipeScope && categoryParam ? { category: categoryParam } : {}),
-      ...(isRecipeScope && keywordsParam ? { keywords: keywordsParam } : {}),
-      ...(includeIngredients ? { includeIngredients } : {}),
-      ...(excludeIngredients ? { excludeIngredients } : {}),
+      ...baseSpec,
+      filters: {
+        ...baseSpec.filters,
+        subjectId: effectiveSubjectId ?? baseSpec.filters.subjectId,
+        topicId: effectiveTopicId ?? baseSpec.filters.topicId,
+        minSemanticScore,
+        prepTimeMax: maxPrepMinutes,
+        cookTimeMax: maxCookMinutes,
+        totalTimeMax: maxTotalMinutes,
+        cuisine: cuisineValues,
+        category: categoryValues,
+        keywords: keywordValues,
+        includeIngredients: (committed.filters.includeIngredients ?? [])
+          .map((t) => t.trim())
+          .filter(Boolean),
+        excludeIngredients: (committed.filters.excludeIngredients ?? [])
+          .map((t) => t.trim())
+          .filter(Boolean),
+      },
     }),
     [
-      debouncedQ,
-      committed.mode,
-      committed.limit,
-      committed.scope,
+      baseSpec,
       effectiveSubjectId,
       effectiveTopicId,
       minSemanticScore,
       maxPrepMinutes,
       maxCookMinutes,
       maxTotalMinutes,
-      cuisineParam,
-      categoryParam,
-      keywordsParam,
-      isRecipeScope,
-      includeIngredients,
-      excludeIngredients,
+      cuisineValues,
+      categoryValues,
+      keywordValues,
+      committed.filters.includeIngredients,
+      committed.filters.excludeIngredients,
     ],
   );
 
-  const { data, error, isFetching } = useGetSearchQuery(args, { skip: !shouldQuery });
+  const requestSpec = useMemo(
+    () => ({
+      ...effectiveSpec,
+      query: debouncedQ,
+      mode: committed.mode as SearchMode,
+      limit: clampLimit(committed.limit),
+    }),
+    [effectiveSpec, debouncedQ, committed.mode, committed.limit],
+  );
+
+  const { data, error, isFetching } = useGetSearchQuery(requestSpec, { skip: !shouldQuery });
   const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery();
 
   const results = data?.results ?? [];

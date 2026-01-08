@@ -124,6 +124,14 @@ export type SearchQuery = {
   filters: SearchQueryFilters;
 };
 
+export type SearchSpec = {
+  query: string;
+  mode: SearchMode;
+  limit: number;
+  scope: SearchScope;
+  filters: SearchQueryFilters;
+};
+
 export type SavedSearch = {
   id: string;
   name: string;
