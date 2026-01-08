@@ -480,7 +480,7 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
         if (semanticRawCount > 0 && minSemanticScore !== undefined) {
           semanticDebug.reason = 'filtered_to_zero';
         } else {
-          const hasEmbeddings = await hasEmbeddingDocs(combinedFilter);
+          const hasEmbeddings = await hasEmbeddingDocs(combinedFilter, scope);
           semanticDebug.reason = hasEmbeddings ? 'no_results' : 'missing_embedding_field';
         }
       }
@@ -774,6 +774,11 @@ function parseMinSemanticScore(raw: unknown): number | undefined {
   return Math.max(0, Math.min(1, n));
 }
 
+const NOTES_VECTOR_INDEX_NAME = 'notes_vector_index';
+const NOTES_VECTOR_PATH = 'embedding';
+const RECIPES_VECTOR_INDEX_NAME = 'recipe_embedding_index';
+const RECIPES_VECTOR_PATH = 'recipeEmbedding';
+
 type SemanticDebugReason =
   | 'disabled'
   | 'not_configured'
@@ -821,8 +826,9 @@ function mapSemanticError(err: unknown): { reason: SemanticDebugReason; errorMes
   return { reason: 'error', errorMessage: truncateErrorMessage(message) };
 }
 
-async function hasEmbeddingDocs(filter: Record<string, any>): Promise<boolean> {
-  const embeddingClause = { embedding: { $exists: true, $ne: [] } };
+async function hasEmbeddingDocs(filter: Record<string, any>, scope: string): Promise<boolean> {
+  const embeddingField = scope === 'recipes' ? RECIPES_VECTOR_PATH : NOTES_VECTOR_PATH;
+  const embeddingClause = { [embeddingField]: { $exists: true, $ne: [] } };
   const query = isNonEmptyFilter(filter) ? { $and: [filter, embeddingClause] } : embeddingClause;
   const exists = await NoteModel.exists(query);
   return Boolean(exists);
@@ -851,10 +857,15 @@ async function semanticSearchNotes(
 
   const { vector: queryVector } = await embedText(spec.query, { model: 'text-embedding-3-small' });
 
-  const indexName = 'notes_vector_index';
+  // Atlas Search vector indexes (configured in Atlas UI):
+  // - notes:   index name "notes_vector_index", collection "notes", path "embedding"
+  // - recipes: index name "recipe_embedding_index", collection "notes", path "recipeEmbedding"
+  //   (similarity: cosine, dimensions: 1536 for text-embedding-3-small)
+  const indexName = spec.scope === 'recipes' ? RECIPES_VECTOR_INDEX_NAME : NOTES_VECTOR_INDEX_NAME;
+  const vectorPath = spec.scope === 'recipes' ? RECIPES_VECTOR_PATH : NOTES_VECTOR_PATH;
   const vectorStage: any = {
     index: indexName,
-    path: 'embedding',
+    path: vectorPath,
     queryVector,
     numCandidates: Math.max(spec.limit * 10, 100),
     limit: spec.limit,

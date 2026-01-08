@@ -25,6 +25,10 @@ export interface NoteDoc extends Document {
   embeddingModel?: string;
   embeddingTextHash?: string;
   embeddingUpdatedAt?: Date;
+  recipeEmbedding?: number[];
+  recipeEmbeddingModel?: string;
+  recipeEmbeddingTextHash?: string;
+  recipeEmbeddingUpdatedAt?: Date;
 
   /** Chatworthy provenance */
   chatworthyNoteId?: string;
@@ -147,6 +151,10 @@ const NoteSchema = new Schema<NoteDoc>(
     embeddingModel: { type: String },
     embeddingTextHash: { type: String, index: true },
     embeddingUpdatedAt: { type: Date },
+    recipeEmbedding: { type: [Number], required: false },
+    recipeEmbeddingModel: { type: String },
+    recipeEmbeddingTextHash: { type: String, index: true },
+    recipeEmbeddingUpdatedAt: { type: Date },
 
     // Chatworthy provenance
     chatworthyNoteId:     { type: String, index: true },
@@ -205,6 +213,8 @@ NoteSchema.index({ tags: 1 });
  */
 NoteSchema.index({ embeddingUpdatedAt: -1 });
 NoteSchema.index({ embeddingTextHash: 1, updatedAt: -1 });
+NoteSchema.index({ recipeEmbeddingUpdatedAt: -1 });
+NoteSchema.index({ recipeEmbeddingTextHash: 1, updatedAt: -1 });
 NoteSchema.index({ importBatchId: 1, updatedAt: -1 });
 NoteSchema.index({ sourceType: 1, updatedAt: -1 });
 NoteSchema.index({ chatworthyChatId: 1, updatedAt: -1 });
@@ -228,6 +238,9 @@ const SYSTEM_ONLY_PREFIXES = [
   'embedding',
   'embeddingUpdatedAt',
   'embeddingTextHash',
+  'recipeEmbedding',
+  'recipeEmbeddingUpdatedAt',
+  'recipeEmbeddingTextHash',
 ];
 
 function shouldBumpContentUpdatedAt(modifiedPaths: string[]): boolean {
