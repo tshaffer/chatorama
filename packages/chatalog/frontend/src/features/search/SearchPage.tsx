@@ -42,17 +42,20 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Collapse,
   Divider,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   IconButton,
   List,
   ListItemButton,
   ListItemText,
   Paper,
   Stack,
+  Switch,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -86,6 +89,7 @@ export default function SearchPage() {
   const [saveName, setSaveName] = useState('');
   const [saveErrorMessage, setSaveErrorMessage] = useState<string>('');
   const [explainEnabled, setExplainEnabled] = useState(false);
+  const [explainOpenById, setExplainOpenById] = useState<Record<string, boolean>>({});
   useEffect(() => {
     dispatch(hydrateFromUrl(parseSearchQueryFromUrl(location.search)));
   }, [dispatch, location.search]);
@@ -215,7 +219,10 @@ export default function SearchPage() {
     [effectiveSpec, debouncedQ, committed.mode, committed.limit, explainEnabled],
   );
 
-  const requestForDebug = useMemo(() => buildSearchRequest(requestSpec), [requestSpec]);
+  const requestForDebug = useMemo(
+    () => buildSearchRequest(requestSpec, { explain: explainEnabled }),
+    [requestSpec, explainEnabled],
+  );
 
   const {
     data,
@@ -290,6 +297,15 @@ export default function SearchPage() {
     });
     return idxs;
   }, [displayRows]);
+
+  const toggleExplainForId = useCallback((id: string) => {
+    setExplainOpenById((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  const formatExplainNumber = useCallback((value?: number) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return 'n/a';
+    return value.toFixed(4);
+  }, []);
 
   const applyCommitted = useCallback(
     (nextQuery: typeof committed) => {
@@ -871,6 +887,17 @@ export default function SearchPage() {
                       : null}
                   </>
                 )}
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={explainEnabled}
+                      onChange={(_e, checked) => setExplainEnabled(checked)}
+                      disabled={committed.mode !== 'hybrid'}
+                    />
+                  }
+                  label="Explain results"
+                />
 
                 <Button size="small" variant="outlined" onClick={openFilters}>
                   Add filters…
@@ -904,60 +931,115 @@ export default function SearchPage() {
 
                   const r = row.r;
                   const selected = i === activeRowIndex;
+                  const explain = r.explain;
+                  const canExplain = committed.mode === 'hybrid' && explainEnabled && !!explain;
+                  const explainOpen = Boolean(explainOpenById[r.id]);
 
                   return (
-                    <ListItemButton
-                      key={row.id}
-                      alignItems="flex-start"
-                      selected={selected}
-                      onMouseEnter={() => setActiveRowIndex(i)}
-                      onClick={() => {
-                        navigate(getNoteRoute(r.id));
-                      }}
-                    >
-                      <ListItemText
-                        primary={
-                          <Stack direction="row" spacing={1} alignItems="baseline" flexWrap="wrap">
-                            <Typography
-                              component="a"
-                              href={`/n/${r.id}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              variant="subtitle1"
-                              sx={{
-                                mr: 1,
-                                fontWeight: 600,
-                                textDecoration: 'none',
-                                color: 'inherit',
-                                '&:hover': { textDecoration: 'underline' },
-                              }}
-                            >
-                              {r.title || '(Untitled)'}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              score: {Number(r.score).toFixed(3)}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              • sources: {r.sources.join(', ')}
-                            </Typography>
-                          </Stack>
-                        }
-                        secondary={
-                          r.snippet ? (
-                            <Typography variant="body2" color="text.secondary">
-                              {r.sources?.includes('keyword')
-                                ? renderHighlightedSnippet(r.snippet, highlightTokens)
-                                : r.snippet}
-                            </Typography>
-                          ) : r.summary ? (
-                            <Typography variant="body2" color="text.secondary">
-                              {r.summary}
-                            </Typography>
-                          ) : null
-                        }
-                      />
-                    </ListItemButton>
+                    <Box key={row.id}>
+                      <ListItemButton
+                        alignItems="flex-start"
+                        selected={selected}
+                        onMouseEnter={() => setActiveRowIndex(i)}
+                        onClick={() => {
+                          navigate(getNoteRoute(r.id));
+                        }}
+                      >
+                        <ListItemText
+                          primary={
+                            <Stack direction="row" spacing={1} alignItems="baseline" flexWrap="wrap">
+                              <Typography
+                                component="a"
+                                href={`/n/${r.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                variant="subtitle1"
+                                sx={{
+                                  mr: 1,
+                                  fontWeight: 600,
+                                  textDecoration: 'none',
+                                  color: 'inherit',
+                                  '&:hover': { textDecoration: 'underline' },
+                                }}
+                              >
+                                {r.title || '(Untitled)'}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                score: {Number(r.score).toFixed(3)}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                • sources: {r.sources.join(', ')}
+                              </Typography>
+                              {canExplain ? (
+                                <Button
+                                  size="small"
+                                  variant="text"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    toggleExplainForId(r.id);
+                                  }}
+                                >
+                                  Why this matched
+                                </Button>
+                              ) : null}
+                            </Stack>
+                          }
+                          secondary={
+                            r.snippet ? (
+                              <Typography variant="body2" color="text.secondary">
+                                {r.sources?.includes('keyword')
+                                  ? renderHighlightedSnippet(r.snippet, highlightTokens)
+                                  : r.snippet}
+                              </Typography>
+                            ) : r.summary ? (
+                              <Typography variant="body2" color="text.secondary">
+                                {r.summary}
+                              </Typography>
+                            ) : null
+                          }
+                        />
+                      </ListItemButton>
+                      {canExplain ? (
+                        <Collapse in={explainOpen} timeout="auto" unmountOnExit>
+                          <Box sx={{ px: 2, pb: 1.5 }}>
+                            <Stack spacing={0.5}>
+                              <Typography variant="caption" color="text.secondary">
+                                Fusion: RRF (k={explain?.fusion?.k})
+                              </Typography>
+                              {explain?.sources?.keyword?.rank != null ? (
+                                <Typography variant="caption" color="text.secondary">
+                                  Keyword rank: {explain.sources.keyword.rank}
+                                </Typography>
+                              ) : null}
+                              {explain?.sources?.semantic?.rank != null ? (
+                                <Typography variant="caption" color="text.secondary">
+                                  Semantic rank: {explain.sources.semantic.rank}
+                                </Typography>
+                              ) : null}
+                              {explain?.fusion?.contributions?.keyword != null ? (
+                                <Typography variant="caption" color="text.secondary">
+                                  Keyword contribution:{' '}
+                                  {formatExplainNumber(explain.fusion.contributions.keyword)}
+                                </Typography>
+                              ) : null}
+                              {explain?.fusion?.contributions?.semantic != null ? (
+                                <Typography variant="caption" color="text.secondary">
+                                  Semantic contribution:{' '}
+                                  {formatExplainNumber(explain.fusion.contributions.semantic)}
+                                </Typography>
+                              ) : null}
+                              {explain?.fusion?.combinedScore != null ? (
+                                <Typography variant="caption" color="text.secondary">
+                                  Combined score: {formatExplainNumber(explain.fusion.combinedScore)}
+                                </Typography>
+                              ) : null}
+                            </Stack>
+                          </Box>
+                        </Collapse>
+                      ) : null}
+                    </Box>
                   );
                 })}
                 {results.length === 0 ? (
