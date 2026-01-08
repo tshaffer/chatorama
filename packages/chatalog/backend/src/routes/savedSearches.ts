@@ -57,7 +57,12 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const created = await SavedSearchModel.create({ name, query });
     const response: CreateSavedSearchResponse = toSavedSearch(created);
     return res.status(201).json(response);
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === 11000) {
+      return res
+        .status(409)
+        .json({ error: 'A saved search with this name already exists.' });
+    }
     next(err);
   }
 });

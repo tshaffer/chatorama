@@ -11,13 +11,13 @@ export interface SavedSearchDoc extends Document {
 
 const SavedSearchSchema = new Schema<SavedSearchDoc>(
   {
-    name: { type: String, required: true, trim: true },
+    name: { type: String, required: true, unique: true, trim: true },
     query: { type: Schema.Types.Mixed, required: true },
   },
   { timestamps: true }
 );
 
-SavedSearchSchema.index({ name: 1 });
+SavedSearchSchema.index({ name: 1 }, { unique: true });
 
 applyToJSON(SavedSearchSchema);
 

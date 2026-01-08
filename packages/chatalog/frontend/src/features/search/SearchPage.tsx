@@ -80,6 +80,7 @@ export default function SearchPage() {
   const [draftKeywords, setDraftKeywords] = useState<string[]>([]);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string>('');
   useEffect(() => {
     dispatch(hydrateFromUrl(parseSearchQueryFromUrl(location.search)));
   }, [dispatch, location.search]);
@@ -405,6 +406,7 @@ export default function SearchPage() {
 
   const openSaveDialog = () => {
     setSaveName('');
+    setSaveErrorMessage('');
     setSaveDialogOpen(true);
   };
 
@@ -416,8 +418,13 @@ export default function SearchPage() {
       await createSavedSearch({ name, query: queryToSave }).unwrap();
       setSaveDialogOpen(false);
       setSaveName('');
-    } catch {
-      // handled by mutation state
+      setSaveErrorMessage('');
+    } catch (err: any) {
+      if (err?.status === 409) {
+        setSaveErrorMessage('A saved search with this name already exists.');
+      } else {
+        setSaveErrorMessage('Failed to save search.');
+      }
     }
   };
 
@@ -1120,9 +1127,7 @@ export default function SearchPage() {
               placeholder="e.g., Weeknight recipes"
               fullWidth
             />
-            {createSavedSearchState.error ? (
-              <Alert severity="error">Could not save search. Try a different name.</Alert>
-            ) : null}
+            {saveErrorMessage ? <Alert severity="error">{saveErrorMessage}</Alert> : null}
           </Stack>
         </DialogContent>
         <DialogActions>
