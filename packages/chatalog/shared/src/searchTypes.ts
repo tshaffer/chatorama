@@ -95,3 +95,52 @@ export interface SearchResponseV1 {
   total?: number; // NEW: total hit count for the query+filters
   hits: SearchHitNoteV1[];
 }
+
+export type SearchScope = 'all' | 'recipes' | 'notes';
+
+export type SearchQueryFilters = {
+  subjectId?: string;
+  topicId?: string;
+  status?: string;
+  tags: string[];
+  updatedFrom?: string;
+  updatedTo?: string;
+  minSemanticScore?: number;
+  prepTimeMax?: number;
+  cookTimeMax?: number;
+  totalTimeMax?: number;
+  cuisine: string[];
+  category: string[];
+  keywords: string[];
+  includeIngredients: string[];
+  excludeIngredients: string[];
+};
+
+export type SearchQuery = {
+  text: string;
+  mode: SearchMode;
+  limit: number;
+  scope: SearchScope;
+  filters: SearchQueryFilters;
+};
+
+export type SavedSearch = {
+  id: string;
+  name: string;
+  query: SearchQuery;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type CreateSavedSearchRequest = {
+  name: string;
+  query: SearchQuery;
+};
+
+export type CreateSavedSearchResponse = SavedSearch;
+
+export type ListSavedSearchesResponse = {
+  items: SavedSearch[];
+};
+
+export type DeleteSavedSearchResponse = { ok: true };

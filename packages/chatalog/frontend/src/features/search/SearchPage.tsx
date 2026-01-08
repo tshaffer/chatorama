@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { SearchMode } from '@chatorama/chatalog-shared';
-import { useGetRecipeFacetsQuery, useGetSearchQuery } from './searchApi';
+import {
+  useCreateSavedSearchMutation,
+  useDeleteSavedSearchMutation,
+  useGetRecipeFacetsQuery,
+  useGetSavedSearchesQuery,
+  useGetSearchQuery,
+} from './searchApi';
 import { useGetSubjectsWithTopicsQuery, resolveSubjectAndTopicNames } from '../subjects/subjectsApi';
 import SearchBox from '../../components/SearchBox';
 import { parseSearchInput } from './queryParser';
@@ -21,7 +27,11 @@ import {
   selectSearchCommitted,
   selectSearchDraft,
 } from './searchSelectors';
-import { buildSearchUrlFromQuery, parseSearchQueryFromUrl } from './searchUrl';
+import {
+  buildSearchUrlFromQuery,
+  getDefaultSearchQuery,
+  parseSearchQueryFromUrl,
+} from './searchUrl';
 import {
   Alert,
   Autocomplete,
@@ -34,6 +44,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
   List,
   ListItemButton,
   ListItemText,
@@ -45,6 +56,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 
 function clampLimit(n: number) {
   if (!Number.isFinite(n)) return 20;
@@ -66,6 +78,8 @@ export default function SearchPage() {
   const [draftCuisine, setDraftCuisine] = useState<string>('');
   const [draftCategories, setDraftCategories] = useState<string[]>([]);
   const [draftKeywords, setDraftKeywords] = useState<string[]>([]);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveName, setSaveName] = useState('');
   useEffect(() => {
     dispatch(hydrateFromUrl(parseSearchQueryFromUrl(location.search)));
   }, [dispatch, location.search]);
@@ -93,6 +107,10 @@ export default function SearchPage() {
     .join(',');
   const isRecipeScope = committed.scope === 'recipes';
   const { data: recipeFacets } = useGetRecipeFacetsQuery(undefined, { skip: !isRecipeScope });
+  const { data: savedSearchesData } = useGetSavedSearchesQuery();
+  const savedSearches = savedSearchesData?.items ?? [];
+  const [createSavedSearch, createSavedSearchState] = useCreateSavedSearchMutation();
+  const [deleteSavedSearch] = useDeleteSavedSearchMutation();
   
   const cuisineCounts = useMemo(() => {
     return new Map((recipeFacets?.cuisines ?? []).map((b) => [b.value, b.count]));
@@ -274,6 +292,18 @@ export default function SearchPage() {
     [dispatch, navigate],
   );
 
+  const normalizeSavedQuery = useCallback((q: typeof committed) => {
+    const base = getDefaultSearchQuery();
+    return {
+      ...base,
+      ...q,
+      filters: {
+        ...base.filters,
+        ...(q?.filters ?? {}),
+      },
+    };
+  }, []);
+
   const onSubmitQuery = () => {
     const parsed = parseSearchInput(draft.text);
     if (!parsed.q && Object.keys(parsed.params).length === 0) return;
@@ -372,6 +402,24 @@ export default function SearchPage() {
         (cuisineValues.length || categoryValues.length || keywordValues.length)) ||
       (committed.mode && committed.mode !== 'auto'),
   );
+
+  const openSaveDialog = () => {
+    setSaveName('');
+    setSaveDialogOpen(true);
+  };
+
+  const saveCurrentSearch = async () => {
+    const name = saveName.trim();
+    if (!name) return;
+    const queryToSave = committed;
+    try {
+      await createSavedSearch({ name, query: queryToSave }).unwrap();
+      setSaveDialogOpen(false);
+      setSaveName('');
+    } catch {
+      // handled by mutation state
+    }
+  };
 
   useEffect(() => {
     setActiveRowIndex(-1);
@@ -550,6 +598,58 @@ export default function SearchPage() {
             </Typography>
           ) : null}
         </Stack>
+      </Box>
+
+      <Box sx={{ mt: 2 }}>
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Stack spacing={1}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="subtitle2">Saved searches</Typography>
+              <Button size="small" variant="outlined" onClick={openSaveDialog}>
+                Save search…
+              </Button>
+            </Stack>
+            {savedSearches.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                None yet.
+              </Typography>
+            ) : (
+              <Stack spacing={0.5}>
+                {savedSearches.map((s) => (
+                  <Stack
+                    key={s.id}
+                    direction="row"
+                    spacing={1}
+                    alignItems="center"
+                    sx={{ width: '100%' }}
+                  >
+                    <Button
+                      size="small"
+                      variant="text"
+                      onClick={() => {
+                        const normalized = normalizeSavedQuery(s.query as any);
+                        applyCommitted(normalized);
+                      }}
+                      sx={{ justifyContent: 'flex-start', textTransform: 'none' }}
+                      fullWidth
+                    >
+                      {s.name}
+                    </Button>
+                    <Tooltip title="Delete saved search">
+                      <IconButton
+                        size="small"
+                        onClick={() => deleteSavedSearch(s.id)}
+                        aria-label={`Delete ${s.name}`}
+                      >
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                ))}
+              </Stack>
+            )}
+          </Stack>
+        </Paper>
       </Box>
 
       <Box sx={{ flex: 1, minHeight: 0, mt: 2 }}>
@@ -1006,6 +1106,33 @@ export default function SearchPage() {
           <Button onClick={() => dispatch(setFiltersDialogOpen(false))}>Cancel</Button>
           <Button variant="contained" onClick={applyDraftFilters}>
             Apply
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Save search</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label="Name"
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              placeholder="e.g., Weeknight recipes"
+              fullWidth
+            />
+            {createSavedSearchState.error ? (
+              <Alert severity="error">Could not save search. Try a different name.</Alert>
+            ) : null}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={saveCurrentSearch}
+            disabled={!saveName.trim() || createSavedSearchState.isLoading}
+          >
+            Save
           </Button>
         </DialogActions>
       </Dialog>

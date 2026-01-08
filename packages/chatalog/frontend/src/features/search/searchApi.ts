@@ -1,6 +1,11 @@
 import { chatalogApi as baseApi } from '../api/chatalogApi';
 import type {
   SearchMode,
+  SavedSearch,
+  ListSavedSearchesResponse,
+  CreateSavedSearchRequest,
+  CreateSavedSearchResponse,
+  DeleteSavedSearchResponse,
   SearchRequestV1,
   SearchResponse,
   SearchResponseV1,
@@ -93,7 +98,35 @@ export const searchApi = baseApi.injectEndpoints({
     getRecipeFacets: build.query<RecipeFacetsResponse, void>({
       query: () => ({ url: 'recipes/facets' }),
     }),
+    getSavedSearches: build.query<ListSavedSearchesResponse, void>({
+      query: () => ({ url: 'saved-searches' }),
+      providesTags: (res) =>
+        res?.items
+          ? [
+              { type: 'SavedSearch' as const, id: 'LIST' },
+              ...res.items.map((x: SavedSearch) => ({ type: 'SavedSearch' as const, id: x.id })),
+            ]
+          : [{ type: 'SavedSearch' as const, id: 'LIST' }],
+    }),
+    createSavedSearch: build.mutation<CreateSavedSearchResponse, CreateSavedSearchRequest>({
+      query: (body) => ({ url: 'saved-searches', method: 'POST', body }),
+      invalidatesTags: [{ type: 'SavedSearch' as const, id: 'LIST' }],
+    }),
+    deleteSavedSearch: build.mutation<DeleteSavedSearchResponse, string>({
+      query: (id) => ({ url: `saved-searches/${id}`, method: 'DELETE' }),
+      invalidatesTags: (_res, _err, id) => [
+        { type: 'SavedSearch' as const, id: 'LIST' },
+        { type: 'SavedSearch' as const, id },
+      ],
+    }),
   }),
 });
 
-export const { useGetSearchQuery, useSearchMutation, useGetRecipeFacetsQuery } = searchApi;
+export const {
+  useGetSearchQuery,
+  useSearchMutation,
+  useGetRecipeFacetsQuery,
+  useGetSavedSearchesQuery,
+  useCreateSavedSearchMutation,
+  useDeleteSavedSearchMutation,
+} = searchApi;
