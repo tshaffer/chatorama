@@ -13,6 +13,7 @@ import { buildSearchSpec } from '@chatorama/chatalog-shared';
 import {
   buildIngredientFilterForSource,
   buildNoteFilterFromSpec,
+  isNonEmptyFilter,
   splitAndDedupTokens,
 } from '../utils/search/noteFilters';
 import { buildSearchPipeline } from '../search/buildSearchPipeline';
@@ -421,14 +422,35 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     let semanticMs = 0;
     let keywordMs = 0;
     let fuseMs = 0;
+    const semanticDebug: SemanticDebugInfo | undefined = isHybridMode
+      ? { attempted: false, ok: false }
+      : undefined;
+    if (semanticDebug && !runSemantic) {
+      semanticDebug.reason = 'disabled';
+    }
+    let semanticRawCount = 0;
 
     const [semantic, keyword] = await Promise.all([
       runSemantic
         ? (async () => {
             const start = Date.now();
-            const hits = await semanticSearchNotes(semanticSpec, ingredientFilter);
-            semanticMs = Date.now() - start;
-            return hits;
+            if (semanticDebug) semanticDebug.attempted = true;
+            try {
+              const hits = await semanticSearchNotes(semanticSpec, ingredientFilter);
+              semanticMs = Date.now() - start;
+              if (semanticDebug) semanticDebug.ok = true;
+              semanticRawCount = hits.length;
+              return hits;
+            } catch (err) {
+              semanticMs = Date.now() - start;
+              if (semanticDebug) {
+                semanticDebug.ok = false;
+                const mapped = mapSemanticError(err);
+                semanticDebug.reason = mapped.reason;
+                semanticDebug.errorMessage = mapped.errorMessage;
+              }
+              return [];
+            }
           })()
         : Promise.resolve([]),
       runKeyword
@@ -444,6 +466,16 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     let semanticResults = semantic;
     if (runSemantic && minSemanticScore !== undefined) {
       semanticResults = semanticResults.filter((r) => (r.semanticScore ?? 0) >= minSemanticScore);
+    }
+    if (semanticDebug && semanticDebug.attempted && semanticDebug.ok && !semanticDebug.reason) {
+      if (semanticResults.length === 0) {
+        if (semanticRawCount > 0 && minSemanticScore !== undefined) {
+          semanticDebug.reason = 'filtered_to_zero';
+        } else {
+          const hasEmbeddings = await hasEmbeddingDocs(combinedFilter);
+          semanticDebug.reason = hasEmbeddings ? 'no_results' : 'missing_embedding_field';
+        }
+      }
     }
 
     let results: any[];
@@ -484,6 +516,7 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
               fuse: fuseMs,
               total: Date.now() - totalStart,
             },
+            semantic: semanticDebug,
           }
         : undefined;
 
@@ -727,6 +760,60 @@ function parseMinSemanticScore(raw: unknown): number | undefined {
   const n = Number(raw);
   if (!Number.isFinite(n)) return undefined;
   return Math.max(0, Math.min(1, n));
+}
+
+type SemanticDebugReason =
+  | 'disabled'
+  | 'not_configured'
+  | 'missing_index'
+  | 'missing_embedding_field'
+  | 'filtered_to_zero'
+  | 'no_results'
+  | 'error';
+
+type SemanticDebugInfo = {
+  attempted: boolean;
+  ok: boolean;
+  reason?: SemanticDebugReason;
+  errorMessage?: string;
+};
+
+function truncateErrorMessage(message: string, maxLen = 300): string {
+  if (!message) return '';
+  if (message.length <= maxLen) return message;
+  const trimmed = maxLen > 3 ? maxLen - 3 : maxLen;
+  return `${message.slice(0, trimmed)}...`;
+}
+
+function mapSemanticError(err: unknown): { reason: SemanticDebugReason; errorMessage: string } {
+  const message =
+    err instanceof Error ? err.message : typeof err === 'string' ? err : String(err ?? '');
+  const normalized = message.toLowerCase();
+  const missingIndexHints =
+    (normalized.includes('search index') &&
+      (normalized.includes('not found') || normalized.includes('does not exist'))) ||
+    normalized.includes('search index not found') ||
+    (normalized.includes('index') && normalized.includes('not found'));
+  if (missingIndexHints) {
+    return { reason: 'missing_index', errorMessage: truncateErrorMessage(message) };
+  }
+
+  const missingEmbeddingHints =
+    normalized.includes('embedding') &&
+    normalized.includes('path') &&
+    (normalized.includes('missing') || normalized.includes('does not exist'));
+  if (missingEmbeddingHints) {
+    return { reason: 'missing_embedding_field', errorMessage: truncateErrorMessage(message) };
+  }
+
+  return { reason: 'error', errorMessage: truncateErrorMessage(message) };
+}
+
+async function hasEmbeddingDocs(filter: Record<string, any>): Promise<boolean> {
+  const embeddingClause = { embedding: { $exists: true, $ne: [] } };
+  const query = isNonEmptyFilter(filter) ? { $and: [filter, embeddingClause] } : embeddingClause;
+  const exists = await NoteModel.exists(query);
+  return Boolean(exists);
 }
 
 type SearchHit = {

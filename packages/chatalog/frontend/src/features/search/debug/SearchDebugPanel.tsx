@@ -148,6 +148,24 @@ export default function SearchDebugPanel(props: SearchDebugPanelProps) {
             {response && typeof response === 'object' && (response as any)?.debug ? (
               <Box>
                 <Typography variant="subtitle2">Hybrid Debug</Typography>
+                {(response as any)?.debug?.semantic ? (
+                  <Box sx={{ mb: 1 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      attempted: {(response as any).debug.semantic.attempted ? 'yes' : 'no'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      ok: {(response as any).debug.semantic.ok ? 'yes' : 'no'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      reason: {(response as any).debug.semantic.reason ?? 'n/a'}
+                    </Typography>
+                    {(response as any).debug.semantic.errorMessage ? (
+                      <Typography variant="body2" color="text.secondary">
+                        errorMessage: {(response as any).debug.semantic.errorMessage}
+                      </Typography>
+                    ) : null}
+                  </Box>
+                ) : null}
                 <Box
                   component="pre"
                   sx={{

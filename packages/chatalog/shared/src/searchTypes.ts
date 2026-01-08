@@ -58,6 +58,19 @@ export interface SearchResponse {
       fuse: number;
       total: number;
     };
+    semantic?: {
+      attempted: boolean;
+      ok: boolean;
+      reason?:
+        | 'disabled'
+        | 'not_configured'
+        | 'missing_index'
+        | 'missing_embedding_field'
+        | 'filtered_to_zero'
+        | 'no_results'
+        | 'error';
+      errorMessage?: string;
+    };
   };
 
   // Reserved for later (pagination)
