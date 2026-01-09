@@ -435,33 +435,33 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     const [semantic, keyword] = await Promise.all([
       runSemantic
         ? (async () => {
-            const start = Date.now();
-            if (semanticDebug) semanticDebug.attempted = true;
-            try {
-              const hits = await semanticSearchNotes(semanticSpec, ingredientFilter);
-              semanticMs = Date.now() - start;
-              if (semanticDebug) semanticDebug.ok = true;
-              semanticRawCount = hits.length;
-              return hits;
-            } catch (err) {
-              semanticMs = Date.now() - start;
-              if (semanticDebug) {
-                semanticDebug.ok = false;
-                const mapped = mapSemanticError(err);
-                semanticDebug.reason = mapped.reason;
-                semanticDebug.errorMessage = mapped.errorMessage;
-              }
-              return [];
+          const start = Date.now();
+          if (semanticDebug) semanticDebug.attempted = true;
+          try {
+            const hits = await semanticSearchNotes(semanticSpec, ingredientFilter);
+            semanticMs = Date.now() - start;
+            if (semanticDebug) semanticDebug.ok = true;
+            semanticRawCount = hits.length;
+            return hits;
+          } catch (err) {
+            semanticMs = Date.now() - start;
+            if (semanticDebug) {
+              semanticDebug.ok = false;
+              const mapped = mapSemanticError(err);
+              semanticDebug.reason = mapped.reason;
+              semanticDebug.errorMessage = mapped.errorMessage;
             }
-          })()
+            return [];
+          }
+        })()
         : Promise.resolve([]),
       runKeyword
         ? (async () => {
-            const start = Date.now();
-            const hits = await keywordSearchNotes(keywordSpec, ingredientFilter);
-            keywordMs = Date.now() - start;
-            return hits;
-          })()
+          const start = Date.now();
+          const hits = await keywordSearchNotes(keywordSpec, ingredientFilter);
+          keywordMs = Date.now() - start;
+          return hits;
+        })()
         : Promise.resolve([]),
     ]);
 
@@ -516,20 +516,20 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     const debug =
       isHybridMode
         ? {
-            fusion: 'rrf' as const,
-            semanticCount: semanticResults.length,
-            keywordCount: keyword.length,
-            overlapCount,
-            fusedCount: results.length,
-            returnedCount: Math.min(results.length, limit),
-            timingsMs: {
-              semantic: semanticMs,
-              keyword: keywordMs,
-              fuse: fuseMs,
-              total: Date.now() - totalStart,
-            },
-            semantic: semanticDebug,
-          }
+          fusion: 'rrf' as const,
+          semanticCount: semanticResults.length,
+          keywordCount: keyword.length,
+          overlapCount,
+          fusedCount: results.length,
+          returnedCount: Math.min(results.length, limit),
+          timingsMs: {
+            semantic: semanticMs,
+            keyword: keywordMs,
+            fuse: fuseMs,
+            total: Date.now() - totalStart,
+          },
+          semantic: semanticDebug,
+        }
         : undefined;
 
     return res.json({
@@ -776,7 +776,9 @@ function parseMinSemanticScore(raw: unknown): number | undefined {
 
 const NOTES_VECTOR_INDEX_NAME = 'notes_vector_index';
 const NOTES_VECTOR_PATH = 'embedding';
-const RECIPES_VECTOR_INDEX_NAME = 'recipe_embedding_index';
+
+// Atlas index name is the same; it contains BOTH vector fields now.
+const RECIPES_VECTOR_INDEX_NAME = 'notes_vector_index';
 const RECIPES_VECTOR_PATH = 'recipeEmbedding';
 
 type SemanticDebugReason =
@@ -857,10 +859,11 @@ async function semanticSearchNotes(
 
   const { vector: queryVector } = await embedText(spec.query, { model: 'text-embedding-3-small' });
 
-  // Atlas Search vector indexes (configured in Atlas UI):
-  // - notes:   index name "notes_vector_index", collection "notes", path "embedding"
-  // - recipes: index name "recipe_embedding_index", collection "notes", path "recipeEmbedding"
-  //   (similarity: cosine, dimensions: 1536 for text-embedding-3-small)
+  // Atlas vector search index (configured in Atlas UI):
+  // - index name: "notes_vector_index"
+  // - notes vector path:   "embedding"
+  // - recipes vector path: "recipeEmbedding"
+  // (similarity: cosine, dimensions: 1536 for text-embedding-3-small)
   const indexName = spec.scope === 'recipes' ? RECIPES_VECTOR_INDEX_NAME : NOTES_VECTOR_INDEX_NAME;
   const vectorPath = spec.scope === 'recipes' ? RECIPES_VECTOR_PATH : NOTES_VECTOR_PATH;
   const vectorStage: any = {
@@ -1102,30 +1105,30 @@ function fuseByRRF(
       sources: Array.from(x.sources),
       explain: explain
         ? (() => {
-            const keywordRank = opts.keywordRankById?.get(x.id);
-            const semanticRank = opts.semanticRankById?.get(x.id);
-            const keywordContribution =
-              keywordRank != null ? 1 / (k + keywordRank) : undefined;
-            const semanticContribution =
-              semanticRank != null ? 1 / (k + semanticRank) : undefined;
-            return {
-              sources: {
-                ...(keywordRank != null ? { keyword: { rank: keywordRank } } : {}),
-                ...(semanticRank != null
-                  ? { semantic: { rank: semanticRank, score: x.semanticScore } }
-                  : {}),
+          const keywordRank = opts.keywordRankById?.get(x.id);
+          const semanticRank = opts.semanticRankById?.get(x.id);
+          const keywordContribution =
+            keywordRank != null ? 1 / (k + keywordRank) : undefined;
+          const semanticContribution =
+            semanticRank != null ? 1 / (k + semanticRank) : undefined;
+          return {
+            sources: {
+              ...(keywordRank != null ? { keyword: { rank: keywordRank } } : {}),
+              ...(semanticRank != null
+                ? { semantic: { rank: semanticRank, score: x.semanticScore } }
+                : {}),
+            },
+            fusion: {
+              method: 'rrf' as const,
+              k,
+              contributions: {
+                ...(keywordContribution != null ? { keyword: keywordContribution } : {}),
+                ...(semanticContribution != null ? { semantic: semanticContribution } : {}),
               },
-              fusion: {
-                method: 'rrf' as const,
-                k,
-                contributions: {
-                  ...(keywordContribution != null ? { keyword: keywordContribution } : {}),
-                  ...(semanticContribution != null ? { semantic: semanticContribution } : {}),
-                },
-                combinedScore: (keywordContribution ?? 0) + (semanticContribution ?? 0),
-              },
-            };
-          })()
+              combinedScore: (keywordContribution ?? 0) + (semanticContribution ?? 0),
+            },
+          };
+        })()
         : undefined,
     }));
 
