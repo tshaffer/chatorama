@@ -61,10 +61,10 @@ async function main() {
   const db = await import('../db/mongoose');
   await db.connectToDatabase();
 
-  console.log('[backfillRecipeEmbeddings] NoteModel module:', require.resolve('../models/Note'));
+  // console.log('[backfillRecipeEmbeddings] NoteModel module:', require.resolve('../models/Note'));
 
-  console.log('[backfillRecipeEmbeddings] db name:', NoteModel.db.name);
-  console.log('[backfillRecipeEmbeddings] collection:', NoteModel.collection.name);
+  // console.log('[backfillRecipeEmbeddings] db name:', NoteModel.db.name);
+  // console.log('[backfillRecipeEmbeddings] collection:', NoteModel.collection.name);
 
   const stats = {
     scanned: 0,
@@ -74,31 +74,82 @@ async function main() {
     errors: 0,
   };
 
+  const recipeCount = await NoteModel.countDocuments({ recipe: { $exists: true } });
+  // console.log('[backfillRecipeEmbeddings] recipeCount:', recipeCount);
+
+  const sample = await NoteModel.findOne(
+    { recipe: { $exists: true } },
+    { _id: 1, title: 1, 'recipe.sourceUrl': 1 }
+  ).lean();
+  // console.log('[backfillRecipeEmbeddings] sample recipe doc:', sample);
+
   try {
-    const docs = await NoteModel.find(
-      {
-        recipe: { $exists: true },
-        $or: [
-          { recipeEmbedding: { $exists: false } },
-          { recipeEmbedding: { $type: 'array', $size: 0 } },
-          { recipeEmbeddingTextHash: { $exists: false } },
-          { recipeEmbeddingModel: { $exists: false } },
-          { recipeEmbeddingUpdatedAt: { $exists: false } },
-        ],
-      },
-      {
+    // const lim = Math.max(1, Number(limit) || 1);
+
+    // const poo = await NoteModel.find({ recipe: { $exists: true } })
+    //   .sort({ updatedAt: -1, _id: 1 })
+    //   .limit(lim)
+    //   .lean()
+    //   .exec();
+
+    // console.log('[backfillRecipeEmbeddings] docs.length:', poo.length);
+    // console.log('[backfillRecipeEmbeddings] first doc id:', poo[0]?._id);
+
+    // const debugDocs = await NoteModel.find(
+    //   {
+    //     recipe: { $exists: true },
+    //     $or: [
+    //       { recipeEmbedding: { $exists: false } },
+    //       { recipeEmbedding: { $type: 'array', $size: 0 } },
+    //       { recipeEmbeddingTextHash: { $exists: false } },
+    //       { recipeEmbeddingModel: { $exists: false } },
+    //       { recipeEmbeddingUpdatedAt: { $exists: false } },
+    //     ],
+    //   },
+    // );
+    // console.log('[backfillRecipeEmbeddings] debug: recipe docs total:', debugDocs.length);
+
+    const docs = await NoteModel.find({ recipe: { $exists: true } })
+      .select({
         title: 1,
         recipe: 1,
         recipeEmbedding: 1,
         recipeEmbeddingTextHash: 1,
-      },
-    )
-      .sort({ updatedAt: -1 })   // 👈 ADD HERE
+      })
+      .sort({ updatedAt: -1, _id: 1 })
       .limit(limit)
       .lean()
       .exec();
 
+    // const docs = await NoteModel.find(
+    //   {
+    //     recipe: { $exists: true },
+    //     $or: [
+    //       { recipeEmbedding: { $exists: false } },
+    //       { recipeEmbedding: { $type: 'array', $size: 0 } },
+    //       { recipeEmbeddingTextHash: { $exists: false } },
+    //       { recipeEmbeddingModel: { $exists: false } },
+    //       { recipeEmbeddingUpdatedAt: { $exists: false } },
+    //     ],
+    //   },
+    //   {
+    //     title: 1,
+    //     recipe: 1,
+    //     recipeEmbedding: 1,
+    //     recipeEmbeddingTextHash: 1,
+    //   },
+    // )
+    //   .sort({ updatedAt: -1, _id: 1 })
+    //   .limit(limit)
+    //   .lean()
+    //   .exec();
+
+    console.log('[backfillRecipeEmbeddings] docs to process:', docs.length);
+
     for (const doc of docs) {
+      // console.log('---');
+      // console.log(buildRecipeSemanticText(doc))
+
       stats.scanned += 1;
       const text = buildRecipeSemanticText(doc);
       if (!text) {
@@ -122,7 +173,7 @@ async function main() {
 
       try {
         const { vector, model } = await embedText(text, { model: 'text-embedding-3-small' });
-        console.log('[backfillRecipeEmbeddings] vector len:', vector?.length, 'model:', model, 'note:', doc._id);
+        // console.log('[backfillRecipeEmbeddings] vector len:', vector?.length, 'model:', model, 'note:', doc._id);
         const res = await NoteModel.updateOne(
           { _id: doc._id },
           {
@@ -135,8 +186,8 @@ async function main() {
           },
           // { strict: false },
         ).exec();
-        console.log('[backfillRecipeEmbeddings] matched:', res.matchedCount, 'modified:', res.modifiedCount, 'note:', doc._id);
-        console.log('res', res);
+        // console.log('[backfillRecipeEmbeddings] matched:', res.matchedCount, 'modified:', res.modifiedCount, 'note:', doc._id);
+        // console.log('res', res);
         const updated = await NoteModel.findById(
           doc._id,
           {
@@ -148,16 +199,16 @@ async function main() {
           }
         ).lean().exec();
 
-        console.log('[backfillRecipeEmbeddings] post-update doc:', {
-          _id: doc._id,
-          title: updated?.title,
-          recipeEmbeddingUpdatedAt: updated?.recipeEmbeddingUpdatedAt,
-          recipeEmbeddingModel: updated?.recipeEmbeddingModel,
-          recipeEmbeddingTextHash: updated?.recipeEmbeddingTextHash,
-          recipeEmbeddingLen: Array.isArray(updated?.recipeEmbedding)
-            ? updated.recipeEmbedding.length
-            : '(missing)',
-        });
+        // console.log('[backfillRecipeEmbeddings] post-update doc:', {
+        //   _id: doc._id,
+        //   title: updated?.title,
+        //   recipeEmbeddingUpdatedAt: updated?.recipeEmbeddingUpdatedAt,
+        //   recipeEmbeddingModel: updated?.recipeEmbeddingModel,
+        //   recipeEmbeddingTextHash: updated?.recipeEmbeddingTextHash,
+        //   recipeEmbeddingLen: Array.isArray(updated?.recipeEmbedding)
+        //     ? updated.recipeEmbedding.length
+        //     : '(missing)',
+        // });
 
         stats.updated += 1;
       } catch (err) {
@@ -166,17 +217,17 @@ async function main() {
       }
     }
   } finally {
-    console.log(
-      JSON.stringify(
-        {
-          ...stats,
-          limit,
-          dryRun: opts.dryRun,
-        },
-        null,
-        2,
-      ),
-    );
+    // console.log(
+    //   JSON.stringify(
+    //     {
+    //       ...stats,
+    //       limit,
+    //       dryRun: opts.dryRun,
+    //     },
+    //     null,
+    //     2,
+    //   ),
+    // );
     await db.disconnectFromDatabase();
   }
 }
