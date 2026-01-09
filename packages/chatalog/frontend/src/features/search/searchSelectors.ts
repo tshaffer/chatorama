@@ -4,6 +4,7 @@ import { buildSearchSpec } from '@chatorama/chatalog-shared';
 
 export const selectSearchDraft = (s: RootState) => s.search.draft;
 export const selectSearchCommitted = (s: RootState) => s.search.committed;
+export const selectLastUsedScope = (s: RootState) => s.search.lastUsedScope;
 
 export const selectSearchDraftText = (s: RootState) => s.search.draft.text;
 export const selectSearchCommittedText = (s: RootState) => s.search.committed.text;

@@ -18,7 +18,11 @@ import SettingsDialog from './features/settings/SettingsDialog';
 import SearchBox from './components/SearchBox';
 import { parseSearchInput } from './features/search/queryParser';
 import { useAppDispatch, useAppSelector } from './store';
-import { selectSearchDraft, selectSearchDraftText } from './features/search/searchSelectors';
+import {
+  selectLastUsedScope,
+  selectSearchDraft,
+  selectSearchDraftText,
+} from './features/search/searchSelectors';
 import { hydrateFromUrl, setDraftText } from './features/search/searchSlice';
 import { buildSearchUrlFromQuery } from './features/search/searchUrl';
 
@@ -68,6 +72,7 @@ export default function AppShell() {
   const dispatch = useAppDispatch();
   const searchDraft = useAppSelector(selectSearchDraft);
   const searchDraftText = useAppSelector(selectSearchDraftText);
+  const lastUsedScope = useAppSelector(selectLastUsedScope);
   const [qcOpen, setQcOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -93,18 +98,24 @@ export default function AppShell() {
 
   const goSearch = () => {
     const parsed = parseSearchInput(searchDraftText);
-    if (!parsed.q && Object.keys(parsed.params).length === 0) return;
+    const nextText = (parsed.q ?? '').trim();
 
     const scopeParam = (parsed.params.scope ?? '').trim().toLowerCase();
     const scope =
       scopeParam === 'recipes' || scopeParam === 'notes' || scopeParam === 'all'
         ? scopeParam
         : undefined;
+    const effectiveScope =
+      nextText === ''
+        ? scope === 'notes' || scope === 'recipes'
+          ? scope
+          : lastUsedScope
+        : scope ?? searchDraft.scope;
 
     const nextQuery = {
       ...searchDraft,
-      text: parsed.q || '',
-      ...(scope ? { scope: scope as any } : {}),
+      text: nextText,
+      ...(effectiveScope ? { scope: effectiveScope as any } : {}),
       filters: {
         ...searchDraft.filters,
         tags: parsed.params.tags

@@ -5,6 +5,7 @@ import { getDefaultSearchQuery } from './searchUrl';
 export type SearchSliceState = {
   draft: SearchQuery;
   committed: SearchQuery;
+  lastUsedScope: 'notes' | 'recipes';
   ui: {
     filtersDialogOpen: boolean;
     showLeftPanel: boolean;
@@ -16,6 +17,7 @@ const initialQuery = getDefaultSearchQuery();
 const initialState: SearchSliceState = {
   draft: initialQuery,
   committed: initialQuery,
+  lastUsedScope: 'notes',
   ui: {
     filtersDialogOpen: false,
     showLeftPanel: true,
@@ -34,6 +36,9 @@ export const searchSlice = createSlice({
     hydrateFromUrl(state, action: PayloadAction<SearchQuery>) {
       state.committed = action.payload;
       state.draft = action.payload;
+      if (action.payload.scope === 'notes' || action.payload.scope === 'recipes') {
+        state.lastUsedScope = action.payload.scope;
+      }
     },
 
     setDraftText(state, action: PayloadAction<string>) {

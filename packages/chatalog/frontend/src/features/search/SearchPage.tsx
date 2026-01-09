@@ -24,6 +24,7 @@ import {
 } from './searchSlice';
 import {
   selectFiltersDialogOpen,
+  selectLastUsedScope,
   selectSearchCommitted,
   selectSearchDraft,
   selectSearchSpec,
@@ -76,6 +77,7 @@ export default function SearchPage() {
   const dispatch = useAppDispatch();
   const draft = useAppSelector(selectSearchDraft);
   const committed = useAppSelector(selectSearchCommitted);
+  const lastUsedScope = useAppSelector(selectLastUsedScope);
   const baseSpec = useAppSelector(selectSearchSpec);
   const filtersOpen = useAppSelector(selectFiltersDialogOpen);
 
@@ -164,15 +166,23 @@ export default function SearchPage() {
 
   const trimmedQ = committed.text.trim();
   const debouncedQ = useDebouncedValue(trimmedQ, 350);
-  const shouldQuery = debouncedQ.length > 0;
+  const shouldQuery = debouncedQ.length > 0 || trimmedQ === '';
   const highlightTokens = useMemo(
     () => tokenizeForHighlight(debouncedQ || trimmedQ || committed.text),
     [debouncedQ, trimmedQ, committed.text],
   );
 
+  const effectiveScope =
+    trimmedQ === ''
+      ? committed.scope === 'notes' || committed.scope === 'recipes'
+        ? committed.scope
+        : lastUsedScope
+      : committed.scope;
+
   const effectiveSpec = useMemo(
     () => ({
       ...baseSpec,
+      scope: effectiveScope,
       filters: {
         ...baseSpec.filters,
         subjectId: effectiveSubjectId ?? baseSpec.filters.subjectId,
@@ -194,6 +204,7 @@ export default function SearchPage() {
     }),
     [
       baseSpec,
+      effectiveScope,
       effectiveSubjectId,
       effectiveTopicId,
       minSemanticScore,
@@ -211,7 +222,7 @@ export default function SearchPage() {
   const requestSpec = useMemo(
     () => ({
       ...effectiveSpec,
-      query: debouncedQ,
+      query: debouncedQ.trim() === '' ? '*' : debouncedQ,
       mode: committed.mode as SearchMode,
       limit: clampLimit(committed.limit),
       explain: explainEnabled && committed.mode === 'hybrid',
@@ -232,6 +243,7 @@ export default function SearchPage() {
     isSuccess,
     isError,
     isUninitialized,
+    refetch,
   } = useGetSearchQuery(requestSpec, { skip: !shouldQuery });
   const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery();
 
@@ -329,7 +341,8 @@ export default function SearchPage() {
 
   const onSubmitQuery = () => {
     const parsed = parseSearchInput(draft.text);
-    if (!parsed.q && Object.keys(parsed.params).length === 0) return;
+    const nextText = (parsed.q ?? '').trim();
+    const isEmptySubmit = nextText === '' && Object.keys(parsed.params).length === 0;
 
     const scopeParam = (parsed.params.scope ?? '').trim().toLowerCase();
     const scope =
@@ -339,7 +352,7 @@ export default function SearchPage() {
 
     const nextQuery = {
       ...committed,
-      text: parsed.q || '',
+      text: nextText,
       ...(scope ? { scope: scope as any } : {}),
       filters: {
         ...committed.filters,
@@ -353,6 +366,9 @@ export default function SearchPage() {
     };
 
     applyCommitted(nextQuery);
+    if (isEmptySubmit) {
+      refetch();
+    }
   };
 
   const openFilters = () => {
