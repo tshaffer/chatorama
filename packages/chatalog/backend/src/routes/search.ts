@@ -327,13 +327,23 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     const limit = spec.limit;
     const mode = spec.mode;
 
+    const scope = spec.scope;
     const minSemanticScoreParam = parseMinSemanticScore((req.query as any).minSemanticScore);
+
     const defaultMinSemanticScore =
-      mode === 'semantic' ? 0.7 : mode === 'hybrid' || mode === 'auto' ? 0.55 : undefined;
+      scope === 'recipes'
+        ? mode === 'semantic'
+          ? 0.45
+          : mode === 'hybrid' || mode === 'auto'
+            ? 0.35
+            : undefined
+        : mode === 'semantic'
+          ? 0.7
+          : mode === 'hybrid' || mode === 'auto'
+            ? 0.55
+            : undefined;
     const minSemanticScore =
       minSemanticScoreParam !== undefined ? minSemanticScoreParam : defaultMinSemanticScore;
-
-    const scope = spec.scope;
     const includeTokens = splitAndDedupTokens(spec.filters.includeIngredients);
     const excludeTokens = splitAndDedupTokens(spec.filters.excludeIngredients);
 
@@ -435,15 +445,16 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     const [semantic, keyword] = await Promise.all([
       runSemantic
         ? (async () => {
-          const start = Date.now();
-          if (semanticDebug) semanticDebug.attempted = true;
-          try {
-            const hits = await semanticSearchNotes(semanticSpec, ingredientFilter);
-            semanticMs = Date.now() - start;
-            if (semanticDebug) semanticDebug.ok = true;
-            semanticRawCount = hits.length;
-            return hits;
-          } catch (err) {
+            const start = Date.now();
+            if (semanticDebug) semanticDebug.attempted = true;
+            try {
+              const hits = await semanticSearchNotes(semanticSpec, ingredientFilter);
+              semanticMs = Date.now() - start;
+              if (semanticDebug) semanticDebug.ok = true;
+              semanticRawCount = hits.length;
+              if (semanticDebug) semanticDebug.rawCount = hits.length;
+              return hits;
+            } catch (err) {
             semanticMs = Date.now() - start;
             if (semanticDebug) {
               semanticDebug.ok = false;
@@ -469,6 +480,10 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     if (runSemantic && minSemanticScore !== undefined) {
       semanticResults = semanticResults.filter((r) => (r.semanticScore ?? 0) >= minSemanticScore);
     }
+    if (semanticDebug) {
+      semanticDebug.minSemanticScore = minSemanticScore;
+      semanticDebug.postFilterCount = semanticResults.length;
+    }
     const keywordRankById = explain
       ? new Map(keyword.map((hit, idx) => [hit.id, idx + 1]))
       : undefined;
@@ -477,7 +492,9 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
       : undefined;
     if (semanticDebug && semanticDebug.attempted && semanticDebug.ok && !semanticDebug.reason) {
       if (semanticResults.length === 0) {
-        if (semanticRawCount > 0 && minSemanticScore !== undefined) {
+        const rawCount = semanticDebug.rawCount ?? 0;
+
+        if (rawCount > 0 && minSemanticScore !== undefined) {
           semanticDebug.reason = 'filtered_to_zero';
         } else {
           const hasEmbeddings = await hasEmbeddingDocs(combinedFilter, scope);
@@ -516,10 +533,11 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     const debug =
       isHybridMode
         ? {
-          fusion: 'rrf' as const,
-          semanticCount: semanticResults.length,
-          keywordCount: keyword.length,
-          overlapCount,
+            fusion: 'rrf' as const,
+            minSemanticScore,
+            semanticCount: semanticResults.length,
+            keywordCount: keyword.length,
+            overlapCount,
           fusedCount: results.length,
           returnedCount: Math.min(results.length, limit),
           timingsMs: {
@@ -795,6 +813,9 @@ type SemanticDebugInfo = {
   ok: boolean;
   reason?: SemanticDebugReason;
   errorMessage?: string;
+  rawCount?: number;
+  postFilterCount?: number;
+  minSemanticScore?: number;
 };
 
 function truncateErrorMessage(message: string, maxLen = 300): string {
