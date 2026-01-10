@@ -1,4 +1,4 @@
-import type { SearchMode, SearchScope, SearchSpec } from '../searchTypes';
+import type { SearchMode, SearchScope, SearchSpec } from '../types/searchTypes';
 
 export type BuildSearchSpecInput = {
   query?: string;
