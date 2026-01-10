@@ -272,6 +272,7 @@ recipesRouter.post('/import', async (req, res, next) => {
         title,
         slug,
         markdown,
+        docKind: 'recipe',
         recipe: {
           sourceUrl: pageUrl,
           description,

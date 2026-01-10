@@ -905,6 +905,7 @@ router.post('/chatworthy/apply', async (req, res, next) => {
         sources: row.provenanceUrl
           ? [{ type: 'chatworthy', url: row.provenanceUrl }]
           : [{ type: 'chatworthy' }],
+        docKind: 'note',
 
         // Chatworthy provenance
         chatworthyNoteId: row.chatworthyNoteId,

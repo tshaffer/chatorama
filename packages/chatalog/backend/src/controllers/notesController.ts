@@ -235,6 +235,7 @@ export async function createNote(req: Request, res: Response) {
     status,   // 🔹 NEW
     tags,
     relations,
+    docKind: 'note',
     importedAt: new Date(),
     order: topOrder,
   });

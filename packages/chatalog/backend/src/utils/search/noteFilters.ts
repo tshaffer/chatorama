@@ -135,9 +135,9 @@ export function buildNoteFilterFromSpec(
   let postFilter: Record<string, any> = {};
 
   if (spec.scope === 'recipes') {
-    atlasFilter.recipe = { $exists: true };
+    atlasFilter.docKind = 'recipe';
   } else if (spec.scope === 'notes') {
-    atlasFilter.recipe = { $exists: false };
+    atlasFilter.docKind = 'note';
   }
 
   if (spec.filters.subjectId) atlasFilter.subjectId = spec.filters.subjectId;

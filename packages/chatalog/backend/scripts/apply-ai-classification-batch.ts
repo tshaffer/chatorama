@@ -441,6 +441,7 @@ async function main() {
         },
       ],
       order,
+      docKind: 'note',
 
       // Provenance
       chatworthyNoteId: seedNote.chatworthyNoteId,

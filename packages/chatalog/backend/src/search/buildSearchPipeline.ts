@@ -36,6 +36,8 @@ export function buildSearchPipeline(
           topicId: 1,
           updatedAt: 1,
           score: { $meta: 'vectorSearchScore' },
+          hasRecipe: { $ne: [{ $ifNull: ['$recipe', null] }, null] },
+          docKind: 1,
         },
       },
       { $sort: { score: -1 } },
@@ -61,6 +63,7 @@ export function buildSearchPipeline(
       topicId: 1,
       updatedAt: 1,
       score: { $meta: 'textScore' },
+      docKind: 1,
       ...(includeMarkdown ? { markdown: 1 } : {}),
     },
   };

@@ -1,4 +1,4 @@
-export type SearchMode = 'auto' | 'hybrid' | 'semantic' | 'keyword';
+export type SearchMode = 'auto' | 'hybrid' | 'semantic' | 'keyword' | 'browse';
 export type SearchSource = 'semantic' | 'keyword';
 
 export interface SearchFilters {
@@ -66,6 +66,7 @@ export interface SearchResponse {
   limit: number;
   filters: SearchFilters;
   results: SearchResultItem[];
+  intent?: ResolvedSearchIntentV1;
 
   debug?: {
     fusion: 'rrf';
@@ -127,6 +128,8 @@ export interface SearchRequestV1 {
   filters?: SearchFiltersV1;
   limit?: number;
   offset?: number;
+  scope?: SearchScopeV1;
+  lastUsedScope?: SearchScopeV1;
 }
 
 export interface SearchHitNoteV1 {
@@ -147,6 +150,23 @@ export interface SearchResponseV1 {
 }
 
 export type SearchScope = 'all' | 'recipes' | 'notes';
+
+export type SearchModeV1 = 'browse' | 'semantic';
+
+export type SearchScopeV1 = 'all' | 'notes' | 'recipes';
+
+export type ResolvedSearchIntentV1 = {
+  mode: SearchModeV1;
+  normalizedQuery: string;
+  queryText: string | null;
+  scope: SearchScopeV1;
+  filters: SearchFiltersV1 | SearchQueryFilters | Record<string, unknown>;
+  sort: 'relevance' | 'recent';
+  debug: {
+    isEmptyQuery: boolean;
+    treatedAsWildcard: boolean;
+  };
+};
 
 export type SearchQueryFilters = {
   subjectId?: string;
@@ -181,6 +201,7 @@ export type SearchSpec = {
   scope: SearchScope;
   filters: SearchQueryFilters;
   explain?: boolean;
+  lastUsedScope?: SearchScope;
 };
 
 export type SavedSearch = {

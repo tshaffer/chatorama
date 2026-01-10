@@ -21,6 +21,7 @@ import {
   setDraftUpdatedFrom,
   setDraftUpdatedTo,
   setFiltersDialogOpen,
+  setSelectedScope,
 } from './searchSlice';
 import {
   selectFiltersDialogOpen,
@@ -77,6 +78,7 @@ export default function SearchPage() {
   const dispatch = useAppDispatch();
   const draft = useAppSelector(selectSearchDraft);
   const committed = useAppSelector(selectSearchCommitted);
+  const selectedScope = useAppSelector((state) => state.search.selectedScope);
   const lastUsedScope = useAppSelector(selectLastUsedScope);
   const baseSpec = useAppSelector(selectSearchSpec);
   const filtersOpen = useAppSelector(selectFiltersDialogOpen);
@@ -109,7 +111,7 @@ export default function SearchPage() {
   const cuisineValues = (committed.filters.cuisine ?? []).map((t) => t.trim()).filter(Boolean);
   const categoryValues = (committed.filters.category ?? []).map((t) => t.trim()).filter(Boolean);
   const keywordValues = (committed.filters.keywords ?? []).map((t) => t.trim()).filter(Boolean);
-  const isRecipeScope = committed.scope === 'recipes';
+  const isRecipeScope = selectedScope === 'recipes';
   const { data: recipeFacets } = useGetRecipeFacetsQuery(undefined, { skip: !isRecipeScope });
   const { data: savedSearchesData } = useGetSavedSearchesQuery();
   const savedSearches = savedSearchesData?.items ?? [];
@@ -166,18 +168,16 @@ export default function SearchPage() {
 
   const trimmedQ = committed.text.trim();
   const debouncedQ = useDebouncedValue(trimmedQ, 350);
-  const shouldQuery = debouncedQ.length > 0 || trimmedQ === '';
+  const normalizedQuery = debouncedQ.trim();
+  const isEmptyQuery = normalizedQuery.length === 0;
+  const treatedAsWildcard = isEmptyQuery || normalizedQuery === '*';
+  const shouldQuery = true;
   const highlightTokens = useMemo(
     () => tokenizeForHighlight(debouncedQ || trimmedQ || committed.text),
     [debouncedQ, trimmedQ, committed.text],
   );
 
-  const effectiveScope =
-    trimmedQ === ''
-      ? committed.scope === 'notes' || committed.scope === 'recipes'
-        ? committed.scope
-        : lastUsedScope
-      : committed.scope;
+  const effectiveScope = treatedAsWildcard ? lastUsedScope ?? 'all' : selectedScope;
 
   const effectiveSpec = useMemo(
     () => ({
@@ -219,15 +219,42 @@ export default function SearchPage() {
     ],
   );
 
+  const resolvedIntent = useMemo(
+    () => ({
+      mode: treatedAsWildcard ? 'browse' : 'semantic',
+      normalizedQuery,
+      queryText: treatedAsWildcard ? null : normalizedQuery,
+      scope: effectiveScope,
+      filters: effectiveSpec.filters,
+      sort: treatedAsWildcard ? 'recent' : 'relevance',
+      debug: { isEmptyQuery, treatedAsWildcard },
+    }),
+    [
+      treatedAsWildcard,
+      normalizedQuery,
+      effectiveScope,
+      effectiveSpec.filters,
+      isEmptyQuery,
+    ],
+  );
+
   const requestSpec = useMemo(
     () => ({
       ...effectiveSpec,
-      query: debouncedQ.trim() === '' ? '*' : debouncedQ,
+      query: resolvedIntent.normalizedQuery,
       mode: committed.mode as SearchMode,
       limit: clampLimit(committed.limit),
       explain: explainEnabled && committed.mode === 'hybrid',
+      lastUsedScope,
     }),
-    [effectiveSpec, debouncedQ, committed.mode, committed.limit, explainEnabled],
+    [
+      effectiveSpec,
+      resolvedIntent,
+      committed.mode,
+      committed.limit,
+      explainEnabled,
+      lastUsedScope,
+    ],
   );
 
   const requestForDebug = useMemo(
@@ -349,11 +376,14 @@ export default function SearchPage() {
       scopeParam === 'recipes' || scopeParam === 'notes' || scopeParam === 'all'
         ? scopeParam
         : undefined;
+    if (scope) {
+      dispatch(setSelectedScope(scope as any));
+    }
 
     const nextQuery = {
       ...committed,
       text: nextText,
-      ...(scope ? { scope: scope as any } : {}),
+      scope: (scope ?? selectedScope) as any,
       filters: {
         ...committed.filters,
         tags: parsed.params.tags
@@ -543,10 +573,11 @@ export default function SearchPage() {
 
               <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
                 <ToggleButtonGroup
-                  value={committed.scope}
+                  value={selectedScope}
                   exclusive
                   onChange={(_e, v) => {
                     if (!v) return;
+                    dispatch(setSelectedScope(v as any));
                     const nextQuery = {
                       ...committed,
                       scope: v as any,
@@ -560,6 +591,7 @@ export default function SearchPage() {
                   size="small"
                 >
                   <ToggleButton value="all">All</ToggleButton>
+                  <ToggleButton value="notes">Notes</ToggleButton>
                   <ToggleButton value="recipes">Recipes</ToggleButton>
                 </ToggleButtonGroup>
 
@@ -703,7 +735,11 @@ export default function SearchPage() {
               <Typography variant="body2" color="text.secondary">
                 {results.length} result{results.length === 1 ? '' : 's'}
                 {data?.mode ? ` • mode: ${data.mode}` : ''}
-                {committed.scope !== 'all' ? ` • scope: ${committed.scope}` : ''}
+                {(data as any)?.intent?.scope && (data as any).intent.scope !== 'all'
+                  ? ` • scope: ${(data as any).intent.scope}`
+                  : selectedScope !== 'all'
+                    ? ` • scope: ${selectedScope}`
+                    : ''}
                 {committed.mode === 'hybrid' ? ' • hybrid: RRF' : ''}
               </Typography>
             </Box>

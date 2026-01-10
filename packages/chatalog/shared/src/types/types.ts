@@ -107,6 +107,8 @@ export interface Note {
   links: string[];           // noteIds this note links to
   backlinks: string[];       // noteIds that link here
 
+  docKind: 'note' | 'recipe';
+
   // Networked relationships (generic)
   relations?: NoteRelation[];
 

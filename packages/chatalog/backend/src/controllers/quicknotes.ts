@@ -201,6 +201,7 @@ router.post('/:id/convert', async (req, res) => {
       links: [],
       backlinks: [],
       sources: [{ type: 'manual' as const }],
+      docKind: 'note',
     });
 
     await quick.deleteOne();

@@ -85,6 +85,42 @@ function buildSnippetAroundMatch(md: string, terms: string[], windowSize = 260):
   return prefix + text.slice(start, end).trim() + suffix;
 }
 
+function resolveSearchIntentFromSpec(spec: SearchSpec): {
+  mode: 'browse' | 'semantic';
+  normalizedQuery: string;
+  queryText: string | null;
+  scope: SearchSpec['scope'];
+  filters: SearchSpec['filters'];
+  sort: 'relevance' | 'recent';
+  debug: { isEmptyQuery: boolean; treatedAsWildcard: boolean };
+} {
+  const normalizedQuery = String(spec.query ?? '').trim();
+  const isEmptyQuery = normalizedQuery.length === 0;
+  const treatedAsWildcard = isEmptyQuery || normalizedQuery === '*';
+
+  const mode = treatedAsWildcard ? 'browse' : 'semantic';
+
+  const lastUsedScopeRaw = String(spec.lastUsedScope ?? '').trim().toLowerCase();
+  const lastUsedScope =
+    lastUsedScopeRaw === 'all' || lastUsedScopeRaw === 'notes' || lastUsedScopeRaw === 'recipes'
+      ? lastUsedScopeRaw
+      : undefined;
+
+  const scope = spec.scope ?? (treatedAsWildcard ? (lastUsedScope ?? 'all') : 'all');
+
+  const sort: 'relevance' | 'recent' = mode === 'browse' ? 'recent' : 'relevance';
+
+  return {
+    mode,
+    normalizedQuery,
+    queryText: mode === 'browse' ? null : normalizedQuery,
+    scope,
+    filters: spec.filters ?? {},
+    sort,
+    debug: { isEmptyQuery, treatedAsWildcard },
+  };
+}
+
 searchRouter.post('/', async (req, res, next) => {
   try {
     const body = req.body as Partial<SearchRequestV1>;
@@ -94,10 +130,10 @@ searchRouter.post('/', async (req, res, next) => {
     }
 
     const q = (body.q ?? '').trim();
-    if (!q) {
-      const empty: SearchResponseV1 = { version: 1, hits: [] };
-      return res.json(empty);
-    }
+    const treatedAsWildcard = q === '' || q === '*';
+    const scopeRaw = String(body.scope ?? '').trim().toLowerCase();
+    const scope =
+      scopeRaw === 'all' || scopeRaw === 'notes' || scopeRaw === 'recipes' ? scopeRaw : undefined;
 
     const targetTypes = body.targetTypes ?? [];
     if (!Array.isArray(targetTypes) || !targetTypes.includes('note')) {
@@ -108,9 +144,6 @@ searchRouter.post('/', async (req, res, next) => {
     const offset = Math.max(body.offset ?? 0, 0);
 
     const filters = body.filters ?? {};
-    const mongoFilter: any = {
-      $text: { $search: q },
-    };
     const and: any[] = [];
 
     if (filters.subjectId) and.push({ subjectId: filters.subjectId });
@@ -171,7 +204,43 @@ searchRouter.post('/', async (req, res, next) => {
       and.push({ chatworthyChatId: String(filters.chatworthyChatId).trim() });
     }
 
+    if (scope === 'recipes') {
+      and.push({ recipe: { $exists: true } });
+    } else if (scope === 'notes') {
+      and.push({ recipe: { $exists: false } });
+    } else if (treatedAsWildcard) {
+      const lastUsedScopeRaw = String(body.lastUsedScope ?? '').trim().toLowerCase();
+      if (lastUsedScopeRaw === 'recipes') {
+        and.push({ recipe: { $exists: true } });
+      } else if (lastUsedScopeRaw === 'notes') {
+        and.push({ recipe: { $exists: false } });
+      }
+    }
+
+    const mongoFilter: any = treatedAsWildcard ? {} : { $text: { $search: q } };
     if (and.length) mongoFilter.$and = and;
+
+    if (treatedAsWildcard) {
+      const total = await NoteModel.countDocuments(mongoFilter).exec();
+      const docs = await NoteModel.find(mongoFilter)
+        .sort({ contentUpdatedAt: -1, updatedAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .lean()
+        .exec();
+
+      const hits: SearchHitNoteV1[] = (docs ?? []).map((d: any) => ({
+        targetType: 'note',
+        id: String(d._id),
+        subjectId: d.subjectId,
+        topicId: d.topicId,
+        title: d.title ?? 'Untitled',
+        updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
+      }));
+
+      const response: SearchResponseV1 = { version: 1, total, hits };
+      return res.json(response);
+    }
 
     const pipeline: any[] = [
       { $match: mongoFilter },
@@ -320,14 +389,28 @@ searchRouter.get('/semantic', async (req: Request, res: Response, next: NextFunc
  */
 const hybridSearchHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const spec = buildSearchSpec({ ...(req.query as any), query: req.query.q });
-    const q = spec.query;
-    const isMatchAll = q === '*' || q === '';
+    const baseSpec = buildSearchSpec({ ...(req.query as any), query: req.query.q });
+    const rawScope = String(req.query.scope ?? '').trim().toLowerCase();
+    const explicitScope =
+      rawScope === 'recipes' || rawScope === 'notes' || rawScope === 'all' ? rawScope : undefined;
+    const lastUsedScopeRaw = String(req.query.lastUsedScope ?? '').trim().toLowerCase();
+    const lastUsedScope: SearchSpec['scope'] | undefined =
+      lastUsedScopeRaw === 'recipes' || lastUsedScopeRaw === 'notes' || lastUsedScopeRaw === 'all'
+        ? lastUsedScopeRaw
+        : undefined;
+    const specForIntent = {
+      ...baseSpec,
+      scope: explicitScope ?? baseSpec.scope,
+      lastUsedScope,
+    };
+    const intent = resolveSearchIntentFromSpec(specForIntent);
+    const q = intent.normalizedQuery;
 
-    const limit = spec.limit;
-    const mode = spec.mode;
+    const limit = baseSpec.limit;
+    const mode = baseSpec.mode;
 
-    const scope = spec.scope;
+    const scope = intent.scope;
+    const spec: SearchSpec = { ...baseSpec, scope };
     const minSemanticScoreParam = parseMinSemanticScore((req.query as any).minSemanticScore);
 
     const defaultMinSemanticScore =
@@ -382,7 +465,7 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
       ingredientFilter,
     );
 
-    if (isMatchAll && atlasFilter.recipe?.$exists === true) {
+    if (intent.mode === 'browse') {
       const docs = await NoteModel.find(combinedFilter)
         .sort({ contentUpdatedAt: -1, updatedAt: -1 })
         .limit(limit)
@@ -405,17 +488,15 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
 
       return res.json({
         query: q,
-        mode: mode as any,
+        mode: 'browse',
         limit,
         filters: {
           ...combinedFilter,
-          ...(minSemanticScore !== undefined ? { minSemanticScore } : {}),
         },
+        intent,
         results,
       });
     }
-
-    if (!q) return res.status(400).json({ error: 'q is required' });
 
     const runSemantic = mode === 'semantic' || mode === 'hybrid' || mode === 'auto';
     const runKeyword = mode === 'keyword' || mode === 'hybrid' || mode === 'auto';
@@ -445,16 +526,16 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     const [semantic, keyword] = await Promise.all([
       runSemantic
         ? (async () => {
-            const start = Date.now();
-            if (semanticDebug) semanticDebug.attempted = true;
-            try {
-              const hits = await semanticSearchNotes(semanticSpec, ingredientFilter);
-              semanticMs = Date.now() - start;
-              if (semanticDebug) semanticDebug.ok = true;
-              semanticRawCount = hits.length;
-              if (semanticDebug) semanticDebug.rawCount = hits.length;
-              return hits;
-            } catch (err) {
+          const start = Date.now();
+          if (semanticDebug) semanticDebug.attempted = true;
+          try {
+            const hits = await semanticSearchNotes(semanticSpec, ingredientFilter);
+            semanticMs = Date.now() - start;
+            if (semanticDebug) semanticDebug.ok = true;
+            semanticRawCount = hits.length;
+            if (semanticDebug) semanticDebug.rawCount = hits.length;
+            return hits;
+          } catch (err) {
             semanticMs = Date.now() - start;
             if (semanticDebug) {
               semanticDebug.ok = false;
@@ -533,11 +614,11 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     const debug =
       isHybridMode
         ? {
-            fusion: 'rrf' as const,
-            minSemanticScore,
-            semanticCount: semanticResults.length,
-            keywordCount: keyword.length,
-            overlapCount,
+          fusion: 'rrf' as const,
+          minSemanticScore,
+          semanticCount: semanticResults.length,
+          keywordCount: keyword.length,
+          overlapCount,
           fusedCount: results.length,
           returnedCount: Math.min(results.length, limit),
           timingsMs: {
@@ -558,6 +639,7 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
         ...combinedFilter,
         ...(minSemanticScore !== undefined ? { minSemanticScore } : {}),
       },
+      intent,
       results,
       ...(debug ? { debug } : {}),
     });
@@ -850,8 +932,10 @@ function mapSemanticError(err: unknown): { reason: SemanticDebugReason; errorMes
 }
 
 async function hasEmbeddingDocs(filter: Record<string, any>, scope: string): Promise<boolean> {
-  const embeddingField = scope === 'recipes' ? RECIPES_VECTOR_PATH : NOTES_VECTOR_PATH;
-  const embeddingClause = { [embeddingField]: { $exists: true, $ne: [] } };
+  const notesClause = { [NOTES_VECTOR_PATH]: { $exists: true, $ne: [] } };
+  const recipesClause = { [RECIPES_VECTOR_PATH]: { $exists: true, $ne: [] } };
+  const embeddingClause =
+    scope === 'all' ? { $or: [notesClause, recipesClause] } : scope === 'recipes' ? recipesClause : notesClause;
   const query = isNonEmptyFilter(filter) ? { $and: [filter, embeddingClause] } : embeddingClause;
   const exists = await NoteModel.exists(query);
   return Boolean(exists);
@@ -865,6 +949,7 @@ type SearchHit = {
   subjectId?: string;
   topicId?: string;
   updatedAt?: string;
+  docKind: string;
 
   _source: 'semantic' | 'keyword';
   // Raw source scores (not normalized, used for explainability)
@@ -880,35 +965,66 @@ async function semanticSearchNotes(
 
   const { vector: queryVector } = await embedText(spec.query, { model: 'text-embedding-3-small' });
 
-  // Atlas vector search index (configured in Atlas UI):
-  // - index name: "notes_vector_index"
-  // - notes vector path:   "embedding"
-  // - recipes vector path: "recipeEmbedding"
-  // (similarity: cosine, dimensions: 1536 for text-embedding-3-small)
-  const indexName = spec.scope === 'recipes' ? RECIPES_VECTOR_INDEX_NAME : NOTES_VECTOR_INDEX_NAME;
-  const vectorPath = spec.scope === 'recipes' ? RECIPES_VECTOR_PATH : NOTES_VECTOR_PATH;
-  const vectorStage: any = {
-    index: indexName,
-    path: vectorPath,
-    queryVector,
-    numCandidates: Math.max(spec.limit * 10, 100),
-    limit: spec.limit,
+  const runVectorSearch = async (
+    scope: 'notes' | 'recipes',
+    limit: number,
+    postFilter?: Record<string, any>,
+  ) => {
+    const indexName = scope === 'recipes' ? RECIPES_VECTOR_INDEX_NAME : NOTES_VECTOR_INDEX_NAME;
+    const vectorPath = scope === 'recipes' ? RECIPES_VECTOR_PATH : NOTES_VECTOR_PATH;
+    const vectorStage: any = {
+      index: indexName,
+      path: vectorPath,
+      queryVector,
+      numCandidates: Math.max(limit * 10, 100),
+      limit,
+    };
+
+    const pipeline = buildSearchPipeline(
+      { ...spec, scope, limit },
+      { vectorStage, ingredientFilter: postFilter },
+    );
+
+    const docs = await NoteModel.aggregate(pipeline).exec();
+
+    return (docs ?? []).map((d: any) => ({
+      id: String(d._id),
+      title: String(d.title ?? ''),
+      summary: d.summary ? String(d.summary) : undefined,
+      subjectId: d.subjectId ? String(d.subjectId) : undefined,
+      topicId: d.topicId ? String(d.topicId) : undefined,
+      updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
+      _source: 'semantic' as const,
+      docKind: d.docKind,
+      semanticScore: typeof d.score === 'number' ? d.score : Number(d.score ?? 0),
+    }));
   };
 
-  const pipeline = buildSearchPipeline(spec, { vectorStage, ingredientFilter });
+  if (spec.scope === 'notes') {
+    return runVectorSearch('notes', spec.limit);
+  }
 
-  const docs = await NoteModel.aggregate(pipeline).exec();
+  if (spec.scope === 'recipes') {
+    return runVectorSearch('recipes', spec.limit, ingredientFilter);
+  }
 
-  return (docs ?? []).map((d: any) => ({
-    id: String(d._id),
-    title: String(d.title ?? ''),
-    summary: d.summary ? String(d.summary) : undefined,
-    subjectId: d.subjectId ? String(d.subjectId) : undefined,
-    topicId: d.topicId ? String(d.topicId) : undefined,
-    updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
-    _source: 'semantic',
-    semanticScore: typeof d.score === 'number' ? d.score : Number(d.score ?? 0),
-  }));
+  const perScopeLimit = Math.max(spec.limit * 2, spec.limit);
+  const [noteHits, recipeHits] = await Promise.all([
+    runVectorSearch('notes', perScopeLimit),
+    runVectorSearch('recipes', perScopeLimit, ingredientFilter),
+  ]);
+
+  const merged = new Map<string, SearchHit>();
+  for (const hit of [...noteHits, ...recipeHits]) {
+    const existing = merged.get(hit.id);
+    if (!existing || (hit.semanticScore ?? 0) > (existing.semanticScore ?? 0)) {
+      merged.set(hit.id, hit);
+    }
+  }
+
+  return Array.from(merged.values())
+    .sort((a, b) => (b.semanticScore ?? 0) - (a.semanticScore ?? 0))
+    .slice(0, spec.limit);
 }
 
 async function keywordSearchNotes(
@@ -931,6 +1047,7 @@ async function keywordSearchNotes(
     topicId: d.topicId ? String(d.topicId) : undefined,
     updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
     _source: 'keyword',
+    docKind: d.docKind,
     textScore:
       typeof (d as any).score === 'number'
         ? (d as any).score
@@ -949,6 +1066,7 @@ function toSemanticOnlyResults(hits: SearchHit[], limit: number) {
     score: h.semanticScore ?? 0,
     semanticScore: h.semanticScore,
     textScore: undefined,
+    docKind: h.docKind,
     sources: ['semantic'] as Array<'semantic' | 'keyword'>,
   }));
 }
@@ -965,6 +1083,7 @@ function toKeywordOnlyResults(hits: SearchHit[], limit: number) {
     score: h.textScore ?? 0,
     semanticScore: undefined,
     textScore: h.textScore,
+    docKind: h.docKind,
     sources: ['keyword'] as Array<'semantic' | 'keyword'>,
   }));
 }
@@ -1058,6 +1177,7 @@ function fuseByRRF(
       score: number;
       semanticScore?: number;
       textScore?: number;
+      docKind?: string;
       snippet?: string;
       sources: Set<'semantic' | 'keyword'>;
     }
@@ -1100,6 +1220,7 @@ function fuseByRRF(
           semanticScore: hit.semanticScore,
           textScore: hit.textScore,
           snippet: hit.snippet,
+          docKind: hit.docKind,
           sources: new Set([hit._source]),
         });
       }
@@ -1122,6 +1243,7 @@ function fuseByRRF(
       score: x.score,
       semanticScore: x.semanticScore,
       textScore: x.textScore,
+      docKind: x.docKind,
       snippet: x.snippet,
       sources: Array.from(x.sources),
       explain: explain

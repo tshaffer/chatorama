@@ -5,7 +5,8 @@ import { getDefaultSearchQuery } from './searchUrl';
 export type SearchSliceState = {
   draft: SearchQuery;
   committed: SearchQuery;
-  lastUsedScope: 'notes' | 'recipes';
+  selectedScope: 'all' | 'notes' | 'recipes';
+  lastUsedScope: 'all' | 'notes' | 'recipes';
   ui: {
     filtersDialogOpen: boolean;
     showLeftPanel: boolean;
@@ -13,11 +14,43 @@ export type SearchSliceState = {
 };
 
 const initialQuery = getDefaultSearchQuery();
+const PREFS_KEY = 'chatalog.search.prefs';
+
+type SearchPrefs = {
+  selectedScope?: 'all' | 'notes' | 'recipes';
+  lastUsedScope?: 'all' | 'notes' | 'recipes';
+};
+
+function loadPrefs(): SearchPrefs {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(PREFS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as SearchPrefs;
+    return parsed ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function savePrefs(prefs: SearchPrefs) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // ignore persistence errors
+  }
+}
+
+const persisted = loadPrefs();
+const initialSelectedScope = persisted.selectedScope ?? 'all';
+const initialLastUsedScope = persisted.lastUsedScope ?? initialSelectedScope;
 
 const initialState: SearchSliceState = {
-  draft: initialQuery,
-  committed: initialQuery,
-  lastUsedScope: 'notes',
+  draft: { ...initialQuery, scope: initialSelectedScope },
+  committed: { ...initialQuery, scope: initialSelectedScope },
+  selectedScope: initialSelectedScope,
+  lastUsedScope: initialLastUsedScope,
   ui: {
     filtersDialogOpen: false,
     showLeftPanel: true,
@@ -36,8 +69,16 @@ export const searchSlice = createSlice({
     hydrateFromUrl(state, action: PayloadAction<SearchQuery>) {
       state.committed = action.payload;
       state.draft = action.payload;
-      if (action.payload.scope === 'notes' || action.payload.scope === 'recipes') {
-        state.lastUsedScope = action.payload.scope;
+      if (
+        action.payload.scope === 'notes' ||
+        action.payload.scope === 'recipes' ||
+        action.payload.scope === 'all'
+      ) {
+        if (action.payload.scope !== 'all' || state.selectedScope === 'all') {
+          state.selectedScope = action.payload.scope;
+          state.lastUsedScope = action.payload.scope;
+          savePrefs({ selectedScope: state.selectedScope, lastUsedScope: state.lastUsedScope });
+        }
       }
     },
 
@@ -83,6 +124,14 @@ export const searchSlice = createSlice({
       state.draft = state.committed;
     },
 
+    setSelectedScope(state, action: PayloadAction<'all' | 'notes' | 'recipes'>) {
+      state.selectedScope = action.payload;
+      state.lastUsedScope = action.payload;
+      state.draft.scope = action.payload;
+      state.committed.scope = action.payload;
+      savePrefs({ selectedScope: state.selectedScope, lastUsedScope: state.lastUsedScope });
+    },
+
     setFiltersDialogOpen(state, action: PayloadAction<boolean>) {
       state.ui.filtersDialogOpen = Boolean(action.payload);
     },
@@ -101,6 +150,7 @@ export const {
   setDraftTopicId,
   commitDraft,
   resetDraftToCommitted,
+  setSelectedScope,
   setFiltersDialogOpen,
 } = searchSlice.actions;
 
