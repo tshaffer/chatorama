@@ -20,6 +20,17 @@ import { buildSearchPipeline } from '../search/buildSearchPipeline';
 
 export const searchRouter = Router();
 
+function normalizeScope(
+  value: unknown,
+  fallback: SearchSpec['scope'] = 'notes',
+): SearchSpec['scope'] {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (raw === 'all' || raw === 'notes' || raw === 'recipes') {
+    return raw as SearchSpec['scope'];
+  }
+  return fallback;
+}
+
 function stripMarkdownVerySimple(md: string): string {
   if (!md) return '';
   return md
@@ -99,14 +110,7 @@ function resolveSearchIntentFromSpec(spec: SearchSpec): {
   const treatedAsWildcard = isEmptyQuery || normalizedQuery === '*';
 
   const mode = treatedAsWildcard ? 'browse' : 'semantic';
-
-  const lastUsedScopeRaw = String(spec.lastUsedScope ?? '').trim().toLowerCase();
-  const lastUsedScope =
-    lastUsedScopeRaw === 'all' || lastUsedScopeRaw === 'notes' || lastUsedScopeRaw === 'recipes'
-      ? lastUsedScopeRaw
-      : undefined;
-
-  const scope = spec.scope ?? (treatedAsWildcard ? (lastUsedScope ?? 'all') : 'all');
+  const scope = spec.scope;
 
   const sort: 'relevance' | 'recent' = mode === 'browse' ? 'recent' : 'relevance';
 
@@ -123,6 +127,7 @@ function resolveSearchIntentFromSpec(spec: SearchSpec): {
 
 searchRouter.post('/', async (req, res, next) => {
   try {
+    console.log('POST /api/search called with body:', req.body);
     const body = req.body as Partial<SearchRequestV1>;
 
     if (body.version !== 1) {
@@ -131,9 +136,7 @@ searchRouter.post('/', async (req, res, next) => {
 
     const q = (body.q ?? '').trim();
     const treatedAsWildcard = q === '' || q === '*';
-    const scopeRaw = String(body.scope ?? '').trim().toLowerCase();
-    const scope =
-      scopeRaw === 'all' || scopeRaw === 'notes' || scopeRaw === 'recipes' ? scopeRaw : undefined;
+    const scope = normalizeScope(body.scope, 'notes');
 
     const targetTypes = body.targetTypes ?? [];
     if (!Array.isArray(targetTypes) || !targetTypes.includes('note')) {
@@ -205,16 +208,9 @@ searchRouter.post('/', async (req, res, next) => {
     }
 
     if (scope === 'recipes') {
-      and.push({ recipe: { $exists: true } });
+      and.push({ docKind: 'recipe' });
     } else if (scope === 'notes') {
-      and.push({ recipe: { $exists: false } });
-    } else if (treatedAsWildcard) {
-      const lastUsedScopeRaw = String(body.lastUsedScope ?? '').trim().toLowerCase();
-      if (lastUsedScopeRaw === 'recipes') {
-        and.push({ recipe: { $exists: true } });
-      } else if (lastUsedScopeRaw === 'notes') {
-        and.push({ recipe: { $exists: false } });
-      }
+      and.push({ docKind: 'note' });
     }
 
     const mongoFilter: any = treatedAsWildcard ? {} : { $text: { $search: q } };
@@ -235,6 +231,7 @@ searchRouter.post('/', async (req, res, next) => {
         subjectId: d.subjectId,
         topicId: d.topicId,
         title: d.title ?? 'Untitled',
+        docKind: d.docKind,
         updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
       }));
 
@@ -256,6 +253,7 @@ searchRouter.post('/', async (req, res, next) => {
                 title: 1,
                 subjectId: 1,
                 topicId: 1,
+                docKind: 1,
                 markdown: 1,
                 updatedAt: 1,
                 score: 1,
@@ -279,6 +277,7 @@ searchRouter.post('/', async (req, res, next) => {
       subjectId: d.subjectId,
       topicId: d.topicId,
       title: d.title ?? 'Untitled',
+      docKind: d.docKind,
       snippet: buildSnippetAroundMatch(d.markdown ?? '', terms),
       score: typeof d.score === 'number' ? d.score : undefined,
       updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
@@ -389,19 +388,15 @@ searchRouter.get('/semantic', async (req: Request, res: Response, next: NextFunc
  */
 const hybridSearchHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const baseSpec = buildSearchSpec({ ...(req.query as any), query: req.query.q });
-    const rawScope = String(req.query.scope ?? '').trim().toLowerCase();
-    const explicitScope =
-      rawScope === 'recipes' || rawScope === 'notes' || rawScope === 'all' ? rawScope : undefined;
-    const lastUsedScopeRaw = String(req.query.lastUsedScope ?? '').trim().toLowerCase();
-    const lastUsedScope: SearchSpec['scope'] | undefined =
-      lastUsedScopeRaw === 'recipes' || lastUsedScopeRaw === 'notes' || lastUsedScopeRaw === 'all'
-        ? lastUsedScopeRaw
-        : undefined;
+    const normalizedScope = normalizeScope(req.query.scope, 'notes');
+    const baseSpec = buildSearchSpec({
+      ...(req.query as any),
+      query: req.query.q,
+      scope: normalizedScope,
+    });
     const specForIntent = {
       ...baseSpec,
-      scope: explicitScope ?? baseSpec.scope,
-      lastUsedScope,
+      scope: normalizedScope,
     };
     const intent = resolveSearchIntentFromSpec(specForIntent);
     const q = intent.normalizedQuery;
@@ -495,6 +490,8 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
         },
         intent,
         results,
+        effectiveScope: scope,
+        enginesUsed: { semantic: false, keyword: false },
       });
     }
 
@@ -641,6 +638,8 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
       },
       intent,
       results,
+      effectiveScope: scope,
+      enginesUsed: { semantic: runSemantic, keyword: runKeyword },
       ...(debug ? { debug } : {}),
     });
   } catch (err) {

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { SearchMode } from '@chatorama/chatalog-shared';
+import type { SearchExplain, SearchMode } from '@chatorama/chatalog-shared';
 import {
   useCreateSavedSearchMutation,
   useDeleteSavedSearchMutation,
   useGetRecipeFacetsQuery,
   useGetSavedSearchesQuery,
-  useGetSearchQuery,
+  useSearchMutation,
 } from './searchApi';
 import { useGetSubjectsWithTopicsQuery, resolveSubjectAndTopicNames } from '../subjects/subjectsApi';
 import SearchBox from '../../components/SearchBox';
@@ -35,7 +35,7 @@ import {
   getDefaultSearchQuery,
   parseSearchQueryFromUrl,
 } from './searchUrl';
-import { buildSearchRequest } from './buildSearchRequest';
+import { buildSearchRequestV1 } from './buildSearchRequest';
 import SearchDebugPanel from './debug/SearchDebugPanel';
 import {
   Alert,
@@ -95,8 +95,10 @@ export default function SearchPage() {
   const [explainEnabled, setExplainEnabled] = useState(false);
   const [explainOpenById, setExplainOpenById] = useState<Record<string, boolean>>({});
   useEffect(() => {
-    dispatch(hydrateFromUrl(parseSearchQueryFromUrl(location.search)));
-  }, [dispatch, location.search]);
+    dispatch(
+      hydrateFromUrl(parseSearchQueryFromUrl(location.search, { fallbackScope: lastUsedScope })),
+    );
+  }, [dispatch, location.search, lastUsedScope]);
 
   const topicIdFromQuery = committed.filters.topicId ?? '';
   const subjectIdFromQuery = committed.filters.subjectId ?? '';
@@ -177,7 +179,7 @@ export default function SearchPage() {
     [debouncedQ, trimmedQ, committed.text],
   );
 
-  const effectiveScope = treatedAsWildcard ? lastUsedScope ?? 'all' : selectedScope;
+  const effectiveScope = selectedScope;
 
   const effectiveSpec = useMemo(
     () => ({
@@ -188,18 +190,20 @@ export default function SearchPage() {
         subjectId: effectiveSubjectId ?? baseSpec.filters.subjectId,
         topicId: effectiveTopicId ?? baseSpec.filters.topicId,
         minSemanticScore,
-        prepTimeMax: maxPrepMinutes,
-        cookTimeMax: maxCookMinutes,
-        totalTimeMax: maxTotalMinutes,
-        cuisine: cuisineValues,
-        category: categoryValues,
-        keywords: keywordValues,
-        includeIngredients: (committed.filters.includeIngredients ?? [])
-          .map((t) => t.trim())
-          .filter(Boolean),
-        excludeIngredients: (committed.filters.excludeIngredients ?? [])
-          .map((t) => t.trim())
-          .filter(Boolean),
+        prepTimeMax: effectiveScope === 'recipes' ? maxPrepMinutes : undefined,
+        cookTimeMax: effectiveScope === 'recipes' ? maxCookMinutes : undefined,
+        totalTimeMax: effectiveScope === 'recipes' ? maxTotalMinutes : undefined,
+        cuisine: effectiveScope === 'recipes' ? cuisineValues : [],
+        category: effectiveScope === 'recipes' ? categoryValues : [],
+        keywords: effectiveScope === 'recipes' ? keywordValues : [],
+        includeIngredients:
+          effectiveScope === 'recipes'
+            ? (committed.filters.includeIngredients ?? []).map((t) => t.trim()).filter(Boolean)
+            : [],
+        excludeIngredients:
+          effectiveScope === 'recipes'
+            ? (committed.filters.excludeIngredients ?? []).map((t) => t.trim()).filter(Boolean)
+            : [],
       },
     }),
     [
@@ -245,7 +249,6 @@ export default function SearchPage() {
       mode: committed.mode as SearchMode,
       limit: clampLimit(committed.limit),
       explain: explainEnabled && committed.mode === 'hybrid',
-      lastUsedScope,
     }),
     [
       effectiveSpec,
@@ -253,28 +256,57 @@ export default function SearchPage() {
       committed.mode,
       committed.limit,
       explainEnabled,
-      lastUsedScope,
     ],
   );
 
-  const requestForDebug = useMemo(
-    () => buildSearchRequest(requestSpec, { explain: explainEnabled }),
-    [requestSpec, explainEnabled],
-  );
+  const requestBody = useMemo(() => buildSearchRequestV1(requestSpec), [requestSpec]);
+  const requestForDebug = requestBody;
+  const requestKey = useMemo(() => JSON.stringify(requestBody), [requestBody]);
 
-  const {
-    data,
-    error,
-    isFetching,
-    isLoading,
-    isSuccess,
-    isError,
-    isUninitialized,
-    refetch,
-  } = useGetSearchQuery(requestSpec, { skip: !shouldQuery });
+  const [search, searchState] = useSearchMutation();
+  const { data, error, isLoading, isSuccess, isError, isUninitialized } = searchState;
+  const isFetching = isLoading;
   const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery();
 
-  const results = data?.results ?? [];
+  useEffect(() => {
+    search(requestBody);
+  }, [search, requestKey]);
+
+  type UiSearchResult = {
+    id: string;
+    title: string;
+    summary?: string;
+    snippet?: string;
+    subjectId?: string;
+    topicId?: string;
+    updatedAt?: string;
+    score: number;
+    semanticScore?: number;
+    textScore?: number;
+    docKind?: string;
+    sources: Array<'semantic' | 'keyword'>;
+    explain?: SearchExplain;
+  };
+
+  const results = useMemo<UiSearchResult[]>(
+    () =>
+      (data?.hits ?? []).map((hit: any) => ({
+        id: String(hit.id),
+        title: String(hit.title ?? ''),
+        summary: undefined,
+        snippet: hit.snippet ? String(hit.snippet) : undefined,
+        subjectId: hit.subjectId ? String(hit.subjectId) : undefined,
+        topicId: hit.topicId ? String(hit.topicId) : undefined,
+        updatedAt: hit.updatedAt ? String(hit.updatedAt) : undefined,
+        score: typeof hit.score === 'number' ? hit.score : Number(hit.score ?? 0),
+        semanticScore: undefined,
+        textScore: typeof hit.score === 'number' ? hit.score : Number(hit.score ?? 0),
+        docKind: hit.docKind ?? 'note',
+        sources: ['keyword'] as Array<'semantic' | 'keyword'>,
+        explain: undefined,
+      })),
+    [data?.hits],
+  );
   const { subjectName: effectiveSubjectName, topicName: effectiveTopicName } = useMemo(() => {
     if (!effectiveSubjectId && !effectiveTopicId) {
       return { subjectName: undefined, topicName: undefined };
@@ -369,8 +401,6 @@ export default function SearchPage() {
   const onSubmitQuery = () => {
     const parsed = parseSearchInput(draft.text);
     const nextText = (parsed.q ?? '').trim();
-    const isEmptySubmit = nextText === '' && Object.keys(parsed.params).length === 0;
-
     const scopeParam = (parsed.params.scope ?? '').trim().toLowerCase();
     const scope =
       scopeParam === 'recipes' || scopeParam === 'notes' || scopeParam === 'all'
@@ -396,9 +426,6 @@ export default function SearchPage() {
     };
 
     applyCommitted(nextQuery);
-    if (isEmptySubmit) {
-      refetch();
-    }
   };
 
   const openFilters = () => {
@@ -581,10 +608,6 @@ export default function SearchPage() {
                     const nextQuery = {
                       ...committed,
                       scope: v as any,
-                      filters:
-                        v === 'recipes'
-                          ? committed.filters
-                          : { ...committed.filters, cuisine: [], category: [], keywords: [] },
                     };
                     applyCommitted(nextQuery);
                   }}
@@ -734,13 +757,8 @@ export default function SearchPage() {
             <Box sx={{ px: 2, py: 1, flexShrink: 0 }}>
               <Typography variant="body2" color="text.secondary">
                 {results.length} result{results.length === 1 ? '' : 's'}
-                {data?.mode ? ` • mode: ${data.mode}` : ''}
-                {(data as any)?.intent?.scope && (data as any).intent.scope !== 'all'
-                  ? ` • scope: ${(data as any).intent.scope}`
-                  : selectedScope !== 'all'
-                    ? ` • scope: ${selectedScope}`
-                    : ''}
-                {committed.mode === 'hybrid' ? ' • hybrid: RRF' : ''}
+                {committed.mode ? ` • mode: ${committed.mode}` : ''}
+                {selectedScope !== 'all' ? ` • scope: ${selectedScope}` : ''}
               </Typography>
             </Box>
             <Box sx={{ px: 2, pb: 1, flexShrink: 0 }}>

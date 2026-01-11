@@ -34,7 +34,7 @@ function clamp01(n: number | undefined): number | undefined {
 export function getDefaultSearchQuery(): SearchQuery {
   return {
     text: '',
-    scope: 'all',
+    scope: 'notes',
     mode: 'auto',
     limit: 20,
     filters: {
@@ -48,15 +48,19 @@ export function getDefaultSearchQuery(): SearchQuery {
   };
 }
 
-export function parseSearchQueryFromUrl(search: string): SearchQuery {
+export function parseSearchQueryFromUrl(
+  search: string,
+  opts: { fallbackScope?: SearchScope } = {},
+): SearchQuery {
   const q0 = getDefaultSearchQuery();
   const sp = new URLSearchParams(search);
 
   const text = (sp.get('q') ?? '').trim();
 
   const scopeRaw = (sp.get('scope') ?? '').trim() as SearchScope;
+  const scopeFallback = opts.fallbackScope ?? 'notes';
   const scope: SearchScope =
-    scopeRaw === 'recipes' || scopeRaw === 'notes' || scopeRaw === 'all' ? scopeRaw : 'all';
+    scopeRaw === 'recipes' || scopeRaw === 'notes' || scopeRaw === 'all' ? scopeRaw : scopeFallback;
 
   const modeRaw = (sp.get('mode') ?? '').trim() as SearchModeUi;
   const mode: SearchModeUi =
@@ -101,7 +105,7 @@ export function buildSearchUrlFromQuery(q: SearchQuery): string {
   const sp = new URLSearchParams();
 
   if (q.text.trim()) sp.set('q', q.text.trim());
-  if (q.scope && q.scope !== 'all') sp.set('scope', q.scope);
+  if (q.scope) sp.set('scope', q.scope);
   if (q.mode && q.mode !== 'auto') sp.set('mode', q.mode);
   if (q.limit && q.limit !== 20) sp.set('limit', String(clampLimit(q.limit)));
 
@@ -119,21 +123,23 @@ export function buildSearchUrlFromQuery(q: SearchQuery): string {
 
   if (f.minSemanticScore != null) sp.set('minSemanticScore', String(f.minSemanticScore));
 
-  const cuisine = joinCsv(f.cuisine);
-  const category = joinCsv(f.category);
-  const keywords = joinCsv(f.keywords);
-  if (cuisine) sp.set('cuisine', cuisine);
-  if (category) sp.set('category', category);
-  if (keywords) sp.set('keywords', keywords);
+  if (q.scope === 'recipes') {
+    const cuisine = joinCsv(f.cuisine);
+    const category = joinCsv(f.category);
+    const keywords = joinCsv(f.keywords);
+    if (cuisine) sp.set('cuisine', cuisine);
+    if (category) sp.set('category', category);
+    if (keywords) sp.set('keywords', keywords);
 
-  if (f.prepTimeMax != null) sp.set('prepMax', String(f.prepTimeMax));
-  if (f.cookTimeMax != null) sp.set('cookMax', String(f.cookTimeMax));
-  if (f.totalTimeMax != null) sp.set('totalMax', String(f.totalTimeMax));
+    if (f.prepTimeMax != null) sp.set('prepMax', String(f.prepTimeMax));
+    if (f.cookTimeMax != null) sp.set('cookMax', String(f.cookTimeMax));
+    if (f.totalTimeMax != null) sp.set('totalMax', String(f.totalTimeMax));
 
-  const includeIng = joinCsv(f.includeIngredients);
-  const excludeIng = joinCsv(f.excludeIngredients);
-  if (includeIng) sp.set('includeIng', includeIng);
-  if (excludeIng) sp.set('excludeIng', excludeIng);
+    const includeIng = joinCsv(f.includeIngredients);
+    const excludeIng = joinCsv(f.excludeIngredients);
+    if (includeIng) sp.set('includeIng', includeIng);
+    if (excludeIng) sp.set('excludeIng', excludeIng);
+  }
 
   const qs = sp.toString();
   return qs ? `/search?${qs}` : '/search';

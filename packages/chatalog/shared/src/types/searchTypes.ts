@@ -141,6 +141,7 @@ export interface SearchHitNoteV1 {
   snippet?: string;
   score?: number;
   updatedAt?: string;
+  docKind?: 'note' | 'recipe';
 }
 
 export interface SearchResponseV1 {

@@ -133,6 +133,7 @@ export function buildNoteFilterFromSpec(
 } {
   const atlasFilter: Record<string, any> = {};
   let postFilter: Record<string, any> = {};
+  const allowRecipeFilters = spec.scope === 'recipes';
 
   if (spec.scope === 'recipes') {
     atlasFilter.docKind = 'recipe';
@@ -147,36 +148,38 @@ export function buildNoteFilterFromSpec(
     atlasFilter.tags = { $in: spec.filters.tags };
   }
 
-  if (spec.filters.prepTimeMax != null) {
-    atlasFilter['recipe.prepTimeMinutes'] = { $lte: spec.filters.prepTimeMax };
-  }
+  if (allowRecipeFilters) {
+    if (spec.filters.prepTimeMax != null) {
+      atlasFilter['recipe.prepTimeMinutes'] = { $lte: spec.filters.prepTimeMax };
+    }
 
-  if (spec.filters.cookTimeMax != null) {
-    atlasFilter['recipe.cookTimeMinutes'] = { $lte: spec.filters.cookTimeMax };
-  }
+    if (spec.filters.cookTimeMax != null) {
+      atlasFilter['recipe.cookTimeMinutes'] = { $lte: spec.filters.cookTimeMax };
+    }
 
-  if (spec.filters.totalTimeMax != null) {
-    atlasFilter['recipe.totalTimeMinutes'] = { $lte: spec.filters.totalTimeMax };
-  }
+    if (spec.filters.totalTimeMax != null) {
+      atlasFilter['recipe.totalTimeMinutes'] = { $lte: spec.filters.totalTimeMax };
+    }
 
-  if (spec.filters.cuisine?.length) {
-    const expanded = expandVariants(spec.filters.cuisine);
-    if (expanded.length === 1) atlasFilter['recipe.cuisine'] = eqFilter(expanded[0]);
-    else if (expanded.length > 1) atlasFilter['recipe.cuisine'] = inFilter(expanded);
-  }
+    if (spec.filters.cuisine?.length) {
+      const expanded = expandVariants(spec.filters.cuisine);
+      if (expanded.length === 1) atlasFilter['recipe.cuisine'] = eqFilter(expanded[0]);
+      else if (expanded.length > 1) atlasFilter['recipe.cuisine'] = inFilter(expanded);
+    }
 
-  if (spec.filters.category?.length) {
-    const expanded = expandVariants(spec.filters.category);
-    if (expanded.length) atlasFilter['recipe.category'] = inFilter(expanded);
-  }
+    if (spec.filters.category?.length) {
+      const expanded = expandVariants(spec.filters.category);
+      if (expanded.length) atlasFilter['recipe.category'] = inFilter(expanded);
+    }
 
-  if (spec.filters.keywords?.length) {
-    const expanded = expandVariants(spec.filters.keywords);
-    if (expanded.length) atlasFilter['recipe.keywords'] = inFilter(expanded);
-  }
+    if (spec.filters.keywords?.length) {
+      const expanded = expandVariants(spec.filters.keywords);
+      if (expanded.length) atlasFilter['recipe.keywords'] = inFilter(expanded);
+    }
 
-  if (ingredientFilter) {
-    postFilter = combineFilters(postFilter, ingredientFilter);
+    if (ingredientFilter) {
+      postFilter = combineFilters(postFilter, ingredientFilter);
+    }
   }
 
   const combinedFilter = mergeFilters(atlasFilter, postFilter);
