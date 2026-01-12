@@ -1,18 +1,26 @@
-// backfillRecipeEmbeddings.ts
+// backfillNoteEmbeddings.ts
 //
 // Usage:
-//   MONGO_URI="mongodb://localhost:27017/chatalog_dev" tsx src/scripts/backfillRecipeEmbeddings.ts --limit 200 --dryRun
-//   MONGO_URI="mongodb://localhost:27017/chatalog_dev" tsx src/scripts/backfillRecipeEmbeddings.ts --limit 200 --concurrency 3
+//   MONGO_URI="mongodb://localhost:27017/chatalog_dev" tsx src/scripts/backfillNoteEmbeddings.ts --limit 200 --dryRun
+//   MONGO_URI="mongodb://localhost:27017/chatalog_dev" tsx src/scripts/backfillNoteEmbeddings.ts --limit 200 --concurrency 3
 //
 // Notes:
-//   - Embeds title + description + ingredients + steps (via buildRecipeSemanticText).
-//   - Idempotent: skips docs with matching recipeEmbeddingTextHash.
-//   - Filters to docKind="recipe" and missing/empty recipeEmbedding.
+//   - Embeds title + summary + tags + markdown.
+//   - Idempotent: skips docs with matching embeddingTextHash.
+//   - Filters to docKind="note" and missing/empty embedding.
+
+import path from 'path';
+import dotenv from 'dotenv';
+
+const envPath = path.resolve(__dirname, '../../.env');
+console.log(`[backfillNoteEmbeddings] Loading env from ${envPath}`);
+
+// Force-load backend/.env no matter where the script is launched from
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 import { NoteModel } from '../models/Note';
 import { embedText } from '../ai/embed';
-import { hashEmbeddingText } from '../ai/embeddingText';
-import { buildRecipeSemanticText } from '../search/buildRecipeSemanticText';
+import { computeEmbeddingTextAndHash } from '../ai/embeddingText';
 
 type Options = {
   limit?: number;
@@ -23,7 +31,7 @@ type Options = {
 function ensureMongoUri(): string {
   const uri = process.env.MONGO_URI;
   if (!uri) {
-    console.error('MONGO_URI env var is required to run backfillRecipeEmbeddings.');
+    console.error('MONGO_URI env var is required to run backfillNoteEmbeddings.');
     process.exit(1);
   }
   return uri;
@@ -71,7 +79,6 @@ function parseArgs(argv: string[]): Options {
 
 async function main() {
   ensureMongoUri();
-
   const opts = parseArgs(process.argv.slice(2));
   const limit = opts.limit ?? 200;
   const concurrency = Math.max(1, Math.min(opts.concurrency ?? 3, 5));
@@ -79,9 +86,9 @@ async function main() {
   const db = await import('../db/mongoose');
   await db.connectToDatabase();
 
-  console.log('[backfillRecipeEmbeddings] NoteModel module:', require.resolve('../models/Note'));
-  console.log('[backfillRecipeEmbeddings] db name:', NoteModel.db.name);
-  console.log('[backfillRecipeEmbeddings] collection:', NoteModel.collection.name);
+  console.log('[backfillNoteEmbeddings] NoteModel module:', require.resolve('../models/Note'));
+  console.log('[backfillNoteEmbeddings] db name:', NoteModel.db.name);
+  console.log('[backfillNoteEmbeddings] collection:', NoteModel.collection.name);
 
   const stats = {
     scanned: 0,
@@ -93,39 +100,43 @@ async function main() {
 
   try {
     const docs = await NoteModel.find({
-      docKind: 'recipe',
+      docKind: 'note',
       $or: [
-        { recipeEmbedding: { $exists: false } },
-        { recipeEmbedding: null },
-        { recipeEmbedding: { $size: 0 } },
+        { embedding: { $exists: false } },
+        { embedding: null },
+        { embedding: { $size: 0 } },
       ],
     })
       .select({
         title: 1,
-        recipe: 1,
-        recipeEmbedding: 1,
-        recipeEmbeddingTextHash: 1,
-        docKind: 1,
+        summary: 1,
+        markdown: 1,
+        tags: 1,
+        embedding: 1,
+        embeddingTextHash: 1,
       })
       .sort({ updatedAt: -1, _id: 1 })
       .limit(limit)
       .lean()
       .exec();
 
-    console.log('[backfillRecipeEmbeddings] docs to process:', docs.length);
+    console.log('[backfillNoteEmbeddings] docs to process:', docs.length);
 
     const processOne = async (doc: any) => {
       stats.scanned += 1;
-      const text = buildRecipeSemanticText(doc);
-      if (!text) {
+      const { text, hash } = computeEmbeddingTextAndHash(doc, {
+        includeMarkdown: true,
+        includeSummary: true,
+        includeTags: true,
+        includeRecipe: false,
+      });
+      if (!text || text.length < 10) {
         stats.skippedNoText += 1;
         return;
       }
 
-      const hash = hashEmbeddingText(text);
-      const hasEmbedding = Array.isArray(doc.recipeEmbedding) && doc.recipeEmbedding.length > 0;
-      const hashMatches = doc.recipeEmbeddingTextHash === hash;
-
+      const hasEmbedding = Array.isArray(doc.embedding) && doc.embedding.length > 0;
+      const hashMatches = doc.embeddingTextHash === hash;
       if (hasEmbedding && hashMatches) {
         stats.alreadyEmbedded += 1;
         return;
@@ -142,17 +153,17 @@ async function main() {
           { _id: doc._id },
           {
             $set: {
-              recipeEmbedding: vector,
-              recipeEmbeddingModel: model,
-              recipeEmbeddingTextHash: hash,
-              recipeEmbeddingUpdatedAt: new Date(),
+              embedding: vector,
+              embeddingModel: model,
+              embeddingTextHash: hash,
+              embeddingUpdatedAt: new Date(),
             },
           },
         ).exec();
         stats.updated += 1;
       } catch (err) {
         stats.errors += 1;
-        console.error('[backfillRecipeEmbeddings] failed for note', doc._id, err);
+        console.error('[backfillNoteEmbeddings] failed for note', doc._id, err);
       }
     };
 
@@ -161,19 +172,11 @@ async function main() {
       await Promise.all(batch.map(processOne));
     }
   } finally {
-    // console.log(
-    //   JSON.stringify(
-    //     {
-    //       ...stats,
-    //       limit,
-    //       dryRun: opts.dryRun,
-    //     },
-    //     null,
-    //     2,
-    //   ),
-    // );
     await db.disconnectFromDatabase();
   }
+
+  // eslint-disable-next-line no-console
+  console.log('[backfillNoteEmbeddings] stats:', stats);
 }
 
 main().catch((err) => {

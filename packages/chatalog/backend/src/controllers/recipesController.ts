@@ -8,6 +8,7 @@ import {
   splitAndDedupTokens,
 } from '../utils/search/noteFilters';
 import { buildSearchSpec } from '@chatorama/chatalog-shared';
+import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
 
 type RecipeFacetBucket = { value: string; count: number };
 type RecipeFacetsResponse = {
@@ -41,6 +42,14 @@ export async function normalizeRecipeIngredients(req: Request, res: Response, ne
     (note as any).recipe = recipe;
 
     await note.save();
+
+    try {
+      // Best-effort embedding update; consider background queue later.
+      await computeAndPersistEmbeddings(String(note._id));
+    } catch (err) {
+      console.error('[embeddings] normalizeRecipeIngredients failed', note._id, err);
+    }
+
     return res.json(note.toJSON());
   } catch (err) {
     next(err);

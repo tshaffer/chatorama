@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { NoteModel } from '../models/Note';
 import { ImportBatchModel } from '../models/ImportBatch';
 import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
+import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
 import {
   type TopicNotesWithRelations,
   type NotePreview,
@@ -241,6 +242,11 @@ export async function createNote(req: Request, res: Response) {
   });
 
   res.status(201).json(doc.toJSON());
+
+  // Best-effort embedding update; consider background queue later.
+  computeAndPersistEmbeddings(String(doc._id)).catch((err) => {
+    console.error('[embeddings] createNote failed', doc._id, err);
+  });
 }
 
 export async function mergeNotesInTopic(req: Request, res: Response) {
@@ -363,6 +369,20 @@ export async function patchNote(req: Request, res: Response) {
 
     if (!doc) return res.status(404).json({ message: 'Note not found' });
     res.json(doc.toJSON());
+
+    const touchesTitleOrMarkdown =
+      Object.prototype.hasOwnProperty.call(patch, 'title') ||
+      Object.prototype.hasOwnProperty.call(patch, 'markdown');
+    const touchesRecipe =
+      Object.prototype.hasOwnProperty.call(patch, 'recipe') ||
+      Object.keys(patch).some((k) => k.startsWith('recipe.'));
+
+    if (touchesTitleOrMarkdown || touchesRecipe) {
+      // Best-effort embedding update; consider background queue later.
+      computeAndPersistEmbeddings(String(doc._id)).catch((err) => {
+        console.error('[embeddings] patchNote failed', doc._id, err);
+      });
+    }
   } catch (err: any) {
     if (err?.code === 11000) {
       return res.status(409).json({ message: 'Slug already exists for this topic.' });

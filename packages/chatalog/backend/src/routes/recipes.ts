@@ -10,6 +10,7 @@ import {
   searchRecipesByIngredients,
 } from '../controllers/recipesController';
 import { buildRecipeMarkdown, normalizeIngredientLine } from '../utils/recipeNormalize';
+import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
 
 type ImportRecipeRequest = {
   pageUrl: string;
@@ -305,6 +306,13 @@ recipesRouter.post('/import', async (req, res, next) => {
         sources: [{ url: pageUrl, type: 'clip' }],
         importedAt: new Date(),
       });
+
+      try {
+        // Best-effort embedding update; consider background queue later.
+        await computeAndPersistEmbeddings(String(created._id));
+      } catch (err) {
+        console.error('[embeddings] recipe import failed', created._id, err);
+      }
 
       return res.status(200).json({ ok: true, noteId: created._id.toString() });
     } catch (err: any) {

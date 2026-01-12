@@ -13,6 +13,7 @@ import { buildSearchSpec } from '@chatorama/chatalog-shared';
 import {
   buildIngredientFilterForSource,
   buildNoteFilterFromSpec,
+  combineFilters,
   isNonEmptyFilter,
   splitAndDedupTokens,
 } from '../utils/search/noteFilters';
@@ -979,9 +980,17 @@ async function semanticSearchNotes(
       limit,
     };
 
+    const embeddingFilter =
+      scope === 'recipes'
+        ? { recipeEmbedding: { $exists: true, $ne: [] } }
+        : { embedding: { $exists: true, $ne: [] } };
+    const combinedPostFilter = postFilter
+      ? combineFilters(postFilter, embeddingFilter)
+      : embeddingFilter;
+
     const pipeline = buildSearchPipeline(
       { ...spec, scope, limit },
-      { vectorStage, ingredientFilter: postFilter },
+      { vectorStage, ingredientFilter: combinedPostFilter },
     );
 
     const docs = await NoteModel.aggregate(pipeline).exec();
