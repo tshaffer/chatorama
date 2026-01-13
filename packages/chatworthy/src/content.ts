@@ -257,7 +257,7 @@ function makeDraggable(root: HTMLDivElement) {
     root.style.top = `${clamped.top}px`;
   };
 
-  const onPointerUp = (e: PointerEvent) => {
+  const onPointerUp = () => {
     if (!dragging) return;
     dragging = false;
 
@@ -775,49 +775,6 @@ async function refreshRegistryStatus(chatId?: string) {
   }
 
   renderStatusRow(cid);
-}
-
-type RegistryPayload = {
-  chatId?: string;
-  chatTitle?: string | null;
-  projectName?: string | null;
-  subject?: string | null;
-  topic?: string | null;
-  pageUrl?: string | null;
-};
-
-async function upsertChatRegistry(payload: RegistryPayload): Promise<void> {
-  if (!payload.chatId) {
-    renderStatusRow();
-    return;
-  }
-
-  try {
-    const res = await fetch(`${API_BASE}/chat-registry/upsert`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ ...payload }),
-    });
-
-    registryState.backendOk = res.ok;
-    if (!res.ok) {
-      registryState.lastError = `status ${res.status}`;
-      renderStatusRow(payload.chatId);
-      return;
-    }
-
-    const body = await res.json();
-    registryState.registryStatus = body?.status ?? 'UNREVIEWED';
-    registryState.lastError = null;
-  } catch (err: any) {
-    registryState.backendOk = false;
-    registryState.lastError = err?.message || 'request failed';
-  }
-
-  registryState.lastChecked = Date.now();
-  registryState.lastChatId = payload.chatId ?? null;
-  renderStatusRow(payload.chatId || undefined);
 }
 
 async function toggleRegistryReviewStatus() {

@@ -60,7 +60,7 @@ export type ApplyImportRequestPayload = {
   notes: ApplyNoteImportCommand[];
 };
 
-export const importsApi = baseApi.injectEndpoints({
+const importsApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
     // PREVIEW import (no DB writes) - Chatworthy markdown/zip
     importChatworthy: build.mutation<ImportResponse, File>({

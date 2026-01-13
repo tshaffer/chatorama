@@ -1,16 +1,13 @@
 import { chatalogApi as baseApi } from '../api/chatalogApi';
 import type {
   SavedSearch,
-  SearchSpec,
   ListSavedSearchesResponse,
   CreateSavedSearchRequest,
   CreateSavedSearchResponse,
   DeleteSavedSearchResponse,
   SearchRequestV1,
-  SearchResponse,
   SearchResponseV1,
 } from '@chatorama/chatalog-shared';
-import { buildLegacySearchUrl } from './buildSearchRequest';
 
 export type RecipeFacetBucket = { value: string; count: number };
 export type RecipeFacetsResponse = {
@@ -19,14 +16,8 @@ export type RecipeFacetsResponse = {
   keywords: RecipeFacetBucket[];
 };
 
-export const searchApi = baseApi.injectEndpoints({
+const searchApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
-    legacyGetSearch: build.query<SearchResponse, SearchSpec>({
-      query: (spec) => {
-        const req = buildLegacySearchUrl(spec);
-        return { url: req.url };
-      },
-    }),
     search: build.mutation<SearchResponseV1, SearchRequestV1>({
       query: (body) => ({
         url: 'search',
@@ -62,7 +53,6 @@ export const searchApi = baseApi.injectEndpoints({
 });
 
 export const {
-  // Intentionally not exporting legacyGetSearch hook anymore; Search UI must use POST v1.
   useSearchMutation,
   useGetRecipeFacetsQuery,
   useGetSavedSearchesQuery,

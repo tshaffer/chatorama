@@ -13,11 +13,14 @@
     "build:chatalog-backend": "cd packages/chatalog/backend && npm run build",
     "build:chatalog-frontend": "cd packages/chatalog/frontend && npm run build",
     "build:chatalog": "npm run build:shared && npm run build:md-core && npm run build:chatalog-backend && npm run build:chatalog-frontend",
-    "build": "npm run -ws build",
-    "dev": "npm run -ws dev",
-    "clean": "rimraf **/dist **/node_modules || true"
+    "build": "npm run --workspaces --if-present build",
+    "dev": "npm run --workspaces --if-present dev",
+    "clean": "rimraf **/dist **/node_modules || true",
+    "knip": "knip"
   },
   "devDependencies": {
+    "@types/node": "^25.0.7",
+    "knip": "^5.80.2",
     "rimraf": "^6.1.0",
     "typescript": "^5.9.3"
   },

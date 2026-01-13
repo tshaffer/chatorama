@@ -10,13 +10,10 @@
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
-    "chrome-types": "^0.1.387",
     "esbuild": "^0.24.0",
     "tsx": "^4.19.0"
   },
   "dependencies": {
-    "@chatorama/chat-md-core": "file:../../chat-md-core",
-    "turndown": "^7.2.2",
-    "turndown-plugin-gfm": "^1.0.2"
+    "@chatorama/chat-md-core": "file:../../chat-md-core"
   }
 }

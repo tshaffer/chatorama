@@ -1,5 +1,5 @@
 // chatalog/frontend/src/AppShell.tsx
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Outlet, Link, useLocation, useMatch, useNavigate, matchPath } from 'react-router-dom';
 import { AppBar, Toolbar, Typography, Button, Stack, Box, alpha, IconButton, Tooltip } from '@mui/material';
 import ImportChatworthyButton from './features/imports/ImportChatworthyButton';
@@ -26,8 +26,8 @@ import ImportAiClassificationButton from './features/imports/ImportAiClassificat
 
 type TopNavButtonProps = {
   to: string;
-  children: React.ReactNode;
-  icon?: React.ReactNode;
+  children: ReactNode;
+  icon?: ReactNode;
 };
 
 const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
@@ -76,12 +76,6 @@ export default function AppShell() {
       .then(x => console.log('Health:', x))
       .catch(err => console.error('Health failed:', err));
   }, []);
-
-  // NOTE: isActive is unused now but keeping in case you re-use it later
-  const isActive = (to: string) =>
-    pathname === to ||
-    (to === '/s' && pathname.startsWith('/s')) ||
-    (to === '/' && (pathname === '/' || pathname === '/home'));
 
   const m =
     matchPath({ path: '/s/:subjectSlug/t/:topicSlug/n/:noteId-:noteSlug' }, pathname) ||

@@ -2,7 +2,7 @@
 import type { Topic } from '@chatorama/chatalog-shared';
 import { chatalogApi as baseApi } from '../api/chatalogApi';
 
-export const topicsApi = baseApi.injectEndpoints({
+const topicsApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
     getAllTopics: build.query<Topic[], void>({
       query: () => ({ url: 'topics' }),

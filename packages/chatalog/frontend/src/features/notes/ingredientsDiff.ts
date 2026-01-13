@@ -19,11 +19,6 @@ export type IngredientDiffAdded = {
   current: string;
 };
 
-export type IngredientDiffItem =
-  | IngredientDiffModified
-  | IngredientDiffDeleted
-  | IngredientDiffAdded;
-
 export type IngredientDiffGroups = {
   modified: IngredientDiffModified[];
   deleted: IngredientDiffDeleted[];

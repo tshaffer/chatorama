@@ -1,5 +1,4 @@
 // chatalog/client/src/index.tsx
-import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
 import { ThemeProvider } from '@mui/material/styles';

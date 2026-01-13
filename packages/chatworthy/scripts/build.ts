@@ -18,9 +18,19 @@ const buildOptions: esbuild.BuildOptions = {
   minify: false,
   target: ['chrome120'],
   loader: { '.ts': 'ts' },
-  logLevel: 'info'
+  logLevel: 'info',
+  plugins: [
+    {
+      name: 'copy-static',
+      setup(build) {
+        build.onEnd(async () => {
+          await copyStatic();
+        });
+      },
+    },
+  ],
 };
 
-async function buildOnce() { await copyStatic(); await esbuild.build(buildOptions); }
-async function buildWatch() { await copyStatic(); const ctx = await esbuild.context(buildOptions); ctx.onEnd(copyStatic); await ctx.watch(); }
+async function buildOnce() { await esbuild.build(buildOptions); }
+async function buildWatch() { const ctx = await esbuild.context(buildOptions); await ctx.watch(); }
 (async () => { if (isWatch) await buildWatch(); else await buildOnce(); })();

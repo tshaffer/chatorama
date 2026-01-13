@@ -5,7 +5,9 @@
     "moduleResolution": "Node",
     "verbatimModuleSyntax": false,
     "isolatedModules": false,
-    "outDir": "dist"
+    "outDir": "dist",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
   "include": ["src/**/*"],
   "exclude": ["scripts/**", "tests/**"]

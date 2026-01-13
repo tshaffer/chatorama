@@ -16,25 +16,23 @@
     "unreviewed:html": "tsx scripts/generateUnreviewedChatsHtml.ts"
   },
   "dependencies": {
-    "@chatorama/chat-md-core": "file:../../chat-md-core",
     "@chatorama/chatalog-shared": "file:../shared",
     "@types/unzipper": "^0.10.11",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
+    "fast-glob": "^3.3.3",
     "gray-matter": "^4.0.3",
-    "openai": "^4.0.0",
+    "image-size": "^1.1.1",
     "mongoose": "^8.19.2",
     "multer": "^2.0.2",
-    "fast-glob": "^3.3.3",
-    "image-size": "^1.1.1",
+    "openai": "^4.0.0",
     "unzipper": "^0.12.3"
   },
   "devDependencies": {
     "@chatorama/chatalog-shared": "file:../shared",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
-    "@types/mongoose": "^5.11.96",
     "@types/multer": "^2.0.0",
     "@types/node": "^24.10.0",
     "concurrently": "^9.2.1",

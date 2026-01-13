@@ -1025,8 +1025,6 @@ function buildFileOverlapGroups(files: FileScan[]): FileOverlapGroup[] {
 }
 
 function renderFileOverlapHtml(generatedAt: string, downloadsDir: string, groups: FileOverlapGroup[]): string {
-  const safeJson = (v: any) => JSON.stringify(v).replace(/</g, '\\u003c');
-
   // Sort groups by size desc
   const sorted = [...groups].sort((a, b) => {
     if (b.files.length !== a.files.length) return b.files.length - a.files.length;

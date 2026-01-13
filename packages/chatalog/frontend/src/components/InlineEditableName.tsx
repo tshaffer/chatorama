@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { TextField, Typography } from '@mui/material';
 
 type Props = {
   value: string;
   onSave: (next: string) => Promise<void> | void;
-  as?: 'text' | 'button'; // renders display as text or clickable
   sx?: any;
   startEditingOn?: 'click' | 'doubleClick';
   // Optional: if parent is also clickable, pass true so we stop propagation while editing
@@ -14,7 +13,6 @@ type Props = {
 export default function InlineEditableName({
   value,
   onSave,
-  as = 'text',
   sx,
   startEditingOn = 'doubleClick',
   stopPropagation = true,
@@ -69,14 +67,14 @@ export default function InlineEditableName({
     );
   }
 
-  const handleClick = (e: React.MouseEvent) => {
+  const handleClick = (e: MouseEvent) => {
     if (startEditingOn === 'click') {
       if (stopPropagation) e.stopPropagation();
       begin();
     }
   };
 
-  const handleDoubleClick = (e: React.MouseEvent) => {
+  const handleDoubleClick = () => {
     if (startEditingOn === 'doubleClick') {
       // We intentionally do NOT stop propagation here so a parent
       // can still see the double-click (to cancel single-click nav).

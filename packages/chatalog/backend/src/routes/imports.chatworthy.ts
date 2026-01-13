@@ -1239,6 +1239,7 @@ function buildMarkdownFromSeed(seed: AiSeedNote, title: string): string {
 // POST /api/v1/imports/ai-classification/preview
 router.post('/ai-classification/preview', async (req, res, next) => {
   try {
+    void req;
     // NEW: paths come from environment variables instead of request body
     const aiSeedPath = process.env.AI_SEED_JSON_PATH;
     const aiClassificationPath = process.env.AI_CLASSIFICATION_JSON_PATH;

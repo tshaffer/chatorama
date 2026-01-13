@@ -1,6 +1,6 @@
 import type { SearchSpec } from '@chatorama/chatalog-shared';
 
-export function isNonEmptyFilter(filter: Record<string, any> | undefined | null): boolean {
+function isNonEmptyFilter(filter: Record<string, any> | undefined | null): boolean {
   return !!filter && Object.keys(filter).length > 0;
 }
 
@@ -19,7 +19,7 @@ export function splitAndDedupTokens(raw: unknown): string[] {
   });
 }
 
-export function titleCase(s: string) {
+function titleCase(s: string) {
   return s
     .toLowerCase()
     .split(/\s+/)
@@ -28,7 +28,7 @@ export function titleCase(s: string) {
     .join(' ');
 }
 
-export function expandVariants(vals: string[]): string[] {
+function expandVariants(vals: string[]): string[] {
   const out = new Set<string>();
   for (const v of vals) {
     const base = v.trim();
@@ -40,11 +40,11 @@ export function expandVariants(vals: string[]): string[] {
   return Array.from(out);
 }
 
-export function escapeRegex(s: string) {
+function escapeRegex(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function ingredientRegex(token: string): RegExp {
+function ingredientRegex(token: string): RegExp {
   const e = escapeRegex(token);
   return new RegExp(e, 'i');
 }
@@ -97,15 +97,15 @@ export function buildIngredientFilterForSource(
   return { $and: clauses };
 }
 
-export function eqFilter(v: string) {
+function eqFilter(v: string) {
   return { $eq: v };
 }
 
-export function inFilter(vals: string[]) {
+function inFilter(vals: string[]) {
   return { $in: vals };
 }
 
-export function mergeFilters(atlasFilter: Record<string, any>, postFilter: Record<string, any>) {
+function mergeFilters(atlasFilter: Record<string, any>, postFilter: Record<string, any>) {
   const hasAtlas = isNonEmptyFilter(atlasFilter);
   const hasPost = isNonEmptyFilter(postFilter);
   if (hasAtlas && hasPost) return { $and: [atlasFilter, postFilter] };
@@ -114,7 +114,7 @@ export function mergeFilters(atlasFilter: Record<string, any>, postFilter: Recor
   return {};
 }
 
-export function combineFilters(a: Record<string, any>, b: Record<string, any>) {
+function combineFilters(a: Record<string, any>, b: Record<string, any>) {
   const hasA = isNonEmptyFilter(a);
   const hasB = isNonEmptyFilter(b);
   if (hasA && hasB) return { $and: [a, b] };

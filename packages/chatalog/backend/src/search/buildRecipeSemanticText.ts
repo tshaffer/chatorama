@@ -1,5 +1,3 @@
-type RecipeIngredientLike = { name?: string | null } | string | null | undefined;
-
 function asArray(v: unknown): string[] {
   if (v == null) return [];
   if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean);
@@ -33,43 +31,6 @@ function truncateTokens(tokens: string[], maxTokens: number): string[] {
 function truncateText(s: string, maxChars: number): string {
   if (s.length <= maxChars) return s;
   return s.slice(0, maxChars).trim();
-}
-
-function normalizeForCompare(value: string): string {
-  return cleanOneLine(value).toLowerCase();
-}
-
-function collectIngredientNames(
-  ingredients: RecipeIngredientLike[] | undefined,
-  ingredientsRaw: string[] | undefined,
-): string[] {
-  const names: string[] = [];
-
-  for (const item of ingredients ?? []) {
-    if (!item) continue;
-    if (typeof item === 'string') {
-      if (cleanOneLine(item)) names.push(cleanOneLine(item));
-      continue;
-    }
-    const name = cleanOneLine(String((item as any).name ?? ''));
-    if (name) names.push(name);
-  }
-
-  for (const item of ingredientsRaw ?? []) {
-    const name = cleanOneLine(String(item ?? ''));
-    if (name) names.push(name);
-  }
-
-  const seen = new Set<string>();
-  const deduped: string[] = [];
-  for (const name of names) {
-    const key = normalizeForCompare(name);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(name);
-  }
-
-  return deduped;
 }
 
 export function buildRecipeSemanticText(note: any): string {
