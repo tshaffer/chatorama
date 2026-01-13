@@ -50,5 +50,3 @@ export const TurnFingerprintModel = mongoose.model<TurnFingerprintDoc>(
   'TurnFingerprint',
   TurnFingerprintSchema
 );
-
-export default TurnFingerprintModel;

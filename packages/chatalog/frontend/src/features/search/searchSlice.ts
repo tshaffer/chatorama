@@ -57,12 +57,7 @@ const initialState: SearchSliceState = {
   },
 };
 
-function clampLimit(n: number) {
-  if (!Number.isFinite(n)) return 20;
-  return Math.max(1, Math.min(50, Math.floor(n)));
-}
-
-export const searchSlice = createSlice({
+const searchSlice = createSlice({
   name: 'search',
   initialState,
   reducers: {
@@ -88,10 +83,6 @@ export const searchSlice = createSlice({
       state.draft.mode = action.payload;
     },
 
-    setDraftLimit(state, action: PayloadAction<number>) {
-      state.draft.limit = clampLimit(action.payload);
-    },
-
     setDraftUpdatedFrom(state, action: PayloadAction<string | undefined>) {
       state.draft.filters.updatedFrom = action.payload?.trim() || undefined;
     },
@@ -104,18 +95,6 @@ export const searchSlice = createSlice({
       const v = action.payload;
       state.draft.filters.minSemanticScore =
         v == null || !Number.isFinite(v) ? undefined : Math.max(0, Math.min(1, v));
-    },
-
-    setDraftSubjectId(state, action: PayloadAction<string | undefined>) {
-      state.draft.filters.subjectId = action.payload?.trim() || undefined;
-    },
-
-    setDraftTopicId(state, action: PayloadAction<string | undefined>) {
-      state.draft.filters.topicId = action.payload?.trim() || undefined;
-    },
-
-    commitDraft(state) {
-      state.committed = state.draft;
     },
 
     resetDraftToCommitted(state) {
@@ -140,13 +119,9 @@ export const {
   hydrateFromUrl,
   setDraftText,
   setDraftMode,
-  setDraftLimit,
   setDraftUpdatedFrom,
   setDraftUpdatedTo,
   setDraftMinSemanticScore,
-  setDraftSubjectId,
-  setDraftTopicId,
-  commitDraft,
   resetDraftToCommitted,
   setSelectedScope,
   setFiltersDialogOpen,

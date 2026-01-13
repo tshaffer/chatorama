@@ -35,7 +35,7 @@ export default function QuickCaptureDialog({
   const [topicId, setTopicId] = useState<string | undefined>(defaultTopicId);
   const [pendingUploadedAssetIds, setPendingUploadedAssetIds] = useState<string[]>([]);
 
-  const [addQuickNote, { isLoading, error, data }] = useAddQuickNoteMutation();
+  const [addQuickNote, { isLoading, error }] = useAddQuickNoteMutation();
   const [addQuickNoteAsset] = useAddQuickNoteAssetMutation();
   const [uploadImage, { isLoading: isUploading }] = useUploadImageMutation();
   const { data: subjects = [] } = useGetSubjectsWithTopicsQuery();

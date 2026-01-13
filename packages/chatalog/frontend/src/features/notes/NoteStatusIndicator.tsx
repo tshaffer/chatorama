@@ -1,5 +1,4 @@
 // frontend/src/features/notes/NoteStatusIndicator.tsx
-import React from 'react';
 import { Tooltip, Typography } from '@mui/material';
 
 type NoteStatusCategory = 'unset' | 'completed' | 'other';

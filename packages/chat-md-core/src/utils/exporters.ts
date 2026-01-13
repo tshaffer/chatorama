@@ -321,7 +321,6 @@ function toPureMarkdownChatStyleFromHtml(
     title = meta.chatTitle || 'Chat Export',
     includeFrontMatter = true,
     includeMetaRow = true,
-    hrBetween = false,
     freeformNotes,
     includeToc = true,
   } = opts || {};

@@ -16,13 +16,6 @@ import type {
 import { chatalogApi as baseApi } from '../api/chatalogApi';
 import { subjectsApi } from '../subjects/subjectsApi';
 
-type CreateNoteRequest = Partial<
-  Pick<
-    Note,
-    'subjectId' | 'topicId' | 'title' | 'markdown' | 'summary' | 'status' | 'tags' | 'relations'
-  >
->;
-
 type UpdateNoteRequest = {
   noteId: string;
   patch: Partial<
@@ -121,14 +114,6 @@ export const notesApi = baseApi.injectEndpoints({
       invalidatesTags: (_res, _err, { noteId }) => [{ type: 'Note' as const, id: noteId }],
     }),
 
-    normalizeRecipeIngredients: build.mutation<Note, { noteId: string }>({
-      query: ({ noteId }) => ({
-        url: `recipes/${noteId}/normalize`,
-        method: 'POST',
-      }),
-      invalidatesTags: (_res, _err, { noteId }) => [{ type: 'Note' as const, id: noteId }],
-    }),
-
     addCookedEvent: build.mutation<Note, { noteId: string } & Partial<CookedEvent>>({
       query: ({ noteId, ...body }) => ({
         url: `recipes/${noteId}/cooked`,
@@ -143,21 +128,6 @@ export const notesApi = baseApi.injectEndpoints({
         url: `recipes/search`,
         params: { query, mode },
       }),
-    }),
-
-    createNote: build.mutation<Note, CreateNoteRequest>({
-      query: (body) => ({ url: 'notes', method: 'POST', body }),
-      // If you want to specifically invalidate the new topic list when subjectId/topicId are present:
-      invalidatesTags: (res, _err, body) => {
-        const tags = [{ type: 'Note' as const, id: 'LIST' }];
-        if (body?.subjectId && body?.topicId) {
-          tags.push({
-            type: 'Note' as const,
-            id: `LIST:${body.subjectId}:${body.topicId}`,
-          });
-        }
-        return tags;
-      },
     }),
 
     updateNote: build.mutation<Note, UpdateNoteRequest>({
@@ -286,12 +256,10 @@ export const notesApi = baseApi.injectEndpoints({
 
 export const {
   useGetNoteQuery,
-  useCreateNoteMutation,
   useUpdateNoteMutation,
   useDeleteNoteMutation,
   useUploadImageMutation,
   useAttachAssetToNoteMutation,
-  useNormalizeRecipeIngredientsMutation,
   useAddCookedEventMutation,
   useSearchRecipesQuery,
   useReorderNotesInTopicMutation,

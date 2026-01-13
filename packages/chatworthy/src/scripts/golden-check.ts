@@ -1,8 +1,8 @@
 // scripts/golden-check.ts
 import { readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
-import { buildMarkdownExportByFormat } from '../utils/exporters';
-import type { ExportNoteMetadata, ExportTurn } from '../types';
+import { buildMarkdownExport } from '@chatorama/chat-md-core';
+import type { ExportNoteMetadata, ExportTurn } from '@chatorama/chat-md-core';
 
 /*
 from:
@@ -133,18 +133,13 @@ function run(pairBase: string) {
   const fmInfo = parseFrontMatter(mdGolden);
   const meta = fixedMeta(fmInfo);
 
-  const mdFromTurns = buildMarkdownExportByFormat(
-    'markdown_pure',
-    meta,
-    turns,
-    {
-      title: meta.chatTitle,
-      includeFrontMatter: true,
-      htmlBodies: [],        // ← run the text-only path (Node-safe)
-      includeToc: true,
-      freeformNotes: ''
-    }
-  );
+  const mdFromTurns = buildMarkdownExport(meta, turns, {
+    title: meta.chatTitle,
+    includeFrontMatter: true,
+    htmlBodies: [],        // ← run the text-only path (Node-safe)
+    includeToc: true,
+    freeformNotes: '',
+  });
 
   // console.log('turnsPath:', turnsPath);
   // console.log('mdFromTurns:\n', mdFromTurns);

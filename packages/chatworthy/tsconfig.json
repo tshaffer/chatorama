@@ -12,11 +12,12 @@
     "rootDir": ".",
     "outDir": "dist",
     "composite": true,
-    "declaration": false,
     "declarationMap": false,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
   "include": ["src/**/*", "scripts/**/*"],
   "exclude": ["dist"],

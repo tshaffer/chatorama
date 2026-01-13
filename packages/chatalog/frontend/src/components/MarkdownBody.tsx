@@ -35,12 +35,6 @@ type Props = {
   };
 };
 
-type LogicalTurn = {
-  prompt: string;
-  response: string;
-  turnIndex: number;
-};
-
 type PromptTocItem = {
   turnIndex: number;
   anchorId: string; // e.g. "turn-0"
@@ -59,14 +53,6 @@ const isSafeHref = (href?: string) => {
     return false;
   }
 };
-
-function normalizeText(text: string): string {
-  if (!text) return '';
-  return text
-    .replace(/\r\n/g, '\n')
-    .replace(/[ \t]+\n/g, '\n')
-    .trim();
-}
 
 type ImageSizeSpec = { width?: string; height?: string };
 

@@ -19,7 +19,7 @@ export type RecipeFacetsResponse = {
   keywords: RecipeFacetBucket[];
 };
 
-export const searchApi = baseApi.injectEndpoints({
+const searchApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
     legacyGetSearch: build.query<SearchResponse, SearchSpec>({
       query: (spec) => {

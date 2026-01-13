@@ -8,7 +8,7 @@ type ListParams = {
   limit?: number;
 };
 
-export const quickNotesApi = baseApi.injectEndpoints({
+const quickNotesApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
     getQuickNotes: build.query<QuickNote[], ListParams | void>({
       query: (args) => {
@@ -26,19 +26,6 @@ export const quickNotesApi = baseApi.injectEndpoints({
           : [{ type: 'QuickNote' as const, id: 'LIST' }],
     }),
 
-    getQuickNoteAssets: build.query<QuickNoteAsset[], string>({
-      query: (quickNoteId) => ({
-        url: `quickNoteAssets?quickNoteId=${quickNoteId}`,
-      }),
-      providesTags: (res, _err, quickNoteId) =>
-        res
-          ? [
-              { type: 'QuickNoteAsset' as const, id: `LIST:${quickNoteId}` },
-              ...res.map((asset) => ({ type: 'QuickNoteAsset' as const, id: asset.id })),
-            ]
-          : [{ type: 'QuickNoteAsset' as const, id: `LIST:${quickNoteId}` }],
-    }),
-
     addQuickNoteAsset: build.mutation<
       QuickNoteAsset,
       { quickNoteId: string; assetId: string; caption?: string; order?: number }
@@ -49,29 +36,6 @@ export const quickNotesApi = baseApi.injectEndpoints({
         body,
       }),
       invalidatesTags: (_res, _err, { quickNoteId }) => [
-        { type: 'QuickNoteAsset' as const, id: `LIST:${quickNoteId}` },
-      ],
-    }),
-
-    updateQuickNoteAsset: build.mutation<
-      QuickNoteAsset,
-      { id: string; caption?: string; order?: number; quickNoteId: string }
-    >({
-      query: ({ id, quickNoteId: _quickNoteId, ...patch }) => ({
-        url: `quickNoteAssets/${id}`,
-        method: 'PATCH',
-        body: patch,
-      }),
-      invalidatesTags: (_res, _err, { id, quickNoteId }) => [
-        { type: 'QuickNoteAsset' as const, id },
-        { type: 'QuickNoteAsset' as const, id: `LIST:${quickNoteId}` },
-      ],
-    }),
-
-    deleteQuickNoteAsset: build.mutation<{ ok: true } | void, { id: string; quickNoteId: string }>({
-      query: ({ id }) => ({ url: `quickNoteAssets/${id}`, method: 'DELETE' }),
-      invalidatesTags: (_res, _err, { id, quickNoteId }) => [
-        { type: 'QuickNoteAsset' as const, id },
         { type: 'QuickNoteAsset' as const, id: `LIST:${quickNoteId}` },
       ],
     }),
@@ -124,10 +88,7 @@ export const quickNotesApi = baseApi.injectEndpoints({
 
 export const {
   useGetQuickNotesQuery,
-  useGetQuickNoteAssetsQuery,
   useAddQuickNoteAssetMutation,
-  useUpdateQuickNoteAssetMutation,
-  useDeleteQuickNoteAssetMutation,
   useAddQuickNoteMutation,
   useUpdateQuickNoteMutation,
   useDeleteQuickNoteMutation,

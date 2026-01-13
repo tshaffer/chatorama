@@ -41,7 +41,6 @@ type Props = {
 };
 
 export default function ReorderableNotesList({
-  topicId,
   notes,
   onReordered,
   onOpenNote,

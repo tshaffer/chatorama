@@ -456,10 +456,7 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
         ? buildIngredientFilterForSource(ingredientSource, includeTokens, excludeTokens)
         : undefined;
 
-    const { atlasFilter, postFilter, combinedFilter } = buildNoteFilterFromSpec(
-      spec,
-      ingredientFilter,
-    );
+    const { combinedFilter } = buildNoteFilterFromSpec(spec, ingredientFilter);
 
     if (intent.mode === 'browse') {
       const docs = await NoteModel.find(combinedFilter)
@@ -519,8 +516,6 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
     if (semanticDebug && !runSemantic) {
       semanticDebug.reason = 'disabled';
     }
-    let semanticRawCount = 0;
-
     const [semantic, keyword] = await Promise.all([
       runSemantic
         ? (async () => {
@@ -530,7 +525,6 @@ const hybridSearchHandler = async (req: Request, res: Response, next: NextFuncti
             const hits = await semanticSearchNotes(semanticSpec, ingredientFilter);
             semanticMs = Date.now() - start;
             if (semanticDebug) semanticDebug.ok = true;
-            semanticRawCount = hits.length;
             if (semanticDebug) semanticDebug.rawCount = hits.length;
             return hits;
           } catch (err) {

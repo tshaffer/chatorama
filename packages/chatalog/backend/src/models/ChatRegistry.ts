@@ -33,5 +33,3 @@ const ChatRegistrySchema = new Schema<ChatRegistryDoc>(
 applyToJSON(ChatRegistrySchema);
 
 export const ChatRegistryModel = mongoose.model<ChatRegistryDoc>('ChatRegistry', ChatRegistrySchema);
-
-export default ChatRegistryModel;

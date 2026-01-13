@@ -9,6 +9,7 @@ function slugify(s: string): string {
 }
 
 export async function listTopics(req: Request, res: Response) {
+  void req;
   const docs = await TopicModel.find().sort({ order: 1, name: 1 }).exec();
   res.json(docs.map((d) => d.toJSON()));
 }

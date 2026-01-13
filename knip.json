@@ -1,0 +1,32 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+
+  "ignoreExportsUsedInFile": {
+    "interface": true,
+    "type": true
+  },
+
+  "tags": ["-lintignore"],
+
+  "workspaces": {
+    ".": {},
+
+    "packages/chatalog/backend": {
+      "ignore": ["scripts/**", "src/scripts/**"]
+    },
+
+    "packages/chatalog/frontend": {},
+
+    "packages/chatalog/shared": {},
+
+    "packages/chatworthy": {
+      "entry": ["src/background.ts", "src/content.ts"],
+      "project": ["tsconfig.json"],
+      "ignore": ["src/scripts/**"]
+    },
+
+    "packages/chat-md-core": {}
+  },
+
+  "ignore": ["mongoshscripts/**"]
+}

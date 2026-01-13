@@ -42,8 +42,8 @@ const UNIT_WORDS = new Set([
   'slice', 'slices',
 ]);
 
-export const RECIPE_INGREDIENTS_TOKEN = '{{RECIPE_INGREDIENTS}}';
-export const RECIPE_STEPS_TOKEN = '{{RECIPE_STEPS}}';
+const RECIPE_INGREDIENTS_TOKEN = '{{RECIPE_INGREDIENTS}}';
+const RECIPE_STEPS_TOKEN = '{{RECIPE_STEPS}}';
 
 export function normalizeIngredientLine(raw: string) {
   let line = raw.trim();
@@ -136,9 +136,4 @@ export function buildRecipeMarkdown(opts: {
   lines.push('');
 
   return lines.join('\n');
-}
-
-export function normalizeFacetValue(s: unknown): string {
-  const str = String(s ?? '').trim().toLowerCase();
-  return str.replace(/\s+/g, ' ');
 }

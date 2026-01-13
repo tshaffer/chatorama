@@ -257,7 +257,6 @@ export const {
   useGetSubjectsQuery,
   useGetSubjectsWithTopicsQuery,
   useGetTopicsForSubjectQuery,
-  useGetNotePreviewsForTopicQuery,
   useCreateSubjectMutation,
   useDeleteSubjectMutation,
   useCreateTopicMutation,
@@ -267,7 +266,6 @@ export const {
   useGetSubjectRelationsSummaryQuery,
   useGetTopicRelationsSummaryQuery,
   useGetTopicNoteCountQuery,
-  // NEW hooks:
   useReorderSubjectsMutation,
   useReorderTopicsMutation,
 } = subjectsApi;

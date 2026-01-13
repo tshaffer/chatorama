@@ -4,7 +4,7 @@ import crypto from 'crypto';
  * Options to control what gets included in the embedding text.
  * Keep defaults conservative and stable to reduce unnecessary re-embeddings.
  */
-export type BuildEmbeddingTextOptions = {
+type BuildEmbeddingTextOptions = {
   includeMarkdown?: boolean;   // default true
   maxMarkdownChars?: number;   // default 8000
   includeSummary?: boolean;    // default true
@@ -52,7 +52,7 @@ function truncate(s: string, maxChars: number): string {
  * Build a stable, reasonably informative text representation of a Note.
  * This is what you embed and later compare via hash to see if it changed.
  */
-export function buildEmbeddingText(
+function buildEmbeddingText(
   note: NoteEmbeddingSource,
   opts: BuildEmbeddingTextOptions = {}
 ): string {
