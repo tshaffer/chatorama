@@ -55,6 +55,7 @@ import {
   List,
   ListItemButton,
   ListItemText,
+  MenuItem,
   Paper,
   Stack,
   Switch,
@@ -70,6 +71,10 @@ function clampLimit(n: number) {
   if (!Number.isFinite(n)) return 20;
   return Math.max(1, Math.min(50, Math.floor(n)));
 }
+
+const PREP_TIME_OPTIONS = [10, 15, 20, 30, 45, 60];
+const COOK_TIME_OPTIONS = [10, 15, 20, 30, 45, 60, 90, 120];
+const TOTAL_TIME_OPTIONS = [15, 30, 45, 60, 90, 120, 180];
 
 export default function SearchPage() {
   const navigate = useNavigate();
@@ -89,6 +94,9 @@ export default function SearchPage() {
   const [draftCuisine, setDraftCuisine] = useState<string>('');
   const [draftCategories, setDraftCategories] = useState<string[]>([]);
   const [draftKeywords, setDraftKeywords] = useState<string[]>([]);
+  const [draftPrepTimeMax, setDraftPrepTimeMax] = useState<number | undefined>(undefined);
+  const [draftCookTimeMax, setDraftCookTimeMax] = useState<number | undefined>(undefined);
+  const [draftTotalTimeMax, setDraftTotalTimeMax] = useState<number | undefined>(undefined);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saveErrorMessage, setSaveErrorMessage] = useState<string>('');
@@ -433,6 +441,9 @@ export default function SearchPage() {
     setDraftCuisine(cuisineValues[0] ?? '');
     setDraftCategories(categoryValues);
     setDraftKeywords(keywordValues);
+    setDraftPrepTimeMax(maxPrepMinutes);
+    setDraftCookTimeMax(maxCookMinutes);
+    setDraftTotalTimeMax(maxTotalMinutes);
     dispatch(setFiltersDialogOpen(true));
   };
 
@@ -453,6 +464,9 @@ export default function SearchPage() {
         .filter(Boolean)
         .sort((a, b) => a.localeCompare(b));
       nextFilters.keywords = keywords;
+      nextFilters.prepTimeMax = draftPrepTimeMax;
+      nextFilters.cookTimeMax = draftCookTimeMax;
+      nextFilters.totalTimeMax = draftTotalTimeMax;
     }
 
     const nextQuery = { ...draft, filters: nextFilters };
@@ -475,6 +489,9 @@ export default function SearchPage() {
             cuisine: [],
             category: [],
             keywords: [],
+            prepTimeMax: undefined,
+            cookTimeMax: undefined,
+            totalTimeMax: undefined,
           }
           : {}),
       },
@@ -482,6 +499,9 @@ export default function SearchPage() {
     setDraftCuisine('');
     setDraftCategories([]);
     setDraftKeywords([]);
+    setDraftPrepTimeMax(undefined);
+    setDraftCookTimeMax(undefined);
+    setDraftTotalTimeMax(undefined);
     applyCommitted(nextQuery);
     dispatch(setFiltersDialogOpen(false));
   };
@@ -494,6 +514,8 @@ export default function SearchPage() {
     updatedFrom ||
     updatedTo ||
     minSemanticScore !== undefined ||
+    (isRecipeScope &&
+      (maxPrepMinutes != null || maxCookMinutes != null || maxTotalMinutes != null)) ||
     (isRecipeScope &&
       (cuisineValues.length || categoryValues.length || keywordValues.length)) ||
     (committed.mode && committed.mode !== 'auto'),
@@ -1314,6 +1336,66 @@ export default function SearchPage() {
                     renderInput={(params) => <TextField {...params} label="Keywords" />}
                     size="small"
                   />
+                </Stack>
+
+                <Typography variant="subtitle2" sx={{ mb: 0.5, mt: 2 }}>
+                  Time limits
+                </Typography>
+                <Stack spacing={2}>
+                  <TextField
+                    select
+                    label="Max prep time (min)"
+                    value={draftPrepTimeMax ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const next =
+                        raw === '' ? undefined : Number.isFinite(Number(raw)) ? Number(raw) : undefined;
+                      setDraftPrepTimeMax(next);
+                    }}
+                    size="small"
+                    fullWidth
+                  >
+                    <MenuItem value="">Any</MenuItem>
+                    {PREP_TIME_OPTIONS.map((v) => (
+                      <MenuItem key={`prep-${v}`} value={v}>{v}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    select
+                    label="Max cook time (min)"
+                    value={draftCookTimeMax ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const next =
+                        raw === '' ? undefined : Number.isFinite(Number(raw)) ? Number(raw) : undefined;
+                      setDraftCookTimeMax(next);
+                    }}
+                    size="small"
+                    fullWidth
+                  >
+                    <MenuItem value="">Any</MenuItem>
+                    {COOK_TIME_OPTIONS.map((v) => (
+                      <MenuItem key={`cook-${v}`} value={v}>{v}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    select
+                    label="Max total time (min)"
+                    value={draftTotalTimeMax ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const next =
+                        raw === '' ? undefined : Number.isFinite(Number(raw)) ? Number(raw) : undefined;
+                      setDraftTotalTimeMax(next);
+                    }}
+                    size="small"
+                    fullWidth
+                  >
+                    <MenuItem value="">Any</MenuItem>
+                    {TOTAL_TIME_OPTIONS.map((v) => (
+                      <MenuItem key={`total-${v}`} value={v}>{v}</MenuItem>
+                    ))}
+                  </TextField>
                 </Stack>
               </Box>
             ) : null}

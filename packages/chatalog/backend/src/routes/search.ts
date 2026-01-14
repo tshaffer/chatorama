@@ -9,6 +9,12 @@ import type {
   SearchHitNoteV1,
   SearchSpec,
 } from '@chatorama/chatalog-shared';
+import { buildSearchSpec } from '@chatorama/chatalog-shared';
+import {
+  buildIngredientFilterForSource,
+  buildNoteFilterFromSpec,
+  splitAndDedupTokens,
+} from '../utils/search/noteFilters';
 
 export const searchRouter = Router();
 
@@ -192,8 +198,58 @@ searchRouter.post('/', async (req, res, next) => {
       and.push({ docKind: 'note' });
     }
 
-    const mongoFilter: any = treatedAsWildcard ? {} : { $text: { $search: q } };
+    let mongoFilter: any = treatedAsWildcard ? {} : { $text: { $search: q } };
     if (and.length) mongoFilter.$and = and;
+
+    if (scope === 'recipes') {
+      const spec = buildSearchSpec({
+        query: q,
+        scope,
+        ...(filters as any),
+        prepTimeMax: (filters as any).prepTimeMax ?? (body as any).prepTimeMax,
+        cookTimeMax: (filters as any).cookTimeMax ?? (body as any).cookTimeMax,
+        totalTimeMax: (filters as any).totalTimeMax ?? (body as any).totalTimeMax,
+        cuisine: (filters as any).cuisine ?? (body as any).cuisine,
+        category: (filters as any).category ?? (body as any).category,
+        keywords: (filters as any).keywords ?? (body as any).keywords,
+        includeIngredients: (filters as any).includeIngredients ?? (body as any).includeIngredients,
+        excludeIngredients: (filters as any).excludeIngredients ?? (body as any).excludeIngredients,
+      });
+
+      const includeTokens = splitAndDedupTokens(spec.filters.includeIngredients);
+      const excludeTokens = splitAndDedupTokens(spec.filters.excludeIngredients);
+      let ingredientSource: 'normalized' | 'raw' | null = null;
+
+      if (includeTokens.length || excludeTokens.length) {
+        const hasNormalized = await NoteModel.exists({ 'recipe.ingredients.0': { $exists: true } });
+        if (hasNormalized) ingredientSource = 'normalized';
+        else {
+          const hasRaw = await NoteModel.exists({ 'recipe.ingredientsRaw.0': { $exists: true } });
+          if (hasRaw) ingredientSource = 'raw';
+        }
+
+        if (!ingredientSource) {
+          const response: SearchResponseV1 = { version: 1, total: 0, hits: [] };
+          return res.json(response);
+        }
+      }
+
+      const ingredientFilter =
+        ingredientSource && (includeTokens.length || excludeTokens.length)
+          ? buildIngredientFilterForSource(ingredientSource, includeTokens, excludeTokens)
+          : undefined;
+
+      const { combinedFilter } = buildNoteFilterFromSpec(spec, ingredientFilter);
+      if (Object.keys(combinedFilter).length) {
+        if (mongoFilter.$and) {
+          mongoFilter.$and.push(combinedFilter);
+        } else if (Object.keys(mongoFilter).length) {
+          mongoFilter = { $and: [mongoFilter, combinedFilter] };
+        } else {
+          mongoFilter = combinedFilter;
+        }
+      }
+    }
 
     if (treatedAsWildcard) {
       const total = await NoteModel.countDocuments(mongoFilter).exec();

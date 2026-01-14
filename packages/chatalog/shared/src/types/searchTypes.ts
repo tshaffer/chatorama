@@ -119,6 +119,16 @@ export interface SearchFiltersV1 {
   sourceType?: string;       // note.sourceType
   importBatchId?: string;    // exact match
   chatworthyChatId?: string; // exact match
+
+  // Recipe scope filters
+  prepTimeMax?: number;
+  cookTimeMax?: number;
+  totalTimeMax?: number;
+  cuisine?: string[];
+  category?: string[];
+  keywords?: string[];
+  includeIngredients?: string[];
+  excludeIngredients?: string[];
 }
 
 export interface SearchRequestV1 {
