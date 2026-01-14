@@ -51,7 +51,5 @@ export function createRoutes(app: Express) {
   app.use('/api/assets', assetsRouter);
   app.use('/api/noteAssets', noteAssetsRouter);
   app.use('/api/quickNoteAssets', quickNoteAssetsRouter);
-  app.use('/api/search', searchRouter);
-
   app.use('/api/v1', api);
 }

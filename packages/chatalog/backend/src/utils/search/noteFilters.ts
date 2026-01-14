@@ -1,6 +1,6 @@
 import type { SearchSpec } from '@chatorama/chatalog-shared';
 
-export function isNonEmptyFilter(filter: Record<string, any> | undefined | null): boolean {
+function isNonEmptyFilter(filter: Record<string, any> | undefined | null): boolean {
   return !!filter && Object.keys(filter).length > 0;
 }
 
@@ -114,7 +114,7 @@ function mergeFilters(atlasFilter: Record<string, any>, postFilter: Record<strin
   return {};
 }
 
-export function combineFilters(a: Record<string, any>, b: Record<string, any>) {
+function combineFilters(a: Record<string, any>, b: Record<string, any>) {
   const hasA = isNonEmptyFilter(a);
   const hasB = isNonEmptyFilter(b);
   if (hasA && hasB) return { $and: [a, b] };
