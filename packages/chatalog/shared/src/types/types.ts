@@ -77,6 +77,7 @@ export type RecipeMeta = {
   ratingCount?: number;
   nutrition?: RecipeNutrition;
   ingredientsRaw?: string[];
+  ingredientTokens?: string[];
   stepsRaw?: string[];
   ingredients?: RecipeIngredient[];
   ingredientsEditedRaw?: string[];

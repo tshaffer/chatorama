@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { NoteModel } from '../models/Note';
+import { NOTE_STATUS_VALUES, NoteModel } from '../models/Note';
 import { ImportBatchModel } from '../models/ImportBatch';
 import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
 import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
@@ -12,6 +12,27 @@ import {
   slugifyStandard,
 } from '@chatorama/chatalog-shared';
 import { toPreview } from '../utilities';
+
+const NOTE_STATUS_SET = new Set<string>(NOTE_STATUS_VALUES);
+
+function normalizeStatusInput(raw: unknown): string | undefined {
+  if (raw == null) return undefined;
+  const s = String(raw).trim();
+  return s ? s : undefined;
+}
+
+function validateStatusOrReject(res: Response, raw: unknown): {
+  ok: boolean;
+  status?: string;
+} {
+  const status = normalizeStatusInput(raw);
+  if (!status) return { ok: true, status: undefined };
+  if (!NOTE_STATUS_SET.has(status)) {
+    res.status(400).json({ error: 'Invalid status' });
+    return { ok: false };
+  }
+  return { ok: true, status };
+}
 
 
 // Ensure slug is unique within a topic; optionally exclude current note id
@@ -216,6 +237,9 @@ export async function createNote(req: Request, res: Response) {
     relations = [],
   } = req.body ?? {};
 
+  const normalizedStatusResult = validateStatusOrReject(res, status);
+  if (!normalizedStatusResult.ok) return;
+
   const slug = (title || 'untitled').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
   const min = await NoteModel
@@ -233,7 +257,7 @@ export async function createNote(req: Request, res: Response) {
     slug,
     markdown,
     summary,
-    status,   // 🔹 NEW
+    status: normalizedStatusResult.status,   // 🔹 NEW
     tags,
     relations,
     docKind: 'note',
@@ -335,6 +359,12 @@ export async function patchNote(req: Request, res: Response) {
   delete patch.createdAt;
   delete patch.importedAt;
   delete patch.backlinks; // still server-managed
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'status')) {
+    const normalizedStatusResult = validateStatusOrReject(res, patch.status);
+    if (!normalizedStatusResult.ok) return;
+    patch.status = normalizedStatusResult.status;
+  }
 
   // 🔹 NEW: drop incomplete relations (no targetId)
   if (Array.isArray(patch.relations)) {

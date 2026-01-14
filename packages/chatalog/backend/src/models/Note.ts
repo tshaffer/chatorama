@@ -3,6 +3,8 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 import { applyToJSON } from '../db/toJsonPlugin';
 import { NoteRelation, RecipeIngredient, RecipeMeta, CookedEvent } from '@chatorama/chatalog-shared';
 
+export const NOTE_STATUS_VALUES = ['completed'] as const;
+
 export interface NoteDoc extends Document {
   _id: Types.ObjectId;
   subjectId?: string;
@@ -112,6 +114,7 @@ const RecipeMetaSchema = new Schema<RecipeMeta>(
     nutrition: { type: Schema.Types.Mixed },
     ingredientsRaw: { type: [String], default: [] },
     stepsRaw: { type: [String], default: [] },
+    ingredientTokens: { type: [String], default: [] },
     ingredients: { type: [RecipeIngredientSchema], default: [] },
     ingredientsEditedRaw: { type: [String], default: undefined },
     ingredientsEdited: { type: [RecipeIngredientSchema], default: undefined },
@@ -136,7 +139,7 @@ const NoteSchema = new Schema<NoteDoc>(
     slug:      { type: String, required: true, index: true },
     markdown:  { type: String, required: true, default: '' },
     summary:   { type: String },
-    status:    { type: String },
+    status:    { type: String, enum: NOTE_STATUS_VALUES },
     tags:      { type: [String], default: [] },
     links:     { type: [String], default: [] },
     backlinks: { type: [String], default: [] },
@@ -186,12 +189,15 @@ NoteSchema.index(
   { unique: true, partialFilterExpression: { slug: { $type: 'string' } } }
 );
 
-// Full-text search (v1): title weighted higher than markdown
+// Full-text search (v2): title highest, tags medium, markdown lowest.
+// To rebuild locally:
+// - mongosh: db.notes.dropIndex('notes_text_search_v1')
+// - mongosh: db.notes.createIndex({ title: 'text', tags: 'text', markdown: 'text' }, { name: 'notes_text_search_v2', weights: { title: 10, tags: 3, markdown: 1 }, default_language: 'english' })
 NoteSchema.index(
-  { title: 'text', markdown: 'text' },
+  { title: 'text', tags: 'text', markdown: 'text' },
   {
-    name: 'notes_text_search_v1',
-    weights: { title: 10, markdown: 1 },
+    name: 'notes_text_search_v2',
+    weights: { title: 10, tags: 3, markdown: 1 },
     default_language: 'english',
   }
 );
@@ -226,6 +232,13 @@ NoteSchema.index({ importBatchId: 1, createdAt: -1 });
 // Recipe lookup / dedupe / search
 NoteSchema.index({ 'recipe.sourceUrl': 1 }, { unique: true, sparse: true });
 NoteSchema.index({ 'recipe.ingredients.name': 1 });
+NoteSchema.index({ 'recipe.ingredientTokens': 1 });
+NoteSchema.index({ 'recipe.cuisine': 1 });
+NoteSchema.index({ 'recipe.category': 1 });
+NoteSchema.index({ 'recipe.keywords': 1 });
+NoteSchema.index({ 'recipe.prepTimeMinutes': 1 });
+NoteSchema.index({ 'recipe.cookTimeMinutes': 1 });
+NoteSchema.index({ 'recipe.totalTimeMinutes': 1 });
 
 const CONTENT_PATH_PREFIXES = [
   'title',

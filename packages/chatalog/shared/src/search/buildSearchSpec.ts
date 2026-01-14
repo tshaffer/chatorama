@@ -10,6 +10,7 @@ export type BuildSearchSpecInput = {
   topicId?: unknown;
   status?: unknown;
   tags?: unknown;
+  importedOnly?: unknown;
   updatedFrom?: unknown;
   updatedTo?: unknown;
   minSemanticScore?: unknown;
@@ -46,6 +47,16 @@ function normalizeNumber(value: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function normalizeBool(value: unknown): boolean | undefined {
+  if (value == null) return undefined;
+  if (typeof value === 'boolean') return value;
+  const s = String(value).trim().toLowerCase();
+  if (!s) return undefined;
+  if (s === '1' || s === 'true' || s === 'yes') return true;
+  if (s === '0' || s === 'false' || s === 'no') return false;
+  return undefined;
+}
+
 export function buildSearchSpec(input: BuildSearchSpecInput): SearchSpec {
   const rawQuery = normalizeString(input.query ?? input.text);
   const modeRaw = normalizeString(input.mode).toLowerCase();
@@ -74,6 +85,7 @@ export function buildSearchSpec(input: BuildSearchSpecInput): SearchSpec {
       topicId: normalizeString(input.topicId) || undefined,
       status: normalizeString(input.status) || undefined,
       tags: normalizeStringArray(input.tags),
+      importedOnly: normalizeBool(input.importedOnly),
       updatedFrom: normalizeString(input.updatedFrom) || undefined,
       updatedTo: normalizeString(input.updatedTo) || undefined,
       minSemanticScore: normalizeNumber(input.minSemanticScore),

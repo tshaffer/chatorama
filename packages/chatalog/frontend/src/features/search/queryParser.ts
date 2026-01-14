@@ -24,7 +24,7 @@ export function parseSearchInput(input: string): ParsedSearch {
   let m: RegExpExecArray | null;
 
   while ((m = re.exec(text)) !== null) {
-    tokens.push(m[1] ?? m[2] ?? m[3]);
+    tokens.push(m[0]);
   }
 
   const params: Record<string, string> = {};

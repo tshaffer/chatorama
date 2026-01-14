@@ -6,6 +6,7 @@ export type SearchFilters = {
   topicId?: string;
   status?: string;
   tags: string[];
+  importedOnly?: boolean;
   updatedFrom?: string; // YYYY-MM-DD
   updatedTo?: string; // YYYY-MM-DD
   minSemanticScore?: number;

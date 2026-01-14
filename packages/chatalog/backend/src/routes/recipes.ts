@@ -10,6 +10,7 @@ import {
   searchRecipesByIngredients,
 } from '../controllers/recipesController';
 import { buildRecipeMarkdown, normalizeIngredientLine } from '../utils/recipeNormalize';
+import { buildIngredientTokensFromIngredients } from '../utils/ingredientTokens';
 import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
 
 type ImportRecipeRequest = {
@@ -227,6 +228,7 @@ recipesRouter.post('/import', async (req, res, next) => {
 
     const ingredients = normalizeStringArray((recipe as any).recipeIngredient || (recipe as any).ingredients);
     const normalizedIngredients = ingredients.map(normalizeIngredientLine).filter((x) => x.raw && String(x.raw).trim().length > 0);
+    const ingredientTokens = buildIngredientTokensFromIngredients(normalizedIngredients, ingredients);
 
     const steps = normalizeInstructions((recipe as any).recipeInstructions || (recipe as any).instructions);
 
@@ -300,6 +302,7 @@ recipesRouter.post('/import', async (req, res, next) => {
             transFatContent,
           },
           ingredientsRaw: ingredients,
+          ingredientTokens,
           ingredients: normalizedIngredients,
           stepsRaw: steps,
         },

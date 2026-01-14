@@ -50,11 +50,13 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Checkbox,
   FormControlLabel,
   IconButton,
   List,
   ListItemButton,
   ListItemText,
+  MenuItem,
   Paper,
   Stack,
   Switch,
@@ -70,6 +72,32 @@ function clampLimit(n: number) {
   if (!Number.isFinite(n)) return 20;
   return Math.max(1, Math.min(50, Math.floor(n)));
 }
+
+function parseIngredientList(input: string): string[] {
+  const raw = String(input ?? '');
+  const parts = raw
+    .split(/[,\n]/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of parts) {
+    const normalized = part.toLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
+function formatIngredientList(tokens: string[] | undefined | null): string {
+  const cleaned = (tokens ?? []).map((t) => String(t).trim()).filter(Boolean);
+  return cleaned.join(', ');
+}
+
+const PREP_TIME_OPTIONS = [10, 15, 20, 30, 45, 60];
+const COOK_TIME_OPTIONS = [10, 15, 20, 30, 45, 60, 90, 120];
+const TOTAL_TIME_OPTIONS = [15, 30, 45, 60, 90, 120, 180];
 
 export default function SearchPage() {
   const navigate = useNavigate();
@@ -89,6 +117,14 @@ export default function SearchPage() {
   const [draftCuisine, setDraftCuisine] = useState<string>('');
   const [draftCategories, setDraftCategories] = useState<string[]>([]);
   const [draftKeywords, setDraftKeywords] = useState<string[]>([]);
+  const [draftPrepTimeMax, setDraftPrepTimeMax] = useState<number | undefined>(undefined);
+  const [draftCookTimeMax, setDraftCookTimeMax] = useState<number | undefined>(undefined);
+  const [draftTotalTimeMax, setDraftTotalTimeMax] = useState<number | undefined>(undefined);
+  const [draftIncludeIngredientsInput, setDraftIncludeIngredientsInput] = useState<string>('');
+  const [draftExcludeIngredientsInput, setDraftExcludeIngredientsInput] = useState<string>('');
+  const [draftSubjectId, setDraftSubjectId] = useState<string>('');
+  const [draftTopicId, setDraftTopicId] = useState<string>('');
+  const [draftImportedOnly, setDraftImportedOnly] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saveErrorMessage, setSaveErrorMessage] = useState<string>('');
@@ -110,10 +146,16 @@ export default function SearchPage() {
   const maxPrepMinutes = committed.filters.prepTimeMax;
   const maxCookMinutes = committed.filters.cookTimeMax;
   const maxTotalMinutes = committed.filters.totalTimeMax;
+  const importedOnlyFromQuery = Boolean(committed.filters.importedOnly);
   const cuisineValues = (committed.filters.cuisine ?? []).map((t) => t.trim()).filter(Boolean);
   const categoryValues = (committed.filters.category ?? []).map((t) => t.trim()).filter(Boolean);
   const keywordValues = (committed.filters.keywords ?? []).map((t) => t.trim()).filter(Boolean);
+  const includeIngredientValues =
+    (committed.filters.includeIngredients ?? []).map((t) => t.trim()).filter(Boolean);
+  const excludeIngredientValues =
+    (committed.filters.excludeIngredients ?? []).map((t) => t.trim()).filter(Boolean);
   const isRecipeScope = selectedScope === 'recipes';
+  const isNotesScope = selectedScope !== 'recipes';
   const { data: recipeFacets } = useGetRecipeFacetsQuery(undefined, { skip: !isRecipeScope });
   const { data: savedSearchesData } = useGetSavedSearchesQuery();
   const savedSearches = savedSearchesData?.items ?? [];
@@ -267,6 +309,37 @@ export default function SearchPage() {
   const { data, error, isLoading, isSuccess, isError, isUninitialized } = searchState;
   const isFetching = isLoading;
   const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery();
+
+  const subjectOptions = useMemo(
+    () => [...subjectsWithTopics].sort((a, b) => a.name.localeCompare(b.name)),
+    [subjectsWithTopics],
+  );
+
+  const allTopicOptions = useMemo(
+    () =>
+      subjectsWithTopics.flatMap((s) =>
+        (s.topics ?? []).map((t) => ({
+          ...t,
+          subjectName: s.name,
+          subjectId: s.id,
+        })),
+      ),
+    [subjectsWithTopics],
+  );
+
+  const topicOptions = useMemo(() => {
+    if (!draftSubjectId) {
+      return allTopicOptions.sort((a, b) =>
+        `${a.subjectName} ${a.name}`.localeCompare(`${b.subjectName} ${b.name}`),
+      );
+    }
+    const subject = subjectsWithTopics.find((s) => s.id === draftSubjectId);
+    return (subject?.topics ?? []).map((t) => ({
+      ...t,
+      subjectName: subject?.name ?? '',
+      subjectId: subject?.id ?? '',
+    }));
+  }, [subjectsWithTopics, allTopicOptions, draftSubjectId]);
 
   useEffect(() => {
     search(requestBody);
@@ -433,6 +506,14 @@ export default function SearchPage() {
     setDraftCuisine(cuisineValues[0] ?? '');
     setDraftCategories(categoryValues);
     setDraftKeywords(keywordValues);
+    setDraftPrepTimeMax(maxPrepMinutes);
+    setDraftCookTimeMax(maxCookMinutes);
+    setDraftTotalTimeMax(maxTotalMinutes);
+    setDraftIncludeIngredientsInput(formatIngredientList(includeIngredientValues));
+    setDraftExcludeIngredientsInput(formatIngredientList(excludeIngredientValues));
+    setDraftSubjectId(subjectIdFromQuery || '');
+    setDraftTopicId(topicIdFromQuery || '');
+    setDraftImportedOnly(importedOnlyFromQuery);
     dispatch(setFiltersDialogOpen(true));
   };
 
@@ -453,6 +534,16 @@ export default function SearchPage() {
         .filter(Boolean)
         .sort((a, b) => a.localeCompare(b));
       nextFilters.keywords = keywords;
+      nextFilters.prepTimeMax = draftPrepTimeMax;
+      nextFilters.cookTimeMax = draftCookTimeMax;
+      nextFilters.totalTimeMax = draftTotalTimeMax;
+      nextFilters.includeIngredients = parseIngredientList(draftIncludeIngredientsInput);
+      nextFilters.excludeIngredients = parseIngredientList(draftExcludeIngredientsInput);
+    }
+    if (isNotesScope) {
+      nextFilters.subjectId = draftSubjectId || undefined;
+      nextFilters.topicId = draftTopicId || undefined;
+      nextFilters.importedOnly = draftImportedOnly ? true : undefined;
     }
 
     const nextQuery = { ...draft, filters: nextFilters };
@@ -475,6 +566,18 @@ export default function SearchPage() {
             cuisine: [],
             category: [],
             keywords: [],
+            prepTimeMax: undefined,
+            cookTimeMax: undefined,
+            totalTimeMax: undefined,
+            includeIngredients: [],
+            excludeIngredients: [],
+          }
+          : {}),
+        ...(isNotesScope
+          ? {
+            subjectId: undefined,
+            topicId: undefined,
+            importedOnly: undefined,
           }
           : {}),
       },
@@ -482,6 +585,14 @@ export default function SearchPage() {
     setDraftCuisine('');
     setDraftCategories([]);
     setDraftKeywords([]);
+    setDraftPrepTimeMax(undefined);
+    setDraftCookTimeMax(undefined);
+    setDraftTotalTimeMax(undefined);
+    setDraftIncludeIngredientsInput('');
+    setDraftExcludeIngredientsInput('');
+    setDraftSubjectId('');
+    setDraftTopicId('');
+    setDraftImportedOnly(false);
     applyCommitted(nextQuery);
     dispatch(setFiltersDialogOpen(false));
   };
@@ -494,8 +605,15 @@ export default function SearchPage() {
     updatedFrom ||
     updatedTo ||
     minSemanticScore !== undefined ||
+    (isNotesScope && importedOnlyFromQuery) ||
     (isRecipeScope &&
-      (cuisineValues.length || categoryValues.length || keywordValues.length)) ||
+      (maxPrepMinutes != null || maxCookMinutes != null || maxTotalMinutes != null)) ||
+    (isRecipeScope &&
+      (cuisineValues.length ||
+        categoryValues.length ||
+        keywordValues.length ||
+        includeIngredientValues.length ||
+        excludeIngredientValues.length)) ||
     (committed.mode && committed.mode !== 'auto'),
   );
 
@@ -955,6 +1073,48 @@ export default function SearchPage() {
                         />
                       ))
                       : null}
+
+                    {isRecipeScope
+                      ? includeIngredientValues.map((i) => (
+                        <Chip
+                          key={`include-ing-${i}`}
+                          label={`Include: ${i}`}
+                          onDelete={() => {
+                            const nextInclude = includeIngredientValues.filter((x) => x !== i);
+                            applyCommitted({
+                              ...committed,
+                              filters: {
+                                ...committed.filters,
+                                includeIngredients: nextInclude.sort((a, b) => a.localeCompare(b)),
+                              },
+                            });
+                          }}
+                          size="small"
+                          variant="outlined"
+                        />
+                      ))
+                      : null}
+
+                    {isRecipeScope
+                      ? excludeIngredientValues.map((i) => (
+                        <Chip
+                          key={`exclude-ing-${i}`}
+                          label={`Exclude: ${i}`}
+                          onDelete={() => {
+                            const nextExclude = excludeIngredientValues.filter((x) => x !== i);
+                            applyCommitted({
+                              ...committed,
+                              filters: {
+                                ...committed.filters,
+                                excludeIngredients: nextExclude.sort((a, b) => a.localeCompare(b)),
+                              },
+                            });
+                          }}
+                          size="small"
+                          variant="outlined"
+                        />
+                      ))
+                      : null}
                   </>
                 )}
                 <FormControlLabel
@@ -1192,14 +1352,14 @@ export default function SearchPage() {
                 Mode
               </Typography>
               <ToggleButtonGroup
-                value={draft.mode}
+                value={draft.mode === 'hybrid' ? 'auto' : draft.mode}
                 exclusive
                 onChange={(_e, v) => {
                   if (v) dispatch(setDraftMode(v as any));
                 }}
                 size="small"
               >
-                <ToggleButton value="hybrid">Hybrid</ToggleButton>
+                <ToggleButton value="auto">Auto</ToggleButton>
                 <ToggleButton value="keyword">Keyword</ToggleButton>
                 <ToggleButton value="semantic">Semantic</ToggleButton>
               </ToggleButtonGroup>
@@ -1236,6 +1396,61 @@ export default function SearchPage() {
                 fullWidth
               />
             </Stack>
+
+            {isNotesScope ? (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                  Note metadata
+                </Typography>
+                <Stack spacing={2}>
+                  <TextField
+                    select
+                    label="Subject"
+                    value={draftSubjectId}
+                    onChange={(e) => {
+                      const nextSubjectId = String(e.target.value);
+                      setDraftSubjectId(nextSubjectId);
+                      if (nextSubjectId) {
+                        const subject = subjectsWithTopics.find((s) => s.id === nextSubjectId);
+                        const hasTopic = (subject?.topics ?? []).some((t) => t.id === draftTopicId);
+                        if (!hasTopic) setDraftTopicId('');
+                      }
+                    }}
+                    size="small"
+                    fullWidth
+                  >
+                    <MenuItem value="">Any</MenuItem>
+                    {subjectOptions.map((s) => (
+                      <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    select
+                    label="Topic"
+                    value={draftTopicId}
+                    onChange={(e) => setDraftTopicId(String(e.target.value))}
+                    size="small"
+                    fullWidth
+                  >
+                    <MenuItem value="">Any</MenuItem>
+                    {topicOptions.map((t: any) => (
+                      <MenuItem key={t.id} value={t.id}>
+                        {draftSubjectId ? t.name : `${t.name} (${t.subjectName})`}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={draftImportedOnly}
+                        onChange={(_e, checked) => setDraftImportedOnly(checked)}
+                      />
+                    }
+                    label="Imported only"
+                  />
+                </Stack>
+              </Box>
+            ) : null}
 
             {isRecipeScope ? (
               <Box>
@@ -1314,6 +1529,88 @@ export default function SearchPage() {
                     renderInput={(params) => <TextField {...params} label="Keywords" />}
                     size="small"
                   />
+                  <TextField
+                    label="Include ingredients"
+                    placeholder="e.g., chicken, black pepper"
+                    helperText="Comma or newline separated"
+                    value={draftIncludeIngredientsInput}
+                    onChange={(e) => setDraftIncludeIngredientsInput(e.target.value)}
+                    size="small"
+                    fullWidth
+                    multiline
+                    minRows={2}
+                  />
+                  <TextField
+                    label="Exclude ingredients"
+                    placeholder="e.g., garlic"
+                    helperText="Comma or newline separated"
+                    value={draftExcludeIngredientsInput}
+                    onChange={(e) => setDraftExcludeIngredientsInput(e.target.value)}
+                    size="small"
+                    fullWidth
+                    multiline
+                    minRows={2}
+                  />
+                </Stack>
+
+                <Typography variant="subtitle2" sx={{ mb: 0.5, mt: 2 }}>
+                  Time limits
+                </Typography>
+                <Stack spacing={2}>
+                  <TextField
+                    select
+                    label="Max prep time (min)"
+                    value={draftPrepTimeMax ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const next =
+                        raw === '' ? undefined : Number.isFinite(Number(raw)) ? Number(raw) : undefined;
+                      setDraftPrepTimeMax(next);
+                    }}
+                    size="small"
+                    fullWidth
+                  >
+                    <MenuItem value="">Any</MenuItem>
+                    {PREP_TIME_OPTIONS.map((v) => (
+                      <MenuItem key={`prep-${v}`} value={v}>{v}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    select
+                    label="Max cook time (min)"
+                    value={draftCookTimeMax ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const next =
+                        raw === '' ? undefined : Number.isFinite(Number(raw)) ? Number(raw) : undefined;
+                      setDraftCookTimeMax(next);
+                    }}
+                    size="small"
+                    fullWidth
+                  >
+                    <MenuItem value="">Any</MenuItem>
+                    {COOK_TIME_OPTIONS.map((v) => (
+                      <MenuItem key={`cook-${v}`} value={v}>{v}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    select
+                    label="Max total time (min)"
+                    value={draftTotalTimeMax ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const next =
+                        raw === '' ? undefined : Number.isFinite(Number(raw)) ? Number(raw) : undefined;
+                      setDraftTotalTimeMax(next);
+                    }}
+                    size="small"
+                    fullWidth
+                  >
+                    <MenuItem value="">Any</MenuItem>
+                    {TOTAL_TIME_OPTIONS.map((v) => (
+                      <MenuItem key={`total-${v}`} value={v}>{v}</MenuItem>
+                    ))}
+                  </TextField>
                 </Stack>
               </Box>
             ) : null}

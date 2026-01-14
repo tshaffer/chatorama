@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { NoteModel } from '../models/Note';
+import { SubjectModel } from '../models/Subject';
+import { TopicModel } from '../models/Topic';
 import { computeEmbeddingTextAndHash } from '../ai/embeddingText';
 import { embedText } from '../ai/embed';
 import type {
@@ -9,8 +11,24 @@ import type {
   SearchHitNoteV1,
   SearchSpec,
 } from '@chatorama/chatalog-shared';
+import { buildSearchSpec } from '@chatorama/chatalog-shared';
+import {
+  buildIngredientFilterForSource,
+  buildNoteFilterFromSpec,
+  splitAndDedupTokens,
+} from '../utils/search/noteFilters';
+import { canonicalizeFilterTokens } from '../utils/ingredientTokens';
+import { canonicalizeIngredient } from '../utils/ingredientTokens';
+import { parsePowerQuery } from '../utils/search/powerQueryParser';
 
 export const searchRouter = Router();
+
+const NOTES_VECTOR_INDEX_NAME = 'notes_vector_index';
+const RECIPES_VECTOR_INDEX_NAME = 'recipes_vector_index';
+const NOTES_VECTOR_PATH = 'embedding';
+const RECIPES_VECTOR_PATH = 'recipeEmbedding';
+const RRF_K = 60;
+// Vector indexes are created in the Atlas UI; names/paths must match these constants.
 
 function requireAdminToken(req: Request, res: Response, next: NextFunction) {
   const expected = process.env.CHATALOG_ADMIN_TOKEN;
@@ -37,6 +55,68 @@ function normalizeScope(
     return raw as SearchSpec['scope'];
   }
   return fallback;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+type ParsedQueryOperators = {
+  text: string;
+  subject?: string;
+  topic?: string;
+  tags: string[];
+  importedOnly?: boolean;
+};
+
+function parseQueryOperators(input: string): ParsedQueryOperators {
+  const tags: string[] = [];
+  let subject: string | undefined;
+  let topic: string | undefined;
+  let importedOnly: boolean | undefined;
+
+  const re = /(^|\s)(subject|topic|tag|imported):\s*(?:"([^"]+)"|'([^']+)'|([^\s]+))/gi;
+  const stripped = input.replace(re, (_match, prefix, key, v1, v2, v3) => {
+    const value = String(v1 ?? v2 ?? v3 ?? '').trim();
+    if (!value) return ' ';
+    const k = String(key).toLowerCase();
+    if (k === 'subject') subject = value;
+    if (k === 'topic') topic = value;
+    if (k === 'tag') tags.push(value);
+    if (k === 'imported') {
+      const v = value.toLowerCase();
+      if (v === 'true' || v === '1' || v === 'yes') importedOnly = true;
+    }
+    return prefix && String(prefix).trim() ? ' ' : ' ';
+  });
+
+  const text = stripped.replace(/\s+/g, ' ').trim();
+  return { text, subject, topic, tags, importedOnly };
+}
+
+async function resolveSubjectId(value: string): Promise<string | undefined> {
+  const re = new RegExp(`^${escapeRegex(value)}$`, 'i');
+  const doc = await SubjectModel.findOne({
+    $or: [{ name: re }, { slug: re }],
+  })
+    .select({ _id: 1 })
+    .lean();
+  return doc?._id ? String(doc._id) : undefined;
+}
+
+async function resolveTopicByValue(
+  value: string,
+  subjectId?: string,
+): Promise<{ id: string; subjectId?: string } | undefined> {
+  const re = new RegExp(`^${escapeRegex(value)}$`, 'i');
+  const doc = await TopicModel.findOne({
+    ...(subjectId ? { subjectId } : {}),
+    $or: [{ name: re }, { slug: re }],
+  })
+    .select({ _id: 1, subjectId: 1 })
+    .lean();
+  if (!doc?._id) return undefined;
+  return { id: String(doc._id), subjectId: doc.subjectId ?? undefined };
 }
 
 function stripMarkdownVerySimple(md: string): string {
@@ -73,6 +153,228 @@ function extractQueryTerms(q: string): string[] {
   return terms;
 }
 
+function buildTextMatchQuery(baseFilter: any, search: string): any {
+  const textMatch: any = { $text: { $search: search } };
+  if (baseFilter?.$and && Array.isArray(baseFilter.$and)) {
+    return { ...textMatch, $and: baseFilter.$and };
+  }
+  if (baseFilter && Object.keys(baseFilter).length) {
+    return { ...textMatch, $and: [baseFilter] };
+  }
+  return textMatch;
+}
+
+function escapeTextSearchPhrase(input: string): string {
+  return input.replace(/"/g, '\\"');
+}
+
+function dedupeOrdered(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    const key = v.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(v);
+  }
+  return out;
+}
+
+function appendNotTermsToSearch(base: string, notTerms: string[]): string {
+  const trimmedBase = base.trim();
+  if (!notTerms.length) return trimmedBase;
+  const parts = trimmedBase ? [trimmedBase] : [];
+  for (const raw of notTerms) {
+    const term = raw.trim();
+    if (!term) continue;
+    const escaped = escapeTextSearchPhrase(term);
+    const token = term.includes(' ') ? `-"${escaped}"` : `-${escaped}`;
+    parts.push(token);
+  }
+  return parts.join(' ').trim();
+}
+
+function buildTextSearchPlan(parsed: ReturnType<typeof parsePowerQuery>, raw: string) {
+  const hasExplicitPhrase = parsed.phrases.length > 0;
+  const hasNot = parsed.notTerms.length > 0;
+  const positiveTerms = dedupeOrdered([
+    ...parsed.mustTerms,
+    ...parsed.anyTerms,
+    ...parsed.terms,
+  ]);
+  const broadBase = positiveTerms.length ? positiveTerms.join(' ') : raw.trim();
+
+  if (hasExplicitPhrase) {
+    const phraseBase = parsed.phrases.map((p) => `"${escapeTextSearchPhrase(p)}"`).join(' ');
+    return { primary: appendNotTermsToSearch(phraseBase, parsed.notTerms) };
+  }
+
+  if (parsed.terms.length >= 2 && !parsed.hasExplicitOr && !hasNot) {
+    const implicitPhrase = parsed.terms.join(' ');
+    const phraseSearch = `"${escapeTextSearchPhrase(implicitPhrase)}"`;
+    return { primary: phraseSearch, secondary: broadBase };
+  }
+
+  return { primary: appendNotTermsToSearch(broadBase, parsed.notTerms) };
+}
+
+async function fetchTextDocs(args: {
+  search: string;
+  baseFilter: any;
+  fetchCap: number;
+}) {
+  const { search, baseFilter, fetchCap } = args;
+  if (!search) return [];
+  const textQuery = buildTextMatchQuery(baseFilter, search);
+  const pipeline: any[] = [
+    { $match: textQuery },
+    { $addFields: { score: { $meta: 'textScore' } } },
+    { $sort: { score: -1 } },
+    { $limit: fetchCap },
+    {
+      $project: {
+        _id: 1,
+        title: 1,
+        subjectId: 1,
+        topicId: 1,
+        docKind: 1,
+        markdown: 1,
+        updatedAt: 1,
+        score: 1,
+      },
+    },
+  ];
+  return await NoteModel.aggregate(pipeline).exec();
+}
+
+function mergeDocs(primary: any[], secondary: any[] = []) {
+  const seen = new Set<string>();
+  const merged: any[] = [];
+  for (const d of primary ?? []) {
+    const id = String(d._id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    merged.push(d);
+  }
+  for (const d of secondary ?? []) {
+    const id = String(d._id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    merged.push(d);
+  }
+  return merged;
+}
+
+function rrfFuse(
+  channels: Record<string, Array<{ _id: any; score?: number }>>,
+  k = RRF_K,
+): Array<any> {
+  const merged = new Map<string, { doc: any; fusedScore: number; channels: Set<string> }>();
+
+  for (const [name, docs] of Object.entries(channels)) {
+    for (let i = 0; i < (docs ?? []).length; i += 1) {
+      const doc = docs[i];
+      if (!doc?._id) continue;
+      const id = String(doc._id);
+      const rrf = 1 / (k + i + 1);
+      const existing = merged.get(id);
+      if (existing) {
+        existing.fusedScore += rrf;
+        existing.channels.add(name);
+      } else {
+        merged.set(id, { doc, fusedScore: rrf, channels: new Set([name]) });
+      }
+    }
+  }
+
+  return Array.from(merged.values())
+    .map((entry) => ({
+      ...entry.doc,
+      fusedScore: entry.fusedScore,
+      __channels: Array.from(entry.channels),
+    }))
+    .sort((a, b) => (b.fusedScore ?? 0) - (a.fusedScore ?? 0));
+}
+
+async function buildSemanticDocsForNotes(args: {
+  q: string;
+  baseFilter: any;
+  fetchCap: number;
+}) {
+  const { q, baseFilter, fetchCap } = args;
+  if (!q) return [];
+  try {
+    const { vector: queryVector } = await embedText(q, { model: 'text-embedding-3-small' });
+    const pipeline: any[] = [
+      {
+        $vectorSearch: {
+          index: NOTES_VECTOR_INDEX_NAME,
+          path: NOTES_VECTOR_PATH,
+          queryVector,
+          numCandidates: Math.max(fetchCap * 10, 100),
+          limit: fetchCap,
+        },
+      },
+      ...(baseFilter && Object.keys(baseFilter).length ? [{ $match: baseFilter }] : []),
+      {
+        $project: {
+          _id: 1,
+          title: 1,
+          subjectId: 1,
+          topicId: 1,
+          docKind: 1,
+          markdown: 1,
+          updatedAt: 1,
+          score: { $meta: 'vectorSearchScore' },
+        },
+      },
+    ];
+    return await NoteModel.aggregate(pipeline).exec();
+  } catch (err) {
+    // Missing embeddings/index should not break keyword flow.
+    return [];
+  }
+}
+
+async function buildSemanticDocsForRecipes(args: {
+  q: string;
+  baseFilter: any;
+  fetchCap: number;
+}) {
+  const { q, baseFilter, fetchCap } = args;
+  if (!q) return [];
+  try {
+    const { vector: queryVector } = await embedText(q, { model: 'text-embedding-3-small' });
+    const pipeline: any[] = [
+      {
+        $vectorSearch: {
+          index: RECIPES_VECTOR_INDEX_NAME,
+          path: RECIPES_VECTOR_PATH,
+          queryVector,
+          numCandidates: Math.max(fetchCap * 10, 100),
+          limit: fetchCap,
+        },
+      },
+      ...(baseFilter && Object.keys(baseFilter).length ? [{ $match: baseFilter }] : []),
+      {
+        $project: {
+          _id: 1,
+          title: 1,
+          subjectId: 1,
+          topicId: 1,
+          docKind: 1,
+          markdown: 1,
+          updatedAt: 1,
+          score: { $meta: 'vectorSearchScore' },
+        },
+      },
+    ];
+    return await NoteModel.aggregate(pipeline).exec();
+  } catch (err) {
+    return [];
+  }
+}
+
 function buildSnippetAroundMatch(md: string, terms: string[], windowSize = 260): string {
   const text = stripMarkdownVerySimple(md);
   if (!text) return '';
@@ -104,6 +406,324 @@ function buildSnippetAroundMatch(md: string, terms: string[], windowSize = 260):
   return prefix + text.slice(start, end).trim() + suffix;
 }
 
+function isPlainObject(v: any): v is Record<string, any> {
+  return v != null && typeof v === 'object' && !Array.isArray(v);
+}
+
+function stableStringify(value: any): string {
+  // deterministic-ish stringify for small filter objects
+  const seen = new WeakSet();
+  const helper = (v: any): any => {
+    if (v === null || typeof v !== 'object') return v;
+    if (seen.has(v)) return '[Circular]';
+    seen.add(v);
+
+    if (Array.isArray(v)) return v.map(helper);
+
+    const keys = Object.keys(v).sort();
+    const out: any = {};
+    for (const k of keys) out[k] = helper(v[k]);
+    return out;
+  };
+  return JSON.stringify(helper(value));
+}
+
+function mergeAnd(base: any, extra: any): any {
+  if (!extra || !Object.keys(extra).length) return base;
+
+  // Normalize base into {$and: []} form (but don't lose base leaf if it exists)
+  let out = base;
+  if (!out || !Object.keys(out).length) {
+    out = { $and: [] };
+  } else if (!out.$and) {
+    out = { $and: [out] };
+  } else if (!Array.isArray(out.$and)) {
+    out = { $and: [out] };
+  }
+
+  // Flatten extra if it has $and
+  if (extra.$and && Array.isArray(extra.$and)) {
+    out.$and.push(...extra.$and);
+  } else {
+    out.$and.push(extra);
+  }
+
+  return out;
+}
+
+/**
+ * Remove scope gating + exact duplicates from combinedFilter so we don't double-apply
+ * constraints that are already enforced via `and[]` (base clauses).
+ */
+function stripScopeConstraints(combinedFilter: any, baseAndClauses: any[]): any {
+  if (!combinedFilter || !Object.keys(combinedFilter).length) return combinedFilter;
+
+  // Build a set of base clause signatures for dedupe
+  const baseSigs = new Set<string>(
+    (baseAndClauses ?? [])
+      .filter(Boolean)
+      .map((c) => stableStringify(c)),
+  );
+
+  const isScopeGateClause = (clause: any): boolean => {
+    if (!isPlainObject(clause)) return false;
+
+    // Remove recipe scope gate if present in combinedFilter
+    // { recipe: { $exists: true } }
+    if (
+      clause.recipe &&
+      isPlainObject(clause.recipe) &&
+      clause.recipe.$exists === true &&
+      Object.keys(clause).length === 1
+    ) {
+      return true;
+    }
+
+    // Remove "notes-only" gate if you used it (optional)
+    // { recipe: { $exists: false } }
+    if (
+      clause.recipe &&
+      isPlainObject(clause.recipe) &&
+      clause.recipe.$exists === false &&
+      Object.keys(clause).length === 1
+    ) {
+      return true;
+    }
+
+    // Legacy: remove docKind gates if any linger
+    // { docKind: 'recipe' } or { docKind: 'note' }
+    if (typeof clause.docKind === 'string' && Object.keys(clause).length === 1) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const filterClauseArray = (clauses: any[]) =>
+    (clauses ?? []).filter((clause) => {
+      if (!clause || !Object.keys(clause).length) return false;
+      if (isScopeGateClause(clause)) return false;
+
+      const sig = stableStringify(clause);
+      if (baseSigs.has(sig)) return false; // exact duplicate of a base clause
+
+      return true;
+    });
+
+  // If combinedFilter is an $and, clean its children
+  if (combinedFilter.$and && Array.isArray(combinedFilter.$and)) {
+    const cleaned = filterClauseArray(combinedFilter.$and);
+
+    if (cleaned.length === 0) return {};
+    if (cleaned.length === 1) return cleaned[0];
+    return { $and: cleaned };
+  }
+
+  // If combinedFilter is a single clause, remove it if it's a scope gate or duplicate
+  if (isScopeGateClause(combinedFilter)) return {};
+
+  const sig = stableStringify(combinedFilter);
+  if (baseSigs.has(sig)) return {};
+
+  return combinedFilter;
+}
+
+async function buildKeywordDocsForNotes(args: {
+  q: string;
+  baseFilter: any;
+  fetchCap: number;
+}) {
+  const { q, baseFilter, fetchCap } = args;
+  const parsed = parsePowerQuery(q);
+  const plan = buildTextSearchPlan(parsed, q);
+  const primaryDocs = await fetchTextDocs({ search: plan.primary, baseFilter, fetchCap });
+  const secondaryDocs = plan.secondary
+    ? await fetchTextDocs({ search: plan.secondary, baseFilter, fetchCap })
+    : [];
+  return mergeDocs(primaryDocs, secondaryDocs);
+}
+
+async function buildNoteResultsByMode(args: {
+  mode: 'auto' | 'keyword' | 'semantic';
+  q: string;
+  baseFilter: any;
+  offset: number;
+  limit: number;
+}) {
+  const { mode, q, baseFilter, offset, limit } = args;
+  const fetchCap = Math.min(Math.max((offset + limit) * 5, 50), 500);
+
+  if (mode === 'semantic') {
+    const semanticDocs = await buildSemanticDocsForNotes({ q, baseFilter, fetchCap });
+    const total = semanticDocs.length;
+    const page = semanticDocs.slice(offset, offset + limit);
+    return { total, docs: page };
+  }
+
+  if (mode === 'auto') {
+    const [keywordDocs, semanticDocs] = await Promise.all([
+      buildKeywordDocsForNotes({ q, baseFilter, fetchCap }),
+      buildSemanticDocsForNotes({ q, baseFilter, fetchCap }),
+    ]);
+    const fused = rrfFuse({ text: keywordDocs, semantic: semanticDocs });
+    const total = fused.length;
+    const page = fused.slice(offset, offset + limit);
+    return { total, docs: page };
+  }
+
+  const parsed = parsePowerQuery(q);
+  const plan = buildTextSearchPlan(parsed, q);
+  const primaryDocs = await fetchTextDocs({ search: plan.primary, baseFilter, fetchCap });
+  const secondaryDocs = plan.secondary
+    ? await fetchTextDocs({ search: plan.secondary, baseFilter, fetchCap })
+    : [];
+  const merged = mergeDocs(primaryDocs, secondaryDocs);
+  const total = merged.length;
+  const page = merged.slice(offset, offset + limit);
+  return { total, docs: page };
+}
+
+function buildIngredientQueryFilterFromParsed(parsed: ReturnType<typeof parsePowerQuery>) {
+  const phraseTokens = canonicalizeFilterTokens(parsed.phrases);
+  const mustTokens = canonicalizeFilterTokens(parsed.mustTerms.length ? parsed.mustTerms : parsed.terms);
+  const anyTokens = canonicalizeFilterTokens(parsed.anyTerms);
+  const notTokens = canonicalizeFilterTokens(parsed.notTerms);
+
+  const implicitPhrase =
+    parsed.terms.length >= 2 && !parsed.hasExplicitOr && parsed.notTerms.length === 0
+      ? parsed.terms.join(' ')
+      : null;
+  const implicitPhraseTokens = implicitPhrase ? canonicalizeFilterTokens([implicitPhrase]) : [];
+
+  const and: any[] = [];
+
+  if (parsed.phrases.length > 0) {
+    const required = phraseTokens.length ? phraseTokens : mustTokens;
+    for (const t of required) and.push({ 'recipe.ingredientTokens': t });
+  } else if (implicitPhrase) {
+    const required = implicitPhraseTokens.length ? implicitPhraseTokens : mustTokens;
+    for (const t of required) and.push({ 'recipe.ingredientTokens': t });
+  } else if (parsed.hasExplicitOr) {
+    for (const t of mustTokens) and.push({ 'recipe.ingredientTokens': t });
+    if (anyTokens.length) {
+      and.push({ $or: anyTokens.map((t) => ({ 'recipe.ingredientTokens': t })) });
+    }
+  } else {
+    for (const t of mustTokens) and.push({ 'recipe.ingredientTokens': t });
+  }
+
+  if (notTokens.length) {
+    and.push({ $nor: notTokens.map((t) => ({ 'recipe.ingredientTokens': t })) });
+  }
+
+  if (!and.length) return null;
+  return and.length === 1 ? and[0] : { $and: and };
+}
+
+async function buildRecipeChannels(args: {
+  q: string;
+  baseFilter: any;
+  parsed: ReturnType<typeof parsePowerQuery>;
+  fetchCap: number;
+  includeSemantic?: boolean;
+}) {
+  const { q, baseFilter, parsed, fetchCap, includeSemantic = true } = args;
+
+  const plan = buildTextSearchPlan(parsed, q);
+  const primaryDocs = await fetchTextDocs({ search: plan.primary, baseFilter, fetchCap });
+  const secondaryDocs = plan.secondary
+    ? await fetchTextDocs({ search: plan.secondary, baseFilter, fetchCap })
+    : [];
+  const textDocs = mergeDocs(primaryDocs, secondaryDocs);
+
+  const ingredientQueryFilter = buildIngredientQueryFilterFromParsed(parsed);
+  let ingredientDocs: any[] = [];
+  if (ingredientQueryFilter) {
+    const ingredientQuery =
+      baseFilter?.$and && Array.isArray(baseFilter.$and)
+        ? { $and: [...baseFilter.$and, ingredientQueryFilter] }
+        : baseFilter && Object.keys(baseFilter).length
+          ? { $and: [baseFilter, ingredientQueryFilter] }
+          : ingredientQueryFilter;
+
+    ingredientDocs = await NoteModel.find(ingredientQuery)
+      .select({ title: 1, subjectId: 1, topicId: 1, docKind: 1, markdown: 1, updatedAt: 1 })
+      .sort({ contentUpdatedAt: -1, updatedAt: -1 })
+      .limit(fetchCap)
+      .lean()
+      .exec();
+  }
+
+  const semanticDocs = includeSemantic
+    ? await buildSemanticDocsForRecipes({ q, baseFilter, fetchCap })
+    : [];
+
+  return { textDocs, ingredientDocs, semanticDocs };
+}
+
+async function buildRecipeResultsByMode(args: {
+  mode: 'auto' | 'keyword' | 'semantic';
+  q: string;
+  baseFilter: any;
+  parsed: ReturnType<typeof parsePowerQuery>;
+  offset: number;
+  limit: number;
+}) {
+  const { mode, q, baseFilter, parsed, offset, limit } = args;
+  const fetchCap = Math.min(Math.max((offset + limit) * 5, 50), 500);
+
+  if (mode === 'semantic') {
+    const semanticDocs = await buildSemanticDocsForRecipes({ q, baseFilter, fetchCap });
+    const total = semanticDocs.length;
+    const page = semanticDocs.slice(offset, offset + limit);
+    return { total, docs: page };
+  }
+
+  if (mode === 'auto') {
+    const { textDocs, ingredientDocs, semanticDocs } = await buildRecipeChannels({
+      q,
+      baseFilter,
+      parsed,
+      fetchCap,
+      includeSemantic: true,
+    });
+    const fused = rrfFuse({
+      text: textDocs,
+      ingredient: ingredientDocs,
+      semantic: semanticDocs,
+    });
+    const total = fused.length;
+    const page = fused.slice(offset, offset + limit);
+    return { total, docs: page };
+  }
+
+  const { textDocs, ingredientDocs } = await buildRecipeChannels({
+    q,
+    baseFilter,
+    parsed,
+    fetchCap,
+    includeSemantic: false,
+  });
+
+  const seen = new Set<string>();
+  const merged: any[] = [];
+  for (const d of textDocs ?? []) {
+    const id = String(d._id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    merged.push({ ...d, __channel: 'text' });
+  }
+  for (const d of ingredientDocs ?? []) {
+    const id = String(d._id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    merged.push({ ...d, __channel: 'ingredient' });
+  }
+  const total = merged.length;
+  const page = merged.slice(offset, offset + limit);
+  return { total, docs: page };
+}
+
 searchRouter.post('/', async (req, res, next) => {
   try {
     console.log('POST /api/v1/search called with body:', req.body);
@@ -113,7 +733,8 @@ searchRouter.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Unsupported search request version' });
     }
 
-    const q = (body.q ?? '').trim();
+    const parsedOps = parseQueryOperators(String(body.q ?? '').trim());
+    const q = parsedOps.text;
     const treatedAsWildcard = q === '' || q === '*';
     const scope = normalizeScope(body.scope, 'notes');
 
@@ -126,6 +747,35 @@ searchRouter.post('/', async (req, res, next) => {
     const offset = Math.max(body.offset ?? 0, 0);
 
     const filters = body.filters ?? {};
+    const modeRaw = String((body as any).mode ?? (filters as any).mode ?? '').trim().toLowerCase();
+    const mode: 'auto' | 'keyword' | 'semantic' =
+      modeRaw === 'keyword' || modeRaw === 'semantic' || modeRaw === 'auto' ? modeRaw : 'auto';
+    if (parsedOps.tags.length) {
+      const existing = Array.isArray(filters.tagsAll) ? filters.tagsAll : [];
+      const merged = new Set<string>([
+        ...existing.map((t: any) => String(t).trim()).filter(Boolean),
+        ...parsedOps.tags.map((t) => t.trim()).filter(Boolean),
+      ]);
+      filters.tagsAll = Array.from(merged);
+    }
+    if (parsedOps.importedOnly) {
+      filters.importedOnly = true;
+    }
+    if (parsedOps.subject) {
+      const resolved = await resolveSubjectId(parsedOps.subject);
+      if (resolved) {
+        filters.subjectId = resolved;
+      }
+    }
+    if (parsedOps.topic) {
+      const resolved = await resolveTopicByValue(parsedOps.topic, filters.subjectId);
+      if (resolved?.id) {
+        filters.topicId = resolved.id;
+        if (!filters.subjectId && resolved.subjectId) {
+          filters.subjectId = resolved.subjectId;
+        }
+      }
+    }
     const and: any[] = [];
 
     if (filters.subjectId) and.push({ subjectId: filters.subjectId });
@@ -187,15 +837,113 @@ searchRouter.post('/', async (req, res, next) => {
     }
 
     if (scope === 'recipes') {
-      and.push({ docKind: 'recipe' });
+      and.push({ recipe: { $exists: true } });
     } else if (scope === 'notes') {
-      and.push({ docKind: 'note' });
+      and.push({ recipe: { $exists: false } }); // optional, only if you truly want to exclude recipes
+      // or keep docKind:'note' if that’s your canonical definition of “note”
     }
 
-    const mongoFilter: any = treatedAsWildcard ? {} : { $text: { $search: q } };
-    if (and.length) mongoFilter.$and = and;
+    let baseFilter: any = and.length ? { $and: [...and] } : {};
+    let mongoFilter: any = baseFilter;
 
-    if (treatedAsWildcard) {
+    if (scope === 'recipes') {
+      const spec = buildSearchSpec({
+        query: q,
+        scope,
+        ...(filters as any),
+        prepTimeMax: (filters as any).prepTimeMax ?? (body as any).prepTimeMax,
+        cookTimeMax: (filters as any).cookTimeMax ?? (body as any).cookTimeMax,
+        totalTimeMax: (filters as any).totalTimeMax ?? (body as any).totalTimeMax,
+        cuisine: (filters as any).cuisine ?? (body as any).cuisine,
+        category: (filters as any).category ?? (body as any).category,
+        keywords: (filters as any).keywords ?? (body as any).keywords,
+        includeIngredients: (filters as any).includeIngredients ?? (body as any).includeIngredients,
+        excludeIngredients: (filters as any).excludeIngredients ?? (body as any).excludeIngredients,
+      });
+
+      const includeTokens = canonicalizeFilterTokens(
+        splitAndDedupTokens(spec.filters.includeIngredients),
+      );
+      const excludeTokens = canonicalizeFilterTokens(
+        splitAndDedupTokens(spec.filters.excludeIngredients),
+      );
+      let ingredientSource: 'tokens' | 'normalized' | 'raw' | null = null;
+
+      if (includeTokens.length || excludeTokens.length) {
+        const hasTokens = await NoteModel.exists({ 'recipe.ingredientTokens.0': { $exists: true } });
+        if (hasTokens) ingredientSource = 'tokens';
+        else {
+          const hasNormalized = await NoteModel.exists({ 'recipe.ingredients.0': { $exists: true } });
+          if (hasNormalized) ingredientSource = 'normalized';
+          else {
+            const hasRaw = await NoteModel.exists({ 'recipe.ingredientsRaw.0': { $exists: true } });
+            if (hasRaw) ingredientSource = 'raw';
+          }
+        }
+
+        if (!ingredientSource) {
+          const response: SearchResponseV1 = { version: 1, total: 0, hits: [] };
+          return res.json(response);
+        }
+      }
+
+      const ingredientFilter =
+        ingredientSource && (includeTokens.length || excludeTokens.length)
+          ? buildIngredientFilterForSource(ingredientSource, includeTokens, excludeTokens)
+          : undefined;
+
+      const { combinedFilter } = buildNoteFilterFromSpec(spec, ingredientFilter);
+
+      // Option 2: strip scope gates + exact duplicates (relative to base `and[]`)
+      const cleanedCombined = stripScopeConstraints(combinedFilter, and);
+
+      // Build a baseFilter that represents "recipes + structured filters"
+      // NOTE: this baseFilter is used by both channels (text + ingredient)
+      baseFilter = mergeAnd(baseFilter, cleanedCombined);
+      mongoFilter = baseFilter;
+
+      // If we have a real query (not wildcard), do mode-based recipe search
+      if (!treatedAsWildcard && q) {
+        const parsed = parsePowerQuery(q);
+
+        const { total, docs } = await buildRecipeResultsByMode({
+          mode,
+          q,
+          baseFilter,
+          parsed,
+          offset,
+          limit,
+        });
+
+        const terms = extractQueryTerms(q);
+
+        const hits: SearchHitNoteV1[] = (docs ?? []).map((d: any) => ({
+          targetType: 'note',
+          id: String(d._id),
+          subjectId: d.subjectId,
+          topicId: d.topicId,
+          title: d.title ?? 'Untitled',
+          docKind: d.docKind,
+          snippet: buildSnippetAroundMatch(d.markdown ?? '', terms),
+          score:
+            typeof d.fusedScore === 'number'
+              ? d.fusedScore
+              : typeof d.score === 'number'
+                ? d.score
+                : undefined,
+          updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
+        }));
+
+        const response: SearchResponseV1 = { version: 1, total, hits };
+        return res.json(response);
+      }
+
+      // Otherwise (wildcard), fall through to existing code path which uses mongoFilter/find()
+      // Make sure mongoFilter is set to baseFilter so wildcard uses structured filters properly.
+      mongoFilter = baseFilter;
+    }
+
+    if (treatedAsWildcard || !q) {
       const total = await NoteModel.countDocuments(mongoFilter).exec();
       const docs = await NoteModel.find(mongoFilter)
         .sort({ contentUpdatedAt: -1, updatedAt: -1 })
@@ -218,52 +966,36 @@ searchRouter.post('/', async (req, res, next) => {
       return res.json(response);
     }
 
-    const pipeline: any[] = [
-      { $match: mongoFilter },
-      { $addFields: { score: { $meta: 'textScore' } } },
-      { $sort: { score: -1 } },
-      {
-        $facet: {
-          hits: [
-            { $skip: offset },
-            { $limit: limit },
-            {
-              $project: {
-                title: 1,
-                subjectId: 1,
-                topicId: 1,
-                docKind: 1,
-                markdown: 1,
-                updatedAt: 1,
-                score: 1,
-              },
-            },
-          ],
-          total: [{ $count: 'count' }],
-        },
-      },
-    ];
+    if (scope !== 'recipes') {
+      const { total, docs } = await buildNoteResultsByMode({
+        mode,
+        q,
+        baseFilter: mongoFilter,
+        offset,
+        limit,
+      });
 
-    const [faceted] = await NoteModel.aggregate(pipeline).exec();
-    const total = faceted?.total?.[0]?.count ?? 0;
-    const docs = faceted?.hits ?? [];
+      const terms = extractQueryTerms(q);
+      const hits: SearchHitNoteV1[] = (docs ?? []).map((d: any) => ({
+        targetType: 'note',
+        id: String(d._id),
+        subjectId: d.subjectId,
+        topicId: d.topicId,
+        title: d.title ?? 'Untitled',
+        docKind: d.docKind,
+        snippet: buildSnippetAroundMatch(d.markdown ?? '', terms),
+        score:
+          typeof d.fusedScore === 'number'
+            ? d.fusedScore
+            : typeof d.score === 'number'
+              ? d.score
+              : undefined,
+        updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
+      }));
 
-    const terms = extractQueryTerms(q);
-
-    const hits: SearchHitNoteV1[] = docs.map((d: any) => ({
-      targetType: 'note',
-      id: String(d._id),
-      subjectId: d.subjectId,
-      topicId: d.topicId,
-      title: d.title ?? 'Untitled',
-      docKind: d.docKind,
-      snippet: buildSnippetAroundMatch(d.markdown ?? '', terms),
-      score: typeof d.score === 'number' ? d.score : undefined,
-      updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
-    }));
-
-    const response: SearchResponseV1 = { version: 1, total, hits };
-    return res.json(response);
+      const response: SearchResponseV1 = { version: 1, total, hits };
+      return res.json(response);
+    }
   } catch (err) {
     return next(err);
   }
@@ -294,59 +1026,59 @@ searchRouter.get(
   '/semantic',
   requireAdminToken,
   async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const q = String(req.query.q ?? '').trim();
-    if (!q) return res.status(400).json({ error: 'q is required' });
+    try {
+      const q = String(req.query.q ?? '').trim();
+      if (!q) return res.status(400).json({ error: 'q is required' });
 
-    const limit = clampInt(req.query.limit, 1, 50, 20);
+      const limit = clampInt(req.query.limit, 1, 50, 20);
 
-    // 1) Embed the query text
-    const { vector: queryVector } = await embedText(q, { model: 'text-embedding-3-small' });
+      // 1) Embed the query text
+      const { vector: queryVector } = await embedText(q, { model: 'text-embedding-3-small' });
 
-    // 2) Atlas vector search
-    // IMPORTANT: Ensure you created an Atlas Search vector index with this name.
-    const indexName = 'notes_vector_index';
+      // 2) Atlas vector search
+      // IMPORTANT: Ensure you created an Atlas Search vector index with this name.
+      const indexName = NOTES_VECTOR_INDEX_NAME;
 
-    const pipeline: any[] = [
-      {
-        $vectorSearch: {
-          index: indexName,
-          path: 'embedding',
-          queryVector,
-          numCandidates: Math.max(limit * 10, 100),
-          limit,
+      const pipeline: any[] = [
+        {
+          $vectorSearch: {
+            index: indexName,
+            path: NOTES_VECTOR_PATH,
+            queryVector,
+            numCandidates: Math.max(limit * 10, 100),
+            limit,
+          },
         },
-      },
-      {
-        $project: {
-          _id: 1,
-          title: 1,
-          summary: 1,
-          subjectId: 1,
-          topicId: 1,
-          updatedAt: 1,
-          score: { $meta: 'vectorSearchScore' },
+        {
+          $project: {
+            _id: 1,
+            title: 1,
+            summary: 1,
+            subjectId: 1,
+            topicId: 1,
+            updatedAt: 1,
+            score: { $meta: 'vectorSearchScore' },
+          },
         },
-      },
-      { $sort: { score: -1 } },
-    ];
+        { $sort: { score: -1 } },
+      ];
 
-    const docs = await NoteModel.aggregate(pipeline).exec();
+      const docs = await NoteModel.aggregate(pipeline).exec();
 
-    const results = (docs ?? []).map((d: any) => ({
-      id: String(d._id),
-      title: String(d.title ?? ''),
-      summary: d.summary ? String(d.summary) : undefined,
-      subjectId: d.subjectId ? String(d.subjectId) : undefined,
-      topicId: d.topicId ? String(d.topicId) : undefined,
-      updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
-      score: typeof d.score === 'number' ? d.score : Number(d.score ?? 0),
-    }));
+      const results = (docs ?? []).map((d: any) => ({
+        id: String(d._id),
+        title: String(d.title ?? ''),
+        summary: d.summary ? String(d.summary) : undefined,
+        subjectId: d.subjectId ? String(d.subjectId) : undefined,
+        topicId: d.topicId ? String(d.topicId) : undefined,
+        updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
+        score: typeof d.score === 'number' ? d.score : Number(d.score ?? 0),
+      }));
 
-    return res.json({ query: q, limit, results });
-  } catch (err) {
-    return next(err);
-  }
+      return res.json({ query: q, limit, results });
+    } catch (err) {
+      return next(err);
+    }
   },
 );
 
@@ -559,6 +1291,95 @@ searchRouter.post(
         stoppedDueToRateLimit,
         retryAfterSeconds,
       });
+    } catch (err) {
+      return next(err);
+    }
+  },
+);
+
+// Purpose: Admin-only maintenance to backfill ingredientTokens.
+// Usage: Internal tooling/scripts only.
+// Example: curl -X POST -H "x-chatalog-admin: $CHATALOG_ADMIN_TOKEN" -H "Content-Type: application/json" -d '{"limit":100,"dryRun":true}' "http://localhost:3000/api/v1/search/ingredientTokens/backfill"
+searchRouter.post(
+  '/ingredientTokens/backfill',
+  requireAdminToken,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const limit = clampInt(req.body?.limit, 1, 500, 100);
+      const dryRun = Boolean(req.body?.dryRun ?? false);
+
+      const docs = await NoteModel.find({ recipe: { $exists: true } })
+        .select({
+          _id: 1,
+          'recipe.ingredientsRaw': 1,
+          'recipe.ingredientsEditedRaw': 1,
+          'recipe.ingredientTokens': 1,
+        })
+        .limit(limit)
+        .lean()
+        .exec();
+
+      let examined = 0;
+      let updated = 0;
+      const samples: Array<{
+        id: string;
+        source: 'ingredientsEditedRaw' | 'ingredientsRaw' | 'none';
+        before: string[];
+        after: string[];
+      }> = [];
+
+      for (const d of docs) {
+        examined += 1;
+        const recipe = (d as any).recipe ?? {};
+        const editedRaw = Array.isArray(recipe.ingredientsEditedRaw)
+          ? recipe.ingredientsEditedRaw
+          : [];
+        const raw = Array.isArray(recipe.ingredientsRaw) ? recipe.ingredientsRaw : [];
+        const sourceList = editedRaw.length ? editedRaw : raw;
+        const source =
+          editedRaw.length ? 'ingredientsEditedRaw' : raw.length ? 'ingredientsRaw' : 'none';
+
+        const tokenSet = new Set<string>();
+        for (const line of sourceList ?? []) {
+          canonicalizeIngredient(String(line ?? ''), { includeSingles: true }).forEach((t) =>
+            tokenSet.add(t),
+          );
+        }
+        const nextTokens = Array.from(tokenSet).sort((a, b) => a.localeCompare(b));
+        const beforeTokens = Array.isArray(recipe.ingredientTokens)
+          ? recipe.ingredientTokens.map((t: any) => String(t))
+          : [];
+        const beforeSet = new Set(beforeTokens);
+        let changed = beforeSet.size !== nextTokens.length;
+        if (!changed) {
+          for (const t of nextTokens) {
+            if (!beforeSet.has(t)) {
+              changed = true;
+              break;
+            }
+          }
+        }
+
+        if (samples.length < 5) {
+          samples.push({
+            id: String(d._id),
+            source,
+            before: beforeTokens,
+            after: nextTokens,
+          });
+        }
+
+        if (dryRun) continue;
+        if (!changed) continue;
+
+        await NoteModel.updateOne(
+          { _id: d._id },
+          { $set: { 'recipe.ingredientTokens': nextTokens } },
+        ).exec();
+        updated += 1;
+      }
+
+      return res.json({ examined, updated, dryRun, samples });
     } catch (err) {
       return next(err);
     }

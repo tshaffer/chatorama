@@ -11,10 +11,16 @@ function sortedCsv(values: string[] | undefined): string[] {
 export function buildSearchRequestV1(spec: SearchSpec): SearchRequestV1 {
   const f = spec.filters ?? ({} as any);
   const tagsAll = sortedCsv(f.tags);
+  const cuisine = sortedCsv(f.cuisine);
+  const category = sortedCsv(f.category);
+  const keywords = sortedCsv(f.keywords);
+  const includeIngredients = sortedCsv(f.includeIngredients);
+  const excludeIngredients = sortedCsv(f.excludeIngredients);
 
   return {
     version: 1,
     q: String(spec.query ?? ''),
+    mode: spec.mode ?? 'auto',
     scope: spec.scope ?? 'notes',
     targetTypes: ['note'],
     limit: spec.limit ?? 20,
@@ -26,9 +32,17 @@ export function buildSearchRequestV1(spec: SearchSpec): SearchRequestV1 {
       tagsAll,
       updatedAtFrom: f.updatedFrom || undefined,
       updatedAtTo: f.updatedTo || undefined,
+      prepTimeMax: f.prepTimeMax,
+      cookTimeMax: f.cookTimeMax,
+      totalTimeMax: f.totalTimeMax,
+      cuisine,
+      category,
+      keywords,
+      includeIngredients,
+      excludeIngredients,
       createdAtFrom: undefined,
       createdAtTo: undefined,
-      importedOnly: undefined,
+      importedOnly: f.importedOnly ? true : undefined,
       sourceType: undefined,
       importBatchId: undefined,
       chatworthyChatId: undefined,

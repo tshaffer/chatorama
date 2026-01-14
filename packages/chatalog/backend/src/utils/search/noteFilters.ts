@@ -50,10 +50,19 @@ function ingredientRegex(token: string): RegExp {
 }
 
 export function buildIngredientFilterForSource(
-  source: 'normalized' | 'raw',
+  source: 'tokens' | 'normalized' | 'raw',
   includeTokens: string[],
   excludeTokens: string[],
 ) {
+  if (source === 'tokens') {
+    const field = 'recipe.ingredientTokens';
+    const filter: Record<string, any> = {};
+    if (includeTokens.length) filter.$all = includeTokens;
+    if (excludeTokens.length) filter.$nin = excludeTokens;
+    if (!Object.keys(filter).length) return {};
+    return { [field]: filter };
+  }
+
   const clauses: Record<string, any>[] = [];
 
   const includeClauses = includeTokens.map((t) => {
