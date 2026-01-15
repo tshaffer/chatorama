@@ -7,6 +7,11 @@ import {
   buildNoteFilterFromSpec,
   splitAndDedupTokens,
 } from '../utils/search/noteFilters';
+import {
+  buildIngredientSearchTokens,
+  buildIngredientTokensFromIngredients,
+  canonicalizeFilterTokens,
+} from '../utils/ingredientTokens';
 import { buildSearchSpec } from '@chatorama/chatalog-shared';
 import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
 
@@ -38,6 +43,7 @@ export async function normalizeRecipeIngredients(req: Request, res: Response, ne
     recipe.ingredients = rawLines
       .map(normalizeIngredientLine)
       .filter((x) => x.raw && String(x.raw).trim().length > 0);
+    recipe.ingredientTokens = buildIngredientTokensFromIngredients(recipe.ingredients, rawLines);
 
     (note as any).recipe = recipe;
 
@@ -92,31 +98,25 @@ export async function addCookedEvent(req: Request, res: Response, next: NextFunc
   }
 }
 
-function tokenizeQuery(q: string): string[] {
-  return q
-    .toLowerCase()
-    .split(/[^a-z0-9]+/g)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
 export async function searchRecipesByIngredients(req: Request, res: Response, next: NextFunction) {
   try {
     const query = String(req.query.query ?? '').trim();
     const mode = String(req.query.mode ?? 'any');
     if (!query) return res.status(400).json({ error: 'query is required' });
 
-    const toks = tokenizeQuery(query);
-    if (toks.length === 0) return res.status(400).json({ error: 'query has no tokens' });
+    const tokens = buildIngredientSearchTokens(query);
+    if (tokens.length === 0) return res.status(400).json({ error: 'query has no tokens' });
 
-    const clauses = toks.map((t) => ({
+    const clauses = tokens.map((t) => ({
       'recipe.ingredients.name': { $regex: new RegExp(`\\b${t}\\b`, 'i') },
     }));
 
-    const filter =
+    const tokenFilter =
       mode === 'all'
-        ? { recipe: { $exists: true }, $and: clauses }
-        : { recipe: { $exists: true }, $or: clauses };
+        ? { 'recipe.ingredientTokens': { $all: tokens } }
+        : { 'recipe.ingredientTokens': { $in: tokens } };
+    const legacyFilter = mode === 'all' ? { $and: clauses } : { $or: clauses };
+    const filter = { recipe: { $exists: true }, $or: [tokenFilter, legacyFilter] };
 
     const docs = await NoteModel.find(filter)
       .sort({ updatedAt: -1 })
@@ -131,16 +131,24 @@ export async function searchRecipesByIngredients(req: Request, res: Response, ne
 
 export async function getRecipeFacets(req: Request, res: Response, next: NextFunction) {
   try {
-    const includeTokens = splitAndDedupTokens(req.query.includeIngredients);
-    const excludeTokens = splitAndDedupTokens(req.query.excludeIngredients);
+    const includeTokens = canonicalizeFilterTokens(
+      splitAndDedupTokens(req.query.includeIngredients),
+    );
+    const excludeTokens = canonicalizeFilterTokens(
+      splitAndDedupTokens(req.query.excludeIngredients),
+    );
 
-    let ingredientSource: 'normalized' | 'raw' | null = null;
+    let ingredientSource: 'tokens' | 'normalized' | 'raw' | null = null;
     if (includeTokens.length || excludeTokens.length) {
-      const hasNormalized = await NoteModel.exists({ 'recipe.ingredients.0': { $exists: true } });
-      if (hasNormalized) ingredientSource = 'normalized';
+      const hasTokens = await NoteModel.exists({ 'recipe.ingredientTokens.0': { $exists: true } });
+      if (hasTokens) ingredientSource = 'tokens';
       else {
+        const hasNormalized = await NoteModel.exists({ 'recipe.ingredients.0': { $exists: true } });
+        if (hasNormalized) ingredientSource = 'normalized';
+        else {
         const hasRaw = await NoteModel.exists({ 'recipe.ingredientsRaw.0': { $exists: true } });
         if (hasRaw) ingredientSource = 'raw';
+        }
       }
 
       if (!ingredientSource) {

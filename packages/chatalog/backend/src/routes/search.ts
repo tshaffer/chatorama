@@ -17,6 +17,7 @@ import {
   buildNoteFilterFromSpec,
   splitAndDedupTokens,
 } from '../utils/search/noteFilters';
+import { canonicalizeFilterTokens } from '../utils/ingredientTokens';
 
 export const searchRouter = Router();
 
@@ -174,6 +175,348 @@ function buildSnippetAroundMatch(md: string, terms: string[], windowSize = 260):
   return prefix + text.slice(start, end).trim() + suffix;
 }
 
+function isPlainObject(v: any): v is Record<string, any> {
+  return v != null && typeof v === 'object' && !Array.isArray(v);
+}
+
+function stableStringify(value: any): string {
+  // deterministic-ish stringify for small filter objects
+  const seen = new WeakSet();
+  const helper = (v: any): any => {
+    if (v === null || typeof v !== 'object') return v;
+    if (seen.has(v)) return '[Circular]';
+    seen.add(v);
+
+    if (Array.isArray(v)) return v.map(helper);
+
+    const keys = Object.keys(v).sort();
+    const out: any = {};
+    for (const k of keys) out[k] = helper(v[k]);
+    return out;
+  };
+  return JSON.stringify(helper(value));
+}
+
+function mergeAnd(base: any, extra: any): any {
+  if (!extra || !Object.keys(extra).length) return base;
+
+  // Normalize base into {$and: []} form (but don't lose base leaf if it exists)
+  let out = base;
+  if (!out || !Object.keys(out).length) {
+    out = { $and: [] };
+  } else if (!out.$and) {
+    out = { $and: [out] };
+  } else if (!Array.isArray(out.$and)) {
+    out = { $and: [out] };
+  }
+
+  // Flatten extra if it has $and
+  if (extra.$and && Array.isArray(extra.$and)) {
+    out.$and.push(...extra.$and);
+  } else {
+    out.$and.push(extra);
+  }
+
+  return out;
+}
+
+/**
+ * Remove scope gating + exact duplicates from combinedFilter so we don't double-apply
+ * constraints that are already enforced via `and[]` (base clauses).
+ */
+function stripScopeConstraints(combinedFilter: any, baseAndClauses: any[]): any {
+  if (!combinedFilter || !Object.keys(combinedFilter).length) return combinedFilter;
+
+  // Build a set of base clause signatures for dedupe
+  const baseSigs = new Set<string>(
+    (baseAndClauses ?? [])
+      .filter(Boolean)
+      .map((c) => stableStringify(c)),
+  );
+
+  const isScopeGateClause = (clause: any): boolean => {
+    if (!isPlainObject(clause)) return false;
+
+    // Remove recipe scope gate if present in combinedFilter
+    // { recipe: { $exists: true } }
+    if (
+      clause.recipe &&
+      isPlainObject(clause.recipe) &&
+      clause.recipe.$exists === true &&
+      Object.keys(clause).length === 1
+    ) {
+      return true;
+    }
+
+    // Remove "notes-only" gate if you used it (optional)
+    // { recipe: { $exists: false } }
+    if (
+      clause.recipe &&
+      isPlainObject(clause.recipe) &&
+      clause.recipe.$exists === false &&
+      Object.keys(clause).length === 1
+    ) {
+      return true;
+    }
+
+    // Legacy: remove docKind gates if any linger
+    // { docKind: 'recipe' } or { docKind: 'note' }
+    if (typeof clause.docKind === 'string' && Object.keys(clause).length === 1) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const filterClauseArray = (clauses: any[]) =>
+    (clauses ?? []).filter((clause) => {
+      if (!clause || !Object.keys(clause).length) return false;
+      if (isScopeGateClause(clause)) return false;
+
+      const sig = stableStringify(clause);
+      if (baseSigs.has(sig)) return false; // exact duplicate of a base clause
+
+      return true;
+    });
+
+  // If combinedFilter is an $and, clean its children
+  if (combinedFilter.$and && Array.isArray(combinedFilter.$and)) {
+    const cleaned = filterClauseArray(combinedFilter.$and);
+
+    if (cleaned.length === 0) return {};
+    if (cleaned.length === 1) return cleaned[0];
+    return { $and: cleaned };
+  }
+
+  // If combinedFilter is a single clause, remove it if it's a scope gate or duplicate
+  if (isScopeGateClause(combinedFilter)) return {};
+
+  const sig = stableStringify(combinedFilter);
+  if (baseSigs.has(sig)) return {};
+
+  return combinedFilter;
+}
+
+type ParsedRecipeQuery = {
+  mustTokens: string[];
+  anyTokens: string[];
+  phrases: string[];
+  notTokens: string[];
+};
+
+function tokenizeRecipeQuery(input: string): string[] {
+  const re = /"[^"]+"|\S+/g;
+  return (input.match(re) ?? []).map((s) => s.trim()).filter(Boolean);
+}
+
+function parseRecipeQuery(q: string): ParsedRecipeQuery {
+  const toks = tokenizeRecipeQuery(q);
+
+  const mustTokens: string[] = [];
+  const anyTokens: string[] = [];
+  const phrases: string[] = [];
+  const notTokens: string[] = [];
+
+  let inOrMode = false;
+
+  for (let raw of toks) {
+    const upper = raw.toUpperCase();
+    if (upper === 'OR' || raw === '|') {
+      inOrMode = true;
+      continue;
+    }
+
+    let neg = false;
+    if (raw.startsWith('-') && raw.length > 1) {
+      neg = true;
+      raw = raw.slice(1);
+    }
+
+    if (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2) {
+      const p = raw.slice(1, -1).trim();
+      if (!p) continue;
+      if (neg) notTokens.push(p);
+      else phrases.push(p);
+      continue;
+    }
+
+    const t = raw.trim();
+    if (!t) continue;
+
+    if (neg) notTokens.push(t);
+    else if (inOrMode) anyTokens.push(t);
+    else mustTokens.push(t);
+  }
+
+  return { mustTokens, anyTokens, phrases, notTokens };
+}
+
+function buildIngredientIntentFilter(parsed: ParsedRecipeQuery) {
+  const { mustTokens, anyTokens, phrases, notTokens } = parsed;
+
+  const must = canonicalizeFilterTokens(mustTokens);
+  const any = canonicalizeFilterTokens(anyTokens);
+  const phraseTokens = canonicalizeFilterTokens(phrases);
+  const not = canonicalizeFilterTokens(notTokens);
+
+  const and: any[] = [];
+
+  if (must.length) {
+    and.push(...must.map((t) => ({ 'recipe.ingredientTokens': t })));
+  }
+
+  if (phraseTokens.length) {
+    and.push(...phraseTokens.map((t) => ({ 'recipe.ingredientTokens': t })));
+  }
+
+  if (any.length) {
+    and.push({ $or: any.map((t) => ({ 'recipe.ingredientTokens': t })) });
+  }
+
+  if (not.length) {
+    and.push({ $nor: not.map((t) => ({ 'recipe.ingredientTokens': t })) });
+  }
+
+  if (and.length === 0) return null;
+  return and.length === 1 ? and[0] : { $and: and };
+}
+
+function buildRegexIntentFilter(parsed: ParsedRecipeQuery) {
+  const { mustTokens, anyTokens, phrases, notTokens } = parsed;
+
+  const mkWord = (t: string) => new RegExp(`\\b${escapeRegex(t)}\\b`, 'i');
+  const mkPhrase = (p: string) => new RegExp(escapeRegex(p), 'i');
+
+  const and: any[] = [];
+
+  for (const t of mustTokens) and.push({ markdown: { $regex: mkWord(t) } });
+
+  for (const p of phrases) and.push({ markdown: { $regex: mkPhrase(p) } });
+
+  if (anyTokens.length) {
+    and.push({ $or: anyTokens.map((t) => ({ markdown: { $regex: mkWord(t) } })) });
+  }
+
+  if (notTokens.length) {
+    and.push({ $nor: notTokens.map((t) => ({ markdown: { $regex: mkWord(t) } })) });
+  }
+
+  if (and.length === 0) return null;
+  return and.length === 1 ? and[0] : { $and: and };
+}
+
+function matchesRegexIntent(parsed: ParsedRecipeQuery, markdown: string | undefined): boolean {
+  const { mustTokens, anyTokens, phrases, notTokens } = parsed;
+  const text = String(markdown ?? '');
+
+  if (!mustTokens.length && !anyTokens.length && !phrases.length && !notTokens.length) {
+    return true;
+  }
+
+  const mkWord = (t: string) => new RegExp(`\\b${escapeRegex(t)}\\b`, 'i');
+  const mkPhrase = (p: string) => new RegExp(escapeRegex(p), 'i');
+
+  for (const t of mustTokens) {
+    if (!mkWord(t).test(text)) return false;
+  }
+
+  for (const p of phrases) {
+    if (!mkPhrase(p).test(text)) return false;
+  }
+
+  if (anyTokens.length) {
+    const anyHit = anyTokens.some((t) => mkWord(t).test(text));
+    if (!anyHit) return false;
+  }
+
+  if (notTokens.length) {
+    const hasNot = notTokens.some((t) => mkWord(t).test(text));
+    if (hasNot) return false;
+  }
+
+  return true;
+}
+
+async function buildRecipeUnionResults(args: {
+  q: string;
+  baseFilter: any; // already includes recipe:{exists:true} + structured filters
+  parsed: ParsedRecipeQuery;
+  offset: number;
+  limit: number;
+}) {
+  const { q, baseFilter, parsed, offset, limit } = args;
+  void q;
+
+  // Fetch more than needed to allow union/dedup while still paginating.
+  // Keep it bounded so it doesn’t explode.
+  const fetchCap = Math.min(Math.max((offset + limit) * 5, 50), 500);
+
+  const baseAnd: any[] =
+    baseFilter?.$and && Array.isArray(baseFilter.$and)
+      ? [...baseFilter.$and]
+      : baseFilter && Object.keys(baseFilter).length
+        ? [baseFilter]
+        : [];
+
+  // -------- Channel A: regex fallback over markdown (intent-aware) --------
+  const regexIntent = buildRegexIntentFilter(parsed);
+
+  let regexQuery: any;
+  if (regexIntent) {
+    regexQuery = { $and: [...baseAnd, regexIntent] };
+  } else {
+    regexQuery = baseAnd.length ? { $and: [...baseAnd] } : {};
+  }
+
+  const regexDocs = await NoteModel.find(regexQuery)
+    .select({ title: 1, subjectId: 1, topicId: 1, docKind: 1, markdown: 1, updatedAt: 1 })
+    .sort({ contentUpdatedAt: -1, updatedAt: -1 })
+    .limit(fetchCap)
+    .lean()
+    .exec();
+  const filteredRegexDocs = (regexDocs ?? []).filter((d: any) =>
+    matchesRegexIntent(parsed, d?.markdown),
+  );
+
+  // -------- Channel B: ingredientTokens (intent-aware) --------
+  const ingredientIntent = buildIngredientIntentFilter(parsed);
+  let ingredientDocs: any[] = [];
+  if (ingredientIntent) {
+    const ingredientQuery =
+      baseAnd.length ? { $and: [...baseAnd, ingredientIntent] } : ingredientIntent;
+
+    ingredientDocs = await NoteModel.find(ingredientQuery)
+      .select({ title: 1, subjectId: 1, topicId: 1, docKind: 1, markdown: 1, updatedAt: 1 })
+      .sort({ contentUpdatedAt: -1, updatedAt: -1 })
+      .limit(fetchCap)
+      .lean()
+      .exec();
+  }
+
+  // -------- Union + dedupe (prefer ingredient channel first) --------
+  const seen = new Set<string>();
+  const merged: any[] = [];
+
+  for (const d of ingredientDocs ?? []) {
+    const id = String(d._id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    merged.push({ ...d, _id: d._id, __channel: 'ingredient' });
+  }
+
+  for (const d of filteredRegexDocs ?? []) {
+    const id = String(d._id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    merged.push({ ...d, _id: d._id, __channel: 'regex' });
+  }
+
+  const total = merged.length;
+  const page = merged.slice(offset, offset + limit);
+
+  return { total, docs: page };
+}
+
 searchRouter.post('/', async (req, res, next) => {
   try {
     console.log('POST /api/v1/search called with body:', req.body);
@@ -284,12 +627,14 @@ searchRouter.post('/', async (req, res, next) => {
     }
 
     if (scope === 'recipes') {
-      and.push({ docKind: 'recipe' });
+      and.push({ recipe: { $exists: true } });
     } else if (scope === 'notes') {
-      and.push({ docKind: 'note' });
+      and.push({ recipe: { $exists: false } }); // optional, only if you truly want to exclude recipes
+      // or keep docKind:'note' if that’s your canonical definition of “note”
     }
 
-    let mongoFilter: any = treatedAsWildcard ? {} : { $text: { $search: q } };
+    const useTextSearch = !treatedAsWildcard && scope !== 'recipes';
+    let mongoFilter: any = useTextSearch ? { $text: { $search: q } } : {};
     if (and.length) mongoFilter.$and = and;
 
     if (scope === 'recipes') {
@@ -307,16 +652,24 @@ searchRouter.post('/', async (req, res, next) => {
         excludeIngredients: (filters as any).excludeIngredients ?? (body as any).excludeIngredients,
       });
 
-      const includeTokens = splitAndDedupTokens(spec.filters.includeIngredients);
-      const excludeTokens = splitAndDedupTokens(spec.filters.excludeIngredients);
-      let ingredientSource: 'normalized' | 'raw' | null = null;
+      const includeTokens = canonicalizeFilterTokens(
+        splitAndDedupTokens(spec.filters.includeIngredients),
+      );
+      const excludeTokens = canonicalizeFilterTokens(
+        splitAndDedupTokens(spec.filters.excludeIngredients),
+      );
+      let ingredientSource: 'tokens' | 'normalized' | 'raw' | null = null;
 
       if (includeTokens.length || excludeTokens.length) {
-        const hasNormalized = await NoteModel.exists({ 'recipe.ingredients.0': { $exists: true } });
-        if (hasNormalized) ingredientSource = 'normalized';
+        const hasTokens = await NoteModel.exists({ 'recipe.ingredientTokens.0': { $exists: true } });
+        if (hasTokens) ingredientSource = 'tokens';
         else {
-          const hasRaw = await NoteModel.exists({ 'recipe.ingredientsRaw.0': { $exists: true } });
-          if (hasRaw) ingredientSource = 'raw';
+          const hasNormalized = await NoteModel.exists({ 'recipe.ingredients.0': { $exists: true } });
+          if (hasNormalized) ingredientSource = 'normalized';
+          else {
+            const hasRaw = await NoteModel.exists({ 'recipe.ingredientsRaw.0': { $exists: true } });
+            if (hasRaw) ingredientSource = 'raw';
+          }
         }
 
         if (!ingredientSource) {
@@ -331,18 +684,51 @@ searchRouter.post('/', async (req, res, next) => {
           : undefined;
 
       const { combinedFilter } = buildNoteFilterFromSpec(spec, ingredientFilter);
-      if (Object.keys(combinedFilter).length) {
-        if (mongoFilter.$and) {
-          mongoFilter.$and.push(combinedFilter);
-        } else if (Object.keys(mongoFilter).length) {
-          mongoFilter = { $and: [mongoFilter, combinedFilter] };
-        } else {
-          mongoFilter = combinedFilter;
-        }
+
+      // Option 2: strip scope gates + exact duplicates (relative to base `and[]`)
+      const cleanedCombined = stripScopeConstraints(combinedFilter, and);
+
+      // Build a baseFilter that represents "recipes + structured filters"
+      // NOTE: this baseFilter is used by both channels (text + ingredient)
+      let baseFilter: any = and.length ? { $and: [...and] } : {};
+      baseFilter = mergeAnd(baseFilter, cleanedCombined);
+
+      // If we have a real query (not wildcard), do UNION: regex(markdown) ∪ ingredientTokens
+      if (!treatedAsWildcard && q) {
+        const parsed = parseRecipeQuery(q);
+
+        const { total, docs } = await buildRecipeUnionResults({
+          q,
+          baseFilter,
+          parsed,
+          offset,
+          limit,
+        });
+
+        const terms = extractQueryTerms(q);
+
+        const hits: SearchHitNoteV1[] = (docs ?? []).map((d: any) => ({
+          targetType: 'note',
+          id: String(d._id),
+          subjectId: d.subjectId,
+          topicId: d.topicId,
+          title: d.title ?? 'Untitled',
+          docKind: d.docKind,
+          snippet: buildSnippetAroundMatch(d.markdown ?? '', terms),
+          score: typeof d.score === 'number' ? d.score : undefined,
+          updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
+        }));
+
+        const response: SearchResponseV1 = { version: 1, total, hits };
+        return res.json(response);
       }
+
+      // Otherwise (wildcard), fall through to existing code path which uses mongoFilter/find()
+      // Make sure mongoFilter is set to baseFilter so wildcard uses structured filters properly.
+      mongoFilter = baseFilter;
     }
 
-    if (treatedAsWildcard) {
+    if (treatedAsWildcard || !useTextSearch) {
       const total = await NoteModel.countDocuments(mongoFilter).exec();
       const docs = await NoteModel.find(mongoFilter)
         .sort({ contentUpdatedAt: -1, updatedAt: -1 })
@@ -441,59 +827,59 @@ searchRouter.get(
   '/semantic',
   requireAdminToken,
   async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const q = String(req.query.q ?? '').trim();
-    if (!q) return res.status(400).json({ error: 'q is required' });
+    try {
+      const q = String(req.query.q ?? '').trim();
+      if (!q) return res.status(400).json({ error: 'q is required' });
 
-    const limit = clampInt(req.query.limit, 1, 50, 20);
+      const limit = clampInt(req.query.limit, 1, 50, 20);
 
-    // 1) Embed the query text
-    const { vector: queryVector } = await embedText(q, { model: 'text-embedding-3-small' });
+      // 1) Embed the query text
+      const { vector: queryVector } = await embedText(q, { model: 'text-embedding-3-small' });
 
-    // 2) Atlas vector search
-    // IMPORTANT: Ensure you created an Atlas Search vector index with this name.
-    const indexName = 'notes_vector_index';
+      // 2) Atlas vector search
+      // IMPORTANT: Ensure you created an Atlas Search vector index with this name.
+      const indexName = 'notes_vector_index';
 
-    const pipeline: any[] = [
-      {
-        $vectorSearch: {
-          index: indexName,
-          path: 'embedding',
-          queryVector,
-          numCandidates: Math.max(limit * 10, 100),
-          limit,
+      const pipeline: any[] = [
+        {
+          $vectorSearch: {
+            index: indexName,
+            path: 'embedding',
+            queryVector,
+            numCandidates: Math.max(limit * 10, 100),
+            limit,
+          },
         },
-      },
-      {
-        $project: {
-          _id: 1,
-          title: 1,
-          summary: 1,
-          subjectId: 1,
-          topicId: 1,
-          updatedAt: 1,
-          score: { $meta: 'vectorSearchScore' },
+        {
+          $project: {
+            _id: 1,
+            title: 1,
+            summary: 1,
+            subjectId: 1,
+            topicId: 1,
+            updatedAt: 1,
+            score: { $meta: 'vectorSearchScore' },
+          },
         },
-      },
-      { $sort: { score: -1 } },
-    ];
+        { $sort: { score: -1 } },
+      ];
 
-    const docs = await NoteModel.aggregate(pipeline).exec();
+      const docs = await NoteModel.aggregate(pipeline).exec();
 
-    const results = (docs ?? []).map((d: any) => ({
-      id: String(d._id),
-      title: String(d.title ?? ''),
-      summary: d.summary ? String(d.summary) : undefined,
-      subjectId: d.subjectId ? String(d.subjectId) : undefined,
-      topicId: d.topicId ? String(d.topicId) : undefined,
-      updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
-      score: typeof d.score === 'number' ? d.score : Number(d.score ?? 0),
-    }));
+      const results = (docs ?? []).map((d: any) => ({
+        id: String(d._id),
+        title: String(d.title ?? ''),
+        summary: d.summary ? String(d.summary) : undefined,
+        subjectId: d.subjectId ? String(d.subjectId) : undefined,
+        topicId: d.topicId ? String(d.topicId) : undefined,
+        updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
+        score: typeof d.score === 'number' ? d.score : Number(d.score ?? 0),
+      }));
 
-    return res.json({ query: q, limit, results });
-  } catch (err) {
-    return next(err);
-  }
+      return res.json({ query: q, limit, results });
+    } catch (err) {
+      return next(err);
+    }
   },
 );
 

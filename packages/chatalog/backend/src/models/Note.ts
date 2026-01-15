@@ -114,6 +114,7 @@ const RecipeMetaSchema = new Schema<RecipeMeta>(
     nutrition: { type: Schema.Types.Mixed },
     ingredientsRaw: { type: [String], default: [] },
     stepsRaw: { type: [String], default: [] },
+    ingredientTokens: { type: [String], default: [] },
     ingredients: { type: [RecipeIngredientSchema], default: [] },
     ingredientsEditedRaw: { type: [String], default: undefined },
     ingredientsEdited: { type: [RecipeIngredientSchema], default: undefined },
@@ -231,6 +232,7 @@ NoteSchema.index({ importBatchId: 1, createdAt: -1 });
 // Recipe lookup / dedupe / search
 NoteSchema.index({ 'recipe.sourceUrl': 1 }, { unique: true, sparse: true });
 NoteSchema.index({ 'recipe.ingredients.name': 1 });
+NoteSchema.index({ 'recipe.ingredientTokens': 1 });
 NoteSchema.index({ 'recipe.cuisine': 1 });
 NoteSchema.index({ 'recipe.category': 1 });
 NoteSchema.index({ 'recipe.keywords': 1 });

@@ -73,6 +73,28 @@ function clampLimit(n: number) {
   return Math.max(1, Math.min(50, Math.floor(n)));
 }
 
+function parseIngredientList(input: string): string[] {
+  const raw = String(input ?? '');
+  const parts = raw
+    .split(/[,\n]/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of parts) {
+    const normalized = part.toLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
+function formatIngredientList(tokens: string[] | undefined | null): string {
+  const cleaned = (tokens ?? []).map((t) => String(t).trim()).filter(Boolean);
+  return cleaned.join(', ');
+}
+
 const PREP_TIME_OPTIONS = [10, 15, 20, 30, 45, 60];
 const COOK_TIME_OPTIONS = [10, 15, 20, 30, 45, 60, 90, 120];
 const TOTAL_TIME_OPTIONS = [15, 30, 45, 60, 90, 120, 180];
@@ -98,6 +120,8 @@ export default function SearchPage() {
   const [draftPrepTimeMax, setDraftPrepTimeMax] = useState<number | undefined>(undefined);
   const [draftCookTimeMax, setDraftCookTimeMax] = useState<number | undefined>(undefined);
   const [draftTotalTimeMax, setDraftTotalTimeMax] = useState<number | undefined>(undefined);
+  const [draftIncludeIngredientsInput, setDraftIncludeIngredientsInput] = useState<string>('');
+  const [draftExcludeIngredientsInput, setDraftExcludeIngredientsInput] = useState<string>('');
   const [draftSubjectId, setDraftSubjectId] = useState<string>('');
   const [draftTopicId, setDraftTopicId] = useState<string>('');
   const [draftImportedOnly, setDraftImportedOnly] = useState(false);
@@ -126,6 +150,10 @@ export default function SearchPage() {
   const cuisineValues = (committed.filters.cuisine ?? []).map((t) => t.trim()).filter(Boolean);
   const categoryValues = (committed.filters.category ?? []).map((t) => t.trim()).filter(Boolean);
   const keywordValues = (committed.filters.keywords ?? []).map((t) => t.trim()).filter(Boolean);
+  const includeIngredientValues =
+    (committed.filters.includeIngredients ?? []).map((t) => t.trim()).filter(Boolean);
+  const excludeIngredientValues =
+    (committed.filters.excludeIngredients ?? []).map((t) => t.trim()).filter(Boolean);
   const isRecipeScope = selectedScope === 'recipes';
   const isNotesScope = selectedScope !== 'recipes';
   const { data: recipeFacets } = useGetRecipeFacetsQuery(undefined, { skip: !isRecipeScope });
@@ -481,6 +509,8 @@ export default function SearchPage() {
     setDraftPrepTimeMax(maxPrepMinutes);
     setDraftCookTimeMax(maxCookMinutes);
     setDraftTotalTimeMax(maxTotalMinutes);
+    setDraftIncludeIngredientsInput(formatIngredientList(includeIngredientValues));
+    setDraftExcludeIngredientsInput(formatIngredientList(excludeIngredientValues));
     setDraftSubjectId(subjectIdFromQuery || '');
     setDraftTopicId(topicIdFromQuery || '');
     setDraftImportedOnly(importedOnlyFromQuery);
@@ -507,6 +537,8 @@ export default function SearchPage() {
       nextFilters.prepTimeMax = draftPrepTimeMax;
       nextFilters.cookTimeMax = draftCookTimeMax;
       nextFilters.totalTimeMax = draftTotalTimeMax;
+      nextFilters.includeIngredients = parseIngredientList(draftIncludeIngredientsInput);
+      nextFilters.excludeIngredients = parseIngredientList(draftExcludeIngredientsInput);
     }
     if (isNotesScope) {
       nextFilters.subjectId = draftSubjectId || undefined;
@@ -537,6 +569,8 @@ export default function SearchPage() {
             prepTimeMax: undefined,
             cookTimeMax: undefined,
             totalTimeMax: undefined,
+            includeIngredients: [],
+            excludeIngredients: [],
           }
           : {}),
         ...(isNotesScope
@@ -554,6 +588,8 @@ export default function SearchPage() {
     setDraftPrepTimeMax(undefined);
     setDraftCookTimeMax(undefined);
     setDraftTotalTimeMax(undefined);
+    setDraftIncludeIngredientsInput('');
+    setDraftExcludeIngredientsInput('');
     setDraftSubjectId('');
     setDraftTopicId('');
     setDraftImportedOnly(false);
@@ -573,7 +609,11 @@ export default function SearchPage() {
     (isRecipeScope &&
       (maxPrepMinutes != null || maxCookMinutes != null || maxTotalMinutes != null)) ||
     (isRecipeScope &&
-      (cuisineValues.length || categoryValues.length || keywordValues.length)) ||
+      (cuisineValues.length ||
+        categoryValues.length ||
+        keywordValues.length ||
+        includeIngredientValues.length ||
+        excludeIngredientValues.length)) ||
     (committed.mode && committed.mode !== 'auto'),
   );
 
@@ -1033,6 +1073,48 @@ export default function SearchPage() {
                         />
                       ))
                       : null}
+
+                    {isRecipeScope
+                      ? includeIngredientValues.map((i) => (
+                        <Chip
+                          key={`include-ing-${i}`}
+                          label={`Include: ${i}`}
+                          onDelete={() => {
+                            const nextInclude = includeIngredientValues.filter((x) => x !== i);
+                            applyCommitted({
+                              ...committed,
+                              filters: {
+                                ...committed.filters,
+                                includeIngredients: nextInclude.sort((a, b) => a.localeCompare(b)),
+                              },
+                            });
+                          }}
+                          size="small"
+                          variant="outlined"
+                        />
+                      ))
+                      : null}
+
+                    {isRecipeScope
+                      ? excludeIngredientValues.map((i) => (
+                        <Chip
+                          key={`exclude-ing-${i}`}
+                          label={`Exclude: ${i}`}
+                          onDelete={() => {
+                            const nextExclude = excludeIngredientValues.filter((x) => x !== i);
+                            applyCommitted({
+                              ...committed,
+                              filters: {
+                                ...committed.filters,
+                                excludeIngredients: nextExclude.sort((a, b) => a.localeCompare(b)),
+                              },
+                            });
+                          }}
+                          size="small"
+                          variant="outlined"
+                        />
+                      ))
+                      : null}
                   </>
                 )}
                 <FormControlLabel
@@ -1446,6 +1528,28 @@ export default function SearchPage() {
                     }}
                     renderInput={(params) => <TextField {...params} label="Keywords" />}
                     size="small"
+                  />
+                  <TextField
+                    label="Include ingredients"
+                    placeholder="e.g., chicken, black pepper"
+                    helperText="Comma or newline separated"
+                    value={draftIncludeIngredientsInput}
+                    onChange={(e) => setDraftIncludeIngredientsInput(e.target.value)}
+                    size="small"
+                    fullWidth
+                    multiline
+                    minRows={2}
+                  />
+                  <TextField
+                    label="Exclude ingredients"
+                    placeholder="e.g., garlic"
+                    helperText="Comma or newline separated"
+                    value={draftExcludeIngredientsInput}
+                    onChange={(e) => setDraftExcludeIngredientsInput(e.target.value)}
+                    size="small"
+                    fullWidth
+                    multiline
+                    minRows={2}
                   />
                 </Stack>
 
