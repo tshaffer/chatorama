@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { NoteModel } from '../models/Note';
+import { SubjectModel } from '../models/Subject';
+import { TopicModel } from '../models/Topic';
 import { computeEmbeddingTextAndHash } from '../ai/embeddingText';
 import { embedText } from '../ai/embed';
 import type {
@@ -43,6 +45,68 @@ function normalizeScope(
     return raw as SearchSpec['scope'];
   }
   return fallback;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+type ParsedQueryOperators = {
+  text: string;
+  subject?: string;
+  topic?: string;
+  tags: string[];
+  importedOnly?: boolean;
+};
+
+function parseQueryOperators(input: string): ParsedQueryOperators {
+  const tags: string[] = [];
+  let subject: string | undefined;
+  let topic: string | undefined;
+  let importedOnly: boolean | undefined;
+
+  const re = /(^|\s)(subject|topic|tag|imported):\s*(?:"([^"]+)"|'([^']+)'|([^\s]+))/gi;
+  const stripped = input.replace(re, (_match, prefix, key, v1, v2, v3) => {
+    const value = String(v1 ?? v2 ?? v3 ?? '').trim();
+    if (!value) return ' ';
+    const k = String(key).toLowerCase();
+    if (k === 'subject') subject = value;
+    if (k === 'topic') topic = value;
+    if (k === 'tag') tags.push(value);
+    if (k === 'imported') {
+      const v = value.toLowerCase();
+      if (v === 'true' || v === '1' || v === 'yes') importedOnly = true;
+    }
+    return prefix && String(prefix).trim() ? ' ' : ' ';
+  });
+
+  const text = stripped.replace(/\s+/g, ' ').trim();
+  return { text, subject, topic, tags, importedOnly };
+}
+
+async function resolveSubjectId(value: string): Promise<string | undefined> {
+  const re = new RegExp(`^${escapeRegex(value)}$`, 'i');
+  const doc = await SubjectModel.findOne({
+    $or: [{ name: re }, { slug: re }],
+  })
+    .select({ _id: 1 })
+    .lean();
+  return doc?._id ? String(doc._id) : undefined;
+}
+
+async function resolveTopicByValue(
+  value: string,
+  subjectId?: string,
+): Promise<{ id: string; subjectId?: string } | undefined> {
+  const re = new RegExp(`^${escapeRegex(value)}$`, 'i');
+  const doc = await TopicModel.findOne({
+    ...(subjectId ? { subjectId } : {}),
+    $or: [{ name: re }, { slug: re }],
+  })
+    .select({ _id: 1, subjectId: 1 })
+    .lean();
+  if (!doc?._id) return undefined;
+  return { id: String(doc._id), subjectId: doc.subjectId ?? undefined };
 }
 
 function stripMarkdownVerySimple(md: string): string {
@@ -119,7 +183,8 @@ searchRouter.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Unsupported search request version' });
     }
 
-    const q = (body.q ?? '').trim();
+    const parsedOps = parseQueryOperators(String(body.q ?? '').trim());
+    const q = parsedOps.text;
     const treatedAsWildcard = q === '' || q === '*';
     const scope = normalizeScope(body.scope, 'notes');
 
@@ -132,6 +197,32 @@ searchRouter.post('/', async (req, res, next) => {
     const offset = Math.max(body.offset ?? 0, 0);
 
     const filters = body.filters ?? {};
+    if (parsedOps.tags.length) {
+      const existing = Array.isArray(filters.tagsAll) ? filters.tagsAll : [];
+      const merged = new Set<string>([
+        ...existing.map((t: any) => String(t).trim()).filter(Boolean),
+        ...parsedOps.tags.map((t) => t.trim()).filter(Boolean),
+      ]);
+      filters.tagsAll = Array.from(merged);
+    }
+    if (parsedOps.importedOnly) {
+      filters.importedOnly = true;
+    }
+    if (parsedOps.subject) {
+      const resolved = await resolveSubjectId(parsedOps.subject);
+      if (resolved) {
+        filters.subjectId = resolved;
+      }
+    }
+    if (parsedOps.topic) {
+      const resolved = await resolveTopicByValue(parsedOps.topic, filters.subjectId);
+      if (resolved?.id) {
+        filters.topicId = resolved.id;
+        if (!filters.subjectId && resolved.subjectId) {
+          filters.subjectId = resolved.subjectId;
+        }
+      }
+    }
     const and: any[] = [];
 
     if (filters.subjectId) and.push({ subjectId: filters.subjectId });

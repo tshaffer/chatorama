@@ -50,6 +50,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Checkbox,
   FormControlLabel,
   IconButton,
   List,
@@ -97,6 +98,9 @@ export default function SearchPage() {
   const [draftPrepTimeMax, setDraftPrepTimeMax] = useState<number | undefined>(undefined);
   const [draftCookTimeMax, setDraftCookTimeMax] = useState<number | undefined>(undefined);
   const [draftTotalTimeMax, setDraftTotalTimeMax] = useState<number | undefined>(undefined);
+  const [draftSubjectId, setDraftSubjectId] = useState<string>('');
+  const [draftTopicId, setDraftTopicId] = useState<string>('');
+  const [draftImportedOnly, setDraftImportedOnly] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saveErrorMessage, setSaveErrorMessage] = useState<string>('');
@@ -118,10 +122,12 @@ export default function SearchPage() {
   const maxPrepMinutes = committed.filters.prepTimeMax;
   const maxCookMinutes = committed.filters.cookTimeMax;
   const maxTotalMinutes = committed.filters.totalTimeMax;
+  const importedOnlyFromQuery = Boolean(committed.filters.importedOnly);
   const cuisineValues = (committed.filters.cuisine ?? []).map((t) => t.trim()).filter(Boolean);
   const categoryValues = (committed.filters.category ?? []).map((t) => t.trim()).filter(Boolean);
   const keywordValues = (committed.filters.keywords ?? []).map((t) => t.trim()).filter(Boolean);
   const isRecipeScope = selectedScope === 'recipes';
+  const isNotesScope = selectedScope !== 'recipes';
   const { data: recipeFacets } = useGetRecipeFacetsQuery(undefined, { skip: !isRecipeScope });
   const { data: savedSearchesData } = useGetSavedSearchesQuery();
   const savedSearches = savedSearchesData?.items ?? [];
@@ -275,6 +281,37 @@ export default function SearchPage() {
   const { data, error, isLoading, isSuccess, isError, isUninitialized } = searchState;
   const isFetching = isLoading;
   const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery();
+
+  const subjectOptions = useMemo(
+    () => [...subjectsWithTopics].sort((a, b) => a.name.localeCompare(b.name)),
+    [subjectsWithTopics],
+  );
+
+  const allTopicOptions = useMemo(
+    () =>
+      subjectsWithTopics.flatMap((s) =>
+        (s.topics ?? []).map((t) => ({
+          ...t,
+          subjectName: s.name,
+          subjectId: s.id,
+        })),
+      ),
+    [subjectsWithTopics],
+  );
+
+  const topicOptions = useMemo(() => {
+    if (!draftSubjectId) {
+      return allTopicOptions.sort((a, b) =>
+        `${a.subjectName} ${a.name}`.localeCompare(`${b.subjectName} ${b.name}`),
+      );
+    }
+    const subject = subjectsWithTopics.find((s) => s.id === draftSubjectId);
+    return (subject?.topics ?? []).map((t) => ({
+      ...t,
+      subjectName: subject?.name ?? '',
+      subjectId: subject?.id ?? '',
+    }));
+  }, [subjectsWithTopics, allTopicOptions, draftSubjectId]);
 
   useEffect(() => {
     search(requestBody);
@@ -444,6 +481,9 @@ export default function SearchPage() {
     setDraftPrepTimeMax(maxPrepMinutes);
     setDraftCookTimeMax(maxCookMinutes);
     setDraftTotalTimeMax(maxTotalMinutes);
+    setDraftSubjectId(subjectIdFromQuery || '');
+    setDraftTopicId(topicIdFromQuery || '');
+    setDraftImportedOnly(importedOnlyFromQuery);
     dispatch(setFiltersDialogOpen(true));
   };
 
@@ -467,6 +507,11 @@ export default function SearchPage() {
       nextFilters.prepTimeMax = draftPrepTimeMax;
       nextFilters.cookTimeMax = draftCookTimeMax;
       nextFilters.totalTimeMax = draftTotalTimeMax;
+    }
+    if (isNotesScope) {
+      nextFilters.subjectId = draftSubjectId || undefined;
+      nextFilters.topicId = draftTopicId || undefined;
+      nextFilters.importedOnly = draftImportedOnly ? true : undefined;
     }
 
     const nextQuery = { ...draft, filters: nextFilters };
@@ -494,6 +539,13 @@ export default function SearchPage() {
             totalTimeMax: undefined,
           }
           : {}),
+        ...(isNotesScope
+          ? {
+            subjectId: undefined,
+            topicId: undefined,
+            importedOnly: undefined,
+          }
+          : {}),
       },
     };
     setDraftCuisine('');
@@ -502,6 +554,9 @@ export default function SearchPage() {
     setDraftPrepTimeMax(undefined);
     setDraftCookTimeMax(undefined);
     setDraftTotalTimeMax(undefined);
+    setDraftSubjectId('');
+    setDraftTopicId('');
+    setDraftImportedOnly(false);
     applyCommitted(nextQuery);
     dispatch(setFiltersDialogOpen(false));
   };
@@ -514,6 +569,7 @@ export default function SearchPage() {
     updatedFrom ||
     updatedTo ||
     minSemanticScore !== undefined ||
+    (isNotesScope && importedOnlyFromQuery) ||
     (isRecipeScope &&
       (maxPrepMinutes != null || maxCookMinutes != null || maxTotalMinutes != null)) ||
     (isRecipeScope &&
@@ -1258,6 +1314,61 @@ export default function SearchPage() {
                 fullWidth
               />
             </Stack>
+
+            {isNotesScope ? (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                  Note metadata
+                </Typography>
+                <Stack spacing={2}>
+                  <TextField
+                    select
+                    label="Subject"
+                    value={draftSubjectId}
+                    onChange={(e) => {
+                      const nextSubjectId = String(e.target.value);
+                      setDraftSubjectId(nextSubjectId);
+                      if (nextSubjectId) {
+                        const subject = subjectsWithTopics.find((s) => s.id === nextSubjectId);
+                        const hasTopic = (subject?.topics ?? []).some((t) => t.id === draftTopicId);
+                        if (!hasTopic) setDraftTopicId('');
+                      }
+                    }}
+                    size="small"
+                    fullWidth
+                  >
+                    <MenuItem value="">Any</MenuItem>
+                    {subjectOptions.map((s) => (
+                      <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    select
+                    label="Topic"
+                    value={draftTopicId}
+                    onChange={(e) => setDraftTopicId(String(e.target.value))}
+                    size="small"
+                    fullWidth
+                  >
+                    <MenuItem value="">Any</MenuItem>
+                    {topicOptions.map((t: any) => (
+                      <MenuItem key={t.id} value={t.id}>
+                        {draftSubjectId ? t.name : `${t.name} (${t.subjectName})`}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={draftImportedOnly}
+                        onChange={(_e, checked) => setDraftImportedOnly(checked)}
+                      />
+                    }
+                    label="Imported only"
+                  />
+                </Stack>
+              </Box>
+            ) : null}
 
             {isRecipeScope ? (
               <Box>

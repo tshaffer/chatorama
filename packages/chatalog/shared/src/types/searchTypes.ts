@@ -184,6 +184,7 @@ export type SearchQueryFilters = {
   topicId?: string;
   status?: string;
   tags: string[];
+  importedOnly?: boolean;
   updatedFrom?: string;
   updatedTo?: string;
   minSemanticScore?: number;

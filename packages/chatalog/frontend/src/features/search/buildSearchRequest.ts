@@ -41,7 +41,7 @@ export function buildSearchRequestV1(spec: SearchSpec): SearchRequestV1 {
       excludeIngredients,
       createdAtFrom: undefined,
       createdAtTo: undefined,
-      importedOnly: undefined,
+      importedOnly: f.importedOnly ? true : undefined,
       sourceType: undefined,
       importBatchId: undefined,
       chatworthyChatId: undefined,

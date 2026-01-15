@@ -20,6 +20,15 @@ function numOrUndef(s: string | null): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function boolOrUndef(s: string | null): boolean | undefined {
+  if (s == null) return undefined;
+  const t = s.trim().toLowerCase();
+  if (!t) return undefined;
+  if (t === '1' || t === 'true' || t === 'yes') return true;
+  if (t === '0' || t === 'false' || t === 'no') return false;
+  return undefined;
+}
+
 function clampLimit(n: number | undefined): number {
   if (!Number.isFinite(n as any)) return 20;
   return Math.max(1, Math.min(50, Math.floor(n as number)));
@@ -44,6 +53,7 @@ export function getDefaultSearchQuery(): SearchQuery {
       keywords: [],
       includeIngredients: [],
       excludeIngredients: [],
+      importedOnly: undefined,
     },
   };
 }
@@ -77,6 +87,7 @@ export function parseSearchQueryFromUrl(
     topicId: (sp.get('topicId') ?? '').trim() || undefined,
     status: (sp.get('status') ?? '').trim() || undefined,
     tags: splitCsv(sp.get('tags')),
+    importedOnly: boolOrUndef(sp.get('importedOnly')),
 
     updatedFrom: (sp.get('updatedFrom') ?? '').trim() || undefined,
     updatedTo: (sp.get('updatedTo') ?? '').trim() || undefined,
@@ -117,6 +128,8 @@ export function buildSearchUrlFromQuery(q: SearchQuery): string {
 
   const tags = joinCsv(f.tags);
   if (tags) sp.set('tags', tags);
+
+  if (f.importedOnly) sp.set('importedOnly', '1');
 
   if (f.updatedFrom) sp.set('updatedFrom', f.updatedFrom);
   if (f.updatedTo) sp.set('updatedTo', f.updatedTo);
