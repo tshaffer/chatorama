@@ -140,6 +140,7 @@ export interface SearchRequestV1 {
   offset?: number;
   scope?: SearchScopeV1;
   lastUsedScope?: SearchScopeV1;
+  mode?: SearchMode;
 }
 
 export interface SearchHitNoteV1 {

@@ -20,6 +20,7 @@ export function buildSearchRequestV1(spec: SearchSpec): SearchRequestV1 {
   return {
     version: 1,
     q: String(spec.query ?? ''),
+    mode: spec.mode ?? 'auto',
     scope: spec.scope ?? 'notes',
     targetTypes: ['note'],
     limit: spec.limit ?? 20,

@@ -1352,14 +1352,14 @@ export default function SearchPage() {
                 Mode
               </Typography>
               <ToggleButtonGroup
-                value={draft.mode}
+                value={draft.mode === 'hybrid' ? 'auto' : draft.mode}
                 exclusive
                 onChange={(_e, v) => {
                   if (v) dispatch(setDraftMode(v as any));
                 }}
                 size="small"
               >
-                <ToggleButton value="hybrid">Hybrid</ToggleButton>
+                <ToggleButton value="auto">Auto</ToggleButton>
                 <ToggleButton value="keyword">Keyword</ToggleButton>
                 <ToggleButton value="semantic">Semantic</ToggleButton>
               </ToggleButtonGroup>
