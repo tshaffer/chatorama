@@ -18,6 +18,7 @@ import {
   splitAndDedupTokens,
 } from '../utils/search/noteFilters';
 import { buildIngredientSearchTokens, canonicalizeFilterTokens } from '../utils/ingredientTokens';
+import { canonicalizeIngredient } from '../utils/ingredientTokens';
 
 export const searchRouter = Router();
 
@@ -1191,6 +1192,95 @@ searchRouter.post(
         stoppedDueToRateLimit,
         retryAfterSeconds,
       });
+    } catch (err) {
+      return next(err);
+    }
+  },
+);
+
+// Purpose: Admin-only maintenance to backfill ingredientTokens.
+// Usage: Internal tooling/scripts only.
+// Example: curl -X POST -H "x-chatalog-admin: $CHATALOG_ADMIN_TOKEN" -H "Content-Type: application/json" -d '{"limit":100,"dryRun":true}' "http://localhost:3000/api/v1/search/ingredientTokens/backfill"
+searchRouter.post(
+  '/ingredientTokens/backfill',
+  requireAdminToken,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const limit = clampInt(req.body?.limit, 1, 500, 100);
+      const dryRun = Boolean(req.body?.dryRun ?? false);
+
+      const docs = await NoteModel.find({ recipe: { $exists: true } })
+        .select({
+          _id: 1,
+          'recipe.ingredientsRaw': 1,
+          'recipe.ingredientsEditedRaw': 1,
+          'recipe.ingredientTokens': 1,
+        })
+        .limit(limit)
+        .lean()
+        .exec();
+
+      let examined = 0;
+      let updated = 0;
+      const samples: Array<{
+        id: string;
+        source: 'ingredientsEditedRaw' | 'ingredientsRaw' | 'none';
+        before: string[];
+        after: string[];
+      }> = [];
+
+      for (const d of docs) {
+        examined += 1;
+        const recipe = (d as any).recipe ?? {};
+        const editedRaw = Array.isArray(recipe.ingredientsEditedRaw)
+          ? recipe.ingredientsEditedRaw
+          : [];
+        const raw = Array.isArray(recipe.ingredientsRaw) ? recipe.ingredientsRaw : [];
+        const sourceList = editedRaw.length ? editedRaw : raw;
+        const source =
+          editedRaw.length ? 'ingredientsEditedRaw' : raw.length ? 'ingredientsRaw' : 'none';
+
+        const tokenSet = new Set<string>();
+        for (const line of sourceList ?? []) {
+          canonicalizeIngredient(String(line ?? ''), { includeSingles: true }).forEach((t) =>
+            tokenSet.add(t),
+          );
+        }
+        const nextTokens = Array.from(tokenSet).sort((a, b) => a.localeCompare(b));
+        const beforeTokens = Array.isArray(recipe.ingredientTokens)
+          ? recipe.ingredientTokens.map((t: any) => String(t))
+          : [];
+        const beforeSet = new Set(beforeTokens);
+        let changed = beforeSet.size !== nextTokens.length;
+        if (!changed) {
+          for (const t of nextTokens) {
+            if (!beforeSet.has(t)) {
+              changed = true;
+              break;
+            }
+          }
+        }
+
+        if (samples.length < 5) {
+          samples.push({
+            id: String(d._id),
+            source,
+            before: beforeTokens,
+            after: nextTokens,
+          });
+        }
+
+        if (dryRun) continue;
+        if (!changed) continue;
+
+        await NoteModel.updateOne(
+          { _id: d._id },
+          { $set: { 'recipe.ingredientTokens': nextTokens } },
+        ).exec();
+        updated += 1;
+      }
+
+      return res.json({ examined, updated, dryRun, samples });
     } catch (err) {
       return next(err);
     }

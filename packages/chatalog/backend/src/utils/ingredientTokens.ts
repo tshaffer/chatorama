@@ -1,16 +1,44 @@
 import type { RecipeIngredient } from '@chatorama/chatalog-shared';
 
 const UNIT_WORDS = new Set([
-  'cup', 'cups', 'tbsp', 'tablespoon', 'tablespoons', 'tsp', 'teaspoon', 'teaspoons',
-  'oz', 'ounce', 'ounces', 'lb', 'lbs', 'pound', 'pounds', 'g', 'gram', 'grams', 'kg',
-  'ml', 'l', 'liter', 'liters', 'pinch', 'dash', 'clove', 'cloves', 'slice', 'slices',
-  'package', 'packages', 'can', 'cans', 'bunch', 'bunches', 'sprig', 'sprigs', 'piece', 'pieces',
-  'stick', 'sticks',
+  'tsp', 'teaspoon', 'teaspoons',
+  'tbsp', 'tablespoon', 'tablespoons',
+  'oz', 'ounce', 'ounces',
+  'lb', 'lbs', 'pound', 'pounds',
+  'g', 'gram', 'grams',
+  'kg', 'kilogram', 'kilograms',
+  'ml', 'milliliter', 'milliliters',
+  'l', 'liter', 'liters',
+  'cup', 'cups',
+  'pint', 'pints',
+  'quart', 'quarts',
+  'gallon', 'gallons',
+  'pinch', 'dash',
 ]);
 
 const STOP_WORDS = new Set([
-  'fresh', 'chopped', 'minced', 'diced', 'sliced', 'ground', 'optional',
-  'to', 'taste', 'and', 'or', 'of',
+  'for', 'and', 'or', 'with', 'to', 'of', 'in', 'on',
+  'more', 'needed', 'taste', 'serving', 'serve', 'plus',
+  'about', 'such', 'as', 'see', 'tip', 'if', 'very', 'into', 'from',
+  'fresh', 'freshly', 'finely', 'roughly', 'coarsely',
+  'chopped', 'minced', 'diced', 'sliced',
+  'optional', 'removed', 'peeled', 'pitted', 'seeded', 'broken', 'grated', 'microplane',
+  'large', 'small', 'medium', 'warm', 'hot', 'cold', 'dry', 'wet',
+  'all', 'purpose',
+]);
+
+const DESCRIPTOR_WORDS = new Set([
+  'dried', 'ground', 'smoked', 'fresh', 'freshly',
+  'finely', 'roughly', 'coarsely',
+  'boneless', 'skinless',
+  'low', 'reduced', 'nonfat', 'fatfree',
+  'extra', 'virgin',
+  'coarse', 'fine',
+]);
+
+const BRAND_WORDS = new Set([
+  'diamond', 'crystal',
+  'kikkoman', 'heinz', 'colman', 'tabasco',
 ]);
 
 const PHRASE_SYNONYMS: Record<string, string> = {
@@ -33,6 +61,10 @@ const WORD_SYNONYMS: Record<string, string> = {
   'aubergine': 'eggplant',
   'courgette': 'zucchini',
   'cilantro': 'coriander',
+  'clov': 'clove',
+  'leav': 'leaf',
+  'ounc': 'ounce',
+  'piec': 'piece',
 };
 
 function singularize(word: string): string {
@@ -42,10 +74,32 @@ function singularize(word: string): string {
   return word;
 }
 
-function normalizeText(text: string): string {
+const FRACTION_CHARS = /[¼½¾⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞]/g;
+const SEPARATOR_CHARS = /[,:;()[\]{}|/]/g;
+
+function stripParentheticalsAndNotes(raw: string): string {
+  if (!raw) return '';
+  let s = raw;
+
+  s = s.replace(/\([^)]*\)/g, ' ');
+  s = s.replace(/,\s*(such as|like)\s+.*$/i, ' ');
+  s = s.replace(/,\s*see\s+(tip|note).*$/i, ' ');
+
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeIngredientText(text: string): string {
   return text
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
+    // Safety: never invent negated words like "unsmoked"
+    .replace(/\bunsmoked\b/g, 'smoked')
+    .replace(/\b1\/2\b|\b1\/4\b|\b3\/4\b|\b1\/3\b|\b2\/3\b/g, ' ')
+    .replace(FRACTION_CHARS, ' ')
+    .replace(SEPARATOR_CHARS, ' ')
+    .replace(/([a-z])\-([a-z])/g, '$1 $2')
+    .replace(/[–—]/g, ' ')
+    .replace(/[^a-z' ]+/g, ' ')
+    .replace(/\bunsmoked\b/g, 'smoked')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -63,29 +117,72 @@ export function canonicalizeIngredient(
   opts: { includeSingles?: boolean } = {},
 ): string[] {
   const includeSingles = opts.includeSingles ?? true;
-  const normalized = normalizeText(text);
+  const stripped = stripParentheticalsAndNotes(text);
+  const normalized = normalizeIngredientText(stripped);
   if (!normalized) return [];
 
   const words = normalized
     .split(' ')
     .map((w) => singularize(w))
     .map((w) => applyWordSynonyms(w))
-    .filter((w) => w.length > 0 && !UNIT_WORDS.has(w) && !STOP_WORDS.has(w));
+    .map((w) => w.replace(/'/g, ''))
+    .filter((w) => w.length >= 2 && !UNIT_WORDS.has(w) && !STOP_WORDS.has(w));
 
   if (!words.length) return [];
 
-  const phraseRaw = words.join(' ');
-  const phrase = applyPhraseSynonyms(phraseRaw);
   const tokens = new Set<string>();
-  tokens.add(phrase);
 
-  if (includeSingles && words.length > 1) {
-    for (const w of words) {
-      if (w.length > 2) tokens.add(w);
+  const wordsNoBrand = words.filter((w) => !BRAND_WORDS.has(w));
+  const contentWords = wordsNoBrand.filter((w) => !DESCRIPTOR_WORDS.has(w));
+  const finalWords = wordsNoBrand;
+
+  const singlesSource =
+    includeSingles || finalWords.length === 1
+      ? (contentWords.length ? contentWords : finalWords)
+      : [];
+  const singles = singlesSource.slice(0, 10);
+  for (const w of singles) tokens.add(w);
+
+  const isGoodPhrase = (phraseWords: string[]) => {
+    return phraseWords.some(
+      (w) =>
+        !DESCRIPTOR_WORDS.has(w) &&
+        !STOP_WORDS.has(w) &&
+        !UNIT_WORDS.has(w) &&
+        !BRAND_WORDS.has(w),
+    );
+  };
+
+  const phraseTokens: string[] = [];
+  for (let i = 0; i < finalWords.length - 1 && phraseTokens.length < 10; i += 1) {
+    const w1 = finalWords[i];
+    const w2 = finalWords[i + 1];
+    if (!isGoodPhrase([w1, w2])) continue;
+    const phrase = applyPhraseSynonyms(`${w1} ${w2}`);
+    phraseTokens.push(phrase);
+  }
+  for (let i = 0; i < finalWords.length - 2 && phraseTokens.length < 10; i += 1) {
+    const w1 = finalWords[i];
+    const w2 = finalWords[i + 1];
+    const w3 = finalWords[i + 2];
+    if (!isGoodPhrase([w1, w2, w3])) continue;
+    const phrase = applyPhraseSynonyms(`${w1} ${w2} ${w3}`);
+    phraseTokens.push(phrase);
+  }
+  for (const p of phraseTokens) tokens.add(p);
+
+  if (contentWords.length) {
+    for (const t of Array.from(tokens)) {
+      if (!t.includes(' ') && DESCRIPTOR_WORDS.has(t)) tokens.delete(t);
     }
   }
 
-  return Array.from(tokens);
+  if (!singles.length && !phraseTokens.length) {
+    const phrase = applyPhraseSynonyms(finalWords.join(' '));
+    tokens.add(phrase);
+  }
+
+  return Array.from(tokens).sort((a, b) => a.localeCompare(b));
 }
 
 export function buildIngredientTokensFromIngredients(
@@ -104,14 +201,17 @@ export function buildIngredientTokensFromIngredients(
 }
 
 export function buildIngredientSearchTokens(query: string): string[] {
-  const cleaned = normalizeText(query);
+  const cleaned = String(query ?? '').trim();
   if (!cleaned) return [];
-  const parts = cleaned.split(/,|;|&|\band\b/).map((p) => p.trim()).filter(Boolean);
+  const parts = cleaned
+    .split(/,|;|&|\band\b/gi)
+    .map((p) => p.trim())
+    .filter(Boolean);
   const tokens = new Set<string>();
   for (const part of parts.length ? parts : [cleaned]) {
     canonicalizeIngredient(part, { includeSingles: false }).forEach((t) => tokens.add(t));
   }
-  return Array.from(tokens);
+  return Array.from(tokens).sort((a, b) => a.localeCompare(b));
 }
 
 export function canonicalizeFilterTokens(rawTokens: string[]): string[] {
@@ -119,5 +219,9 @@ export function canonicalizeFilterTokens(rawTokens: string[]): string[] {
   for (const t of rawTokens) {
     canonicalizeIngredient(t, { includeSingles: false }).forEach((v) => tokens.add(v));
   }
-  return Array.from(tokens);
+  return Array.from(tokens).sort((a, b) => a.localeCompare(b));
 }
+
+// Backfill reminder:
+// Recompute recipe.ingredientTokens from recipe.ingredientsRaw/ingredientsEditedRaw
+// in batches, updating only notes with recipe data.
