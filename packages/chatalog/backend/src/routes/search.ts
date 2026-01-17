@@ -17,8 +17,9 @@ import {
   buildNoteFilterFromSpec,
   splitAndDedupTokens,
 } from '../utils/search/noteFilters';
-import { buildIngredientSearchTokens, canonicalizeFilterTokens } from '../utils/ingredientTokens';
+import { canonicalizeFilterTokens } from '../utils/ingredientTokens';
 import { canonicalizeIngredient } from '../utils/ingredientTokens';
+import { parsePowerQuery } from '../utils/search/powerQueryParser';
 
 export const searchRouter = Router();
 
@@ -161,6 +162,107 @@ function buildTextMatchQuery(baseFilter: any, search: string): any {
     return { ...textMatch, $and: [baseFilter] };
   }
   return textMatch;
+}
+
+function escapeTextSearchPhrase(input: string): string {
+  return input.replace(/"/g, '\\"');
+}
+
+function dedupeOrdered(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    const key = v.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(v);
+  }
+  return out;
+}
+
+function appendNotTermsToSearch(base: string, notTerms: string[]): string {
+  const trimmedBase = base.trim();
+  if (!notTerms.length) return trimmedBase;
+  const parts = trimmedBase ? [trimmedBase] : [];
+  for (const raw of notTerms) {
+    const term = raw.trim();
+    if (!term) continue;
+    const escaped = escapeTextSearchPhrase(term);
+    const token = term.includes(' ') ? `-"${escaped}"` : `-${escaped}`;
+    parts.push(token);
+  }
+  return parts.join(' ').trim();
+}
+
+function buildTextSearchPlan(parsed: ReturnType<typeof parsePowerQuery>, raw: string) {
+  const hasExplicitPhrase = parsed.phrases.length > 0;
+  const hasNot = parsed.notTerms.length > 0;
+  const positiveTerms = dedupeOrdered([
+    ...parsed.mustTerms,
+    ...parsed.anyTerms,
+    ...parsed.terms,
+  ]);
+  const broadBase = positiveTerms.length ? positiveTerms.join(' ') : raw.trim();
+
+  if (hasExplicitPhrase) {
+    const phraseBase = parsed.phrases.map((p) => `"${escapeTextSearchPhrase(p)}"`).join(' ');
+    return { primary: appendNotTermsToSearch(phraseBase, parsed.notTerms) };
+  }
+
+  if (parsed.terms.length >= 2 && !parsed.hasExplicitOr && !hasNot) {
+    const implicitPhrase = parsed.terms.join(' ');
+    const phraseSearch = `"${escapeTextSearchPhrase(implicitPhrase)}"`;
+    return { primary: phraseSearch, secondary: broadBase };
+  }
+
+  return { primary: appendNotTermsToSearch(broadBase, parsed.notTerms) };
+}
+
+async function fetchTextDocs(args: {
+  search: string;
+  baseFilter: any;
+  fetchCap: number;
+}) {
+  const { search, baseFilter, fetchCap } = args;
+  if (!search) return [];
+  const textQuery = buildTextMatchQuery(baseFilter, search);
+  const pipeline: any[] = [
+    { $match: textQuery },
+    { $addFields: { score: { $meta: 'textScore' } } },
+    { $sort: { score: -1 } },
+    { $limit: fetchCap },
+    {
+      $project: {
+        _id: 1,
+        title: 1,
+        subjectId: 1,
+        topicId: 1,
+        docKind: 1,
+        markdown: 1,
+        updatedAt: 1,
+        score: 1,
+      },
+    },
+  ];
+  return await NoteModel.aggregate(pipeline).exec();
+}
+
+function mergeDocs(primary: any[], secondary: any[] = []) {
+  const seen = new Set<string>();
+  const merged: any[] = [];
+  for (const d of primary ?? []) {
+    const id = String(d._id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    merged.push(d);
+  }
+  for (const d of secondary ?? []) {
+    const id = String(d._id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    merged.push(d);
+  }
+  return merged;
 }
 
 function rrfFuse(
@@ -432,26 +534,13 @@ async function buildKeywordDocsForNotes(args: {
   fetchCap: number;
 }) {
   const { q, baseFilter, fetchCap } = args;
-  const query = buildTextMatchQuery(baseFilter, q);
-  const pipeline: any[] = [
-    { $match: query },
-    { $addFields: { score: { $meta: 'textScore' } } },
-    { $sort: { score: -1 } },
-    { $limit: fetchCap },
-    {
-      $project: {
-        _id: 1,
-        title: 1,
-        subjectId: 1,
-        topicId: 1,
-        docKind: 1,
-        markdown: 1,
-        updatedAt: 1,
-        score: 1,
-      },
-    },
-  ];
-  return await NoteModel.aggregate(pipeline).exec();
+  const parsed = parsePowerQuery(q);
+  const plan = buildTextSearchPlan(parsed, q);
+  const primaryDocs = await fetchTextDocs({ search: plan.primary, baseFilter, fetchCap });
+  const secondaryDocs = plan.secondary
+    ? await fetchTextDocs({ search: plan.secondary, baseFilter, fetchCap })
+    : [];
+  return mergeDocs(primaryDocs, secondaryDocs);
 }
 
 async function buildNoteResultsByMode(args: {
@@ -482,64 +571,74 @@ async function buildNoteResultsByMode(args: {
     return { total, docs: page };
   }
 
-  const textQuery = buildTextMatchQuery(baseFilter, q);
-  const total = await NoteModel.countDocuments(textQuery).exec();
-  const pipeline: any[] = [
-    { $match: textQuery },
-    { $addFields: { score: { $meta: 'textScore' } } },
-    { $sort: { score: -1 } },
-    { $skip: offset },
-    { $limit: limit },
-    {
-      $project: {
-        _id: 1,
-        title: 1,
-        subjectId: 1,
-        topicId: 1,
-        docKind: 1,
-        markdown: 1,
-        updatedAt: 1,
-        score: 1,
-      },
-    },
-  ];
-  const docs = await NoteModel.aggregate(pipeline).exec();
-  return { total, docs };
+  const parsed = parsePowerQuery(q);
+  const plan = buildTextSearchPlan(parsed, q);
+  const primaryDocs = await fetchTextDocs({ search: plan.primary, baseFilter, fetchCap });
+  const secondaryDocs = plan.secondary
+    ? await fetchTextDocs({ search: plan.secondary, baseFilter, fetchCap })
+    : [];
+  const merged = mergeDocs(primaryDocs, secondaryDocs);
+  const total = merged.length;
+  const page = merged.slice(offset, offset + limit);
+  return { total, docs: page };
+}
+
+function buildIngredientQueryFilterFromParsed(parsed: ReturnType<typeof parsePowerQuery>) {
+  const phraseTokens = canonicalizeFilterTokens(parsed.phrases);
+  const mustTokens = canonicalizeFilterTokens(parsed.mustTerms.length ? parsed.mustTerms : parsed.terms);
+  const anyTokens = canonicalizeFilterTokens(parsed.anyTerms);
+  const notTokens = canonicalizeFilterTokens(parsed.notTerms);
+
+  const implicitPhrase =
+    parsed.terms.length >= 2 && !parsed.hasExplicitOr && parsed.notTerms.length === 0
+      ? parsed.terms.join(' ')
+      : null;
+  const implicitPhraseTokens = implicitPhrase ? canonicalizeFilterTokens([implicitPhrase]) : [];
+
+  const and: any[] = [];
+
+  if (parsed.phrases.length > 0) {
+    const required = phraseTokens.length ? phraseTokens : mustTokens;
+    for (const t of required) and.push({ 'recipe.ingredientTokens': t });
+  } else if (implicitPhrase) {
+    const required = implicitPhraseTokens.length ? implicitPhraseTokens : mustTokens;
+    for (const t of required) and.push({ 'recipe.ingredientTokens': t });
+  } else if (parsed.hasExplicitOr) {
+    for (const t of mustTokens) and.push({ 'recipe.ingredientTokens': t });
+    if (anyTokens.length) {
+      and.push({ $or: anyTokens.map((t) => ({ 'recipe.ingredientTokens': t })) });
+    }
+  } else {
+    for (const t of mustTokens) and.push({ 'recipe.ingredientTokens': t });
+  }
+
+  if (notTokens.length) {
+    and.push({ $nor: notTokens.map((t) => ({ 'recipe.ingredientTokens': t })) });
+  }
+
+  if (!and.length) return null;
+  return and.length === 1 ? and[0] : { $and: and };
 }
 
 async function buildRecipeChannels(args: {
   q: string;
   baseFilter: any;
-  ingredientQueryTokens: string[];
+  parsed: ReturnType<typeof parsePowerQuery>;
   fetchCap: number;
   includeSemantic?: boolean;
 }) {
-  const { q, baseFilter, ingredientQueryTokens, fetchCap, includeSemantic = true } = args;
+  const { q, baseFilter, parsed, fetchCap, includeSemantic = true } = args;
 
-  const textQuery = buildTextMatchQuery(baseFilter, q);
-  const textPipeline: any[] = [
-    { $match: textQuery },
-    { $addFields: { score: { $meta: 'textScore' } } },
-    { $sort: { score: -1 } },
-    { $limit: fetchCap },
-    {
-      $project: {
-        _id: 1,
-        title: 1,
-        subjectId: 1,
-        topicId: 1,
-        docKind: 1,
-        markdown: 1,
-        updatedAt: 1,
-        score: 1,
-      },
-    },
-  ];
-  const textDocs = await NoteModel.aggregate(textPipeline).exec();
+  const plan = buildTextSearchPlan(parsed, q);
+  const primaryDocs = await fetchTextDocs({ search: plan.primary, baseFilter, fetchCap });
+  const secondaryDocs = plan.secondary
+    ? await fetchTextDocs({ search: plan.secondary, baseFilter, fetchCap })
+    : [];
+  const textDocs = mergeDocs(primaryDocs, secondaryDocs);
 
+  const ingredientQueryFilter = buildIngredientQueryFilterFromParsed(parsed);
   let ingredientDocs: any[] = [];
-  if (ingredientQueryTokens.length) {
-    const ingredientQueryFilter = { 'recipe.ingredientTokens': { $in: ingredientQueryTokens } };
+  if (ingredientQueryFilter) {
     const ingredientQuery =
       baseFilter?.$and && Array.isArray(baseFilter.$and)
         ? { $and: [...baseFilter.$and, ingredientQueryFilter] }
@@ -566,11 +665,11 @@ async function buildRecipeResultsByMode(args: {
   mode: 'auto' | 'keyword' | 'semantic';
   q: string;
   baseFilter: any;
-  ingredientQueryTokens: string[];
+  parsed: ReturnType<typeof parsePowerQuery>;
   offset: number;
   limit: number;
 }) {
-  const { mode, q, baseFilter, ingredientQueryTokens, offset, limit } = args;
+  const { mode, q, baseFilter, parsed, offset, limit } = args;
   const fetchCap = Math.min(Math.max((offset + limit) * 5, 50), 500);
 
   if (mode === 'semantic') {
@@ -584,7 +683,7 @@ async function buildRecipeResultsByMode(args: {
     const { textDocs, ingredientDocs, semanticDocs } = await buildRecipeChannels({
       q,
       baseFilter,
-      ingredientQueryTokens,
+      parsed,
       fetchCap,
       includeSemantic: true,
     });
@@ -601,7 +700,7 @@ async function buildRecipeResultsByMode(args: {
   const { textDocs, ingredientDocs } = await buildRecipeChannels({
     q,
     baseFilter,
-    ingredientQueryTokens,
+    parsed,
     fetchCap,
     includeSemantic: false,
   });
@@ -805,13 +904,13 @@ searchRouter.post('/', async (req, res, next) => {
 
       // If we have a real query (not wildcard), do mode-based recipe search
       if (!treatedAsWildcard && q) {
-        const ingredientQueryTokens = buildIngredientSearchTokens(q);
+        const parsed = parsePowerQuery(q);
 
         const { total, docs } = await buildRecipeResultsByMode({
           mode,
           q,
           baseFilter,
-          ingredientQueryTokens,
+          parsed,
           offset,
           limit,
         });

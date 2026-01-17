@@ -5,7 +5,7 @@
 - Done: semantic mode handled in main backend search flow with notes/recipes channels and RRF for auto.
 - Done: Add Filters dialog includes include/exclude ingredients; filters flow to backend.
 - Done: recipe facets endpoint exists and is queried in recipe scope.
-- Not done: consistent power-user operators (AND/OR/NOT/phrase) across notes+recipes keyword mode.
+- Done: consistent power-user operators (AND/OR/NOT/phrase) across notes+recipes keyword mode.
 - Unclear: unicode/jq parse error (not reproduced in this audit run).
 
 ## Evidence
@@ -14,24 +14,32 @@
 - Search input component binds raw value directly: `packages/chatalog/frontend/src/components/SearchBox.tsx`.
 - Query parsing previously stripped quotes; now parser preserves `m[0]` for quoted tokens: `packages/chatalog/frontend/src/features/search/queryParser.ts`.
 - Search request mapping uses `spec.query` -> `request.q` with no quote stripping: `packages/chatalog/frontend/src/features/search/buildSearchRequest.ts`.
-- Temporary audit log added before search dispatch to verify raw/spec/request values: `packages/chatalog/frontend/src/features/search/SearchPage.tsx`.
+- Temporary audit log removed after confirmation (no runtime logging left in `packages/chatalog/frontend/src/features/search/SearchPage.tsx`).
 
-Status: PASS for preserving quotes end-to-end (pending manual run with log).
+Status: PASS for preserving quotes end-to-end.
 
 ### Operator semantics (notes + recipes)
-- Notes keyword mode uses Mongo `$text` with `request.q` (no custom boolean parsing): `packages/chatalog/backend/src/routes/search.ts`.
-- Recipes keyword mode uses `$text` + `ingredientTokens` (OR via `$in`) and unions for keyword mode: `packages/chatalog/backend/src/routes/search.ts`.
+- Shared power-user parser added: `packages/chatalog/backend/src/utils/search/powerQueryParser.ts`.
+- Notes keyword mode uses phrase-preferred `$text` union with NOT support (via `-term` in `$search`): `packages/chatalog/backend/src/routes/search.ts`.
+- Recipes keyword mode uses phrase-preferred `$text` union + ingredientTokens with AND/OR/NOT semantics: `packages/chatalog/backend/src/routes/search.ts`.
 
 Table:
 
 | Feature | Notes | Recipes |
 | --- | --- | --- |
-| Unquoted phrase-like ranking | Not implemented (Mongo `$text` default) | Not implemented (text+ingredient union) |
-| Quoted exact phrase | Supported via Mongo `$text` quotes | Supported in text channel only; ingredient channel does not enforce phrase |
-| OR (`OR`/`|`) | Mongo `$text` may treat tokens as OR; not explicit | Ingredient channel uses OR via `$in`, text uses `$text` |
-| NOT (`-term`) | Mongo `$text` supports minus; no explicit regex filtering | Ingredient channel does not support NOT; text relies on `$text` |
+| Unquoted phrase-like ranking | Implemented (phrase channel first, then broad) | Implemented (phrase-first text union + ingredient channel) |
+| Quoted exact phrase | Implemented (phrase-only text channel) | Implemented (phrase-only text channel + ingredient phrase tokens) |
+| OR (`OR`/`|`) | Implemented (parsed into OR terms) | Implemented (OR terms + ingredient OR filter) |
+| NOT (`-term`) | Implemented (negation appended to `$text` search) | Implemented (ingredient `$nor` + text negation) |
 
-Status: NOT DONE for consistent “power-user” semantics across notes+recipes.
+Status: DONE for consistent “power-user” semantics across notes+recipes.
+
+Manual tests to run (keyword mode):
+1) Notes: `high protein` -> phrase hits first, other matches later.
+2) Notes: `"high protein"` -> only exact phrase matches.
+3) Notes: `high OR protein` -> broader results.
+4) Notes: `protein -high` -> excludes notes containing “high”.
+5) Recipes: same 4 tests; verify no “red pepper” for `"black pepper"`.
 
 ### Semantic wiring (main flow)
 - Mode is read from `body.mode` and normalized; semantic/auto/keyword paths handled in POST `/api/v1/search`: `packages/chatalog/backend/src/routes/search.ts`.
@@ -67,7 +75,5 @@ Status: UNCLEAR.
 Status: DONE with remaining tuning opportunities.
 
 ## Recommended Next Fixes (Minimal)
-1) Decide desired power-user semantics for notes/recipes keyword mode (AND/OR/NOT/phrase) and implement consistently across both scopes.
-2) Reproduce unicode/jq parse issue using a saved response file; identify offending field and apply minimal sanitization.
-3) Optionally filter facets based on current query if that’s the intended UX (currently global).
-
+1) Reproduce unicode/jq parse issue using a saved response file; identify offending field and apply minimal sanitization.
+2) Optionally filter facets based on current query if that’s the intended UX (currently global).
