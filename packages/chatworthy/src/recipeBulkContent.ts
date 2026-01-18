@@ -12,7 +12,7 @@ const DEFAULTS = {
   concurrency: 2,
   delayMsMin: 300,
   delayMsMax: 700,
-  maxScrolls: 40,
+  maxPages: 40,
 };
 
 type FailedEntry = { url: string; error: string };
@@ -31,6 +31,7 @@ type BulkOptions = {
   delayMsMax?: number;
   dryRun?: boolean;
   retryFailed?: boolean;
+  maxPages?: number;
   maxScrolls?: number;
 };
 
@@ -106,29 +107,181 @@ function sendDownload(filename: string, data: unknown) {
   });
 }
 
-async function discoverRecipeUrls(maxScrolls: number): Promise<string[]> {
-  const urls = new Set<string>();
-  let lastCount = 0;
-  let idleRounds = 0;
+type DiscoveryResult = {
+  urls: string[];
+  pagesVisited: number;
+  pageSize: number;
+  totalResultsText: string;
+  stoppedReason: string;
+};
 
-  for (let i = 0; i < maxScrolls; i += 1) {
-    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'));
-    for (const a of links) {
-      const url = normalizeRecipeUrl(a.href);
-      if (url) urls.add(url);
+function findTotalResultsText(): string {
+  const candidates = Array.from(document.querySelectorAll<HTMLElement>('body *'))
+    .map((el) => el.textContent?.trim())
+    .filter((t) => t && /\d+\s*[\u2013-]\s*\d+\s*of\s*\d+/i.test(t));
+  return candidates[0] ?? '';
+}
+
+function getRecipeLinksOnPage(): string[] {
+  const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'));
+  const urls: string[] = [];
+  for (const a of links) {
+    const url = normalizeRecipeUrl(a.href);
+    if (url) urls.push(url);
+  }
+  return urls;
+}
+
+function getActivePageNumber(): string | null {
+  const current = document.querySelector<HTMLElement>('[aria-current="page"]');
+  if (current?.textContent) return current.textContent.trim();
+  return null;
+}
+
+function getPageNumberButtons(): HTMLElement[] {
+  const buttons = Array.from(document.querySelectorAll<HTMLElement>('a,button'));
+  return buttons.filter((el) => /^\d+$/.test((el.textContent ?? '').trim()));
+}
+
+function isDisabled(el: HTMLElement): boolean {
+  const ariaDisabled = el.getAttribute('aria-disabled');
+  if (ariaDisabled === 'true') return true;
+  if ('disabled' in el && (el as any).disabled) return true;
+  return el.classList.contains('disabled');
+}
+
+function findNextButton(): HTMLElement | null {
+  const candidates = Array.from(document.querySelectorAll<HTMLElement>('a,button'));
+  for (const el of candidates) {
+    const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+    const text = (el.textContent || '').trim().toLowerCase();
+    if (aria.includes('next') || text === '>' || text === '›' || text.includes('next')) {
+      return el;
+    }
+  }
+  return null;
+}
+
+async function waitForPageChange(args: {
+  prevPage: string | null;
+  prevFirstUrl: string | null;
+  timeoutMs: number;
+}) {
+  const { prevPage, prevFirstUrl, timeoutMs } = args;
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const active = getActivePageNumber();
+    const links = getRecipeLinksOnPage();
+    const first = links[0] ?? null;
+    if (active && prevPage && active !== prevPage) return true;
+    if (first && prevFirstUrl && first !== prevFirstUrl) return true;
+    await sleep(200);
+  }
+  return false;
+}
+
+async function discoverRecipeUrls(maxPages: number): Promise<DiscoveryResult> {
+  const urls = new Set<string>();
+  const seenPageKeys = new Set<string>();
+  let pagesVisited = 0;
+  let stoppedReason = '';
+  let pageSize = 0;
+  let totalResultsText = '';
+
+  for (let i = 0; i < maxPages; i += 1) {
+    const pageNum = getActivePageNumber();
+    const links = getRecipeLinksOnPage();
+    const firstUrl = links[0] ?? null;
+    const pageKey = pageNum || firstUrl || `page-${i + 1}`;
+
+    if (seenPageKeys.has(pageKey)) {
+      stoppedReason = 'page-repeat';
+      break;
+    }
+    seenPageKeys.add(pageKey);
+
+    if (!totalResultsText) totalResultsText = findTotalResultsText();
+
+    pageSize = links.length;
+    for (const url of links) urls.add(url);
+    pagesVisited += 1;
+
+    const pageButtons = getPageNumberButtons();
+    const nextPageNum =
+      pageNum && /^\d+$/.test(pageNum) ? String(Number(pageNum) + 1) : null;
+    const nextPageBtn =
+      nextPageNum != null
+        ? pageButtons.find((el) => (el.textContent ?? '').trim() === nextPageNum)
+        : null;
+
+    let navigationMethod: 'page-number' | 'next-button' | 'stop' = 'stop';
+    if (nextPageBtn && !isDisabled(nextPageBtn)) navigationMethod = 'page-number';
+    else if (findNextButton() && !isDisabled(findNextButton() as HTMLElement)) {
+      navigationMethod = 'next-button';
     }
 
-    if (urls.size === lastCount) idleRounds += 1;
-    else idleRounds = 0;
+    console.log('[chatworthy][recipe] page', {
+      pageIndex: pageNum ?? pageKey,
+      recipesFound: links.length,
+      cumulativeTotal: urls.size,
+      navigation: navigationMethod,
+    });
 
-    if (idleRounds >= 3) break;
+    if (navigationMethod === 'stop') {
+      stoppedReason = 'no-next';
+      break;
+    }
 
-    lastCount = urls.size;
-    window.scrollTo(0, document.body.scrollHeight);
-    await sleep(1000);
+    const prevFirstUrl = firstUrl;
+    const prevPage = pageNum;
+
+    const doClick = () => {
+      const target = navigationMethod === 'page-number' ? nextPageBtn : findNextButton();
+      if (target && !isDisabled(target)) target.click();
+      return target != null;
+    };
+
+    let clicked = doClick();
+    if (!clicked) {
+      stoppedReason = 'no-next';
+      break;
+    }
+
+    let changed = await waitForPageChange({
+      prevPage,
+      prevFirstUrl,
+      timeoutMs: 8000,
+    });
+
+    if (!changed) {
+      await sleep(300);
+      clicked = doClick();
+      if (clicked) {
+        changed = await waitForPageChange({
+          prevPage,
+          prevFirstUrl,
+          timeoutMs: 8000,
+        });
+      }
+    }
+
+    if (!changed) {
+      stoppedReason = 'navigation-timeout';
+      break;
+    }
   }
 
-  return Array.from(urls);
+  if (!stoppedReason) stoppedReason = 'max-pages';
+
+  console.log('[chatworthy][recipe] stop', { stoppedReason, pagesVisited, total: urls.size });
+
+  return {
+    urls: Array.from(urls),
+    pagesVisited,
+    pageSize,
+    totalResultsText,
+    stoppedReason,
+  };
 }
 
 async function fetchRecipeJsonLd(pageUrl: string): Promise<unknown> {
@@ -158,11 +311,12 @@ async function runBulkImport(options: BulkOptions = {}) {
   const concurrency = options.concurrency ?? DEFAULTS.concurrency;
   const delayMsMin = options.delayMsMin ?? DEFAULTS.delayMsMin;
   const delayMsMax = options.delayMsMax ?? DEFAULTS.delayMsMax;
-  const maxScrolls = options.maxScrolls ?? DEFAULTS.maxScrolls;
+  const maxPages = options.maxPages ?? options.maxScrolls ?? DEFAULTS.maxPages;
   const dryRun = Boolean(options.dryRun);
   const retryFailed = Boolean(options.retryFailed);
 
-  const discovered = await discoverRecipeUrls(maxScrolls);
+  const discovery = await discoverRecipeUrls(maxPages);
+  const discovered = discovery.urls;
   const progress = await getStoredProgress();
 
   progress.discoveredUrls = discovered;
@@ -172,6 +326,10 @@ async function runBulkImport(options: BulkOptions = {}) {
     sendDownload(URLS_FILE, discovered);
     return {
       totalDiscovered: discovered.length,
+      pagesVisited: discovery.pagesVisited,
+      pageSize: discovery.pageSize,
+      totalResultsText: discovery.totalResultsText,
+      stoppedReason: discovery.stoppedReason,
       dryRun: true,
     };
   }

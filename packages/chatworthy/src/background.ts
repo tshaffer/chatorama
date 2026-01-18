@@ -10,10 +10,10 @@ chrome.runtime.onMessage.addListener((message: DownloadMessage) => {
   if (!message || message.type !== 'chatworthy:downloadJson') return;
   const filename = message.filename || 'chatworthy-export.json';
   const json = JSON.stringify(message.data ?? {}, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
+  const encoded = btoa(unescape(encodeURIComponent(json)));
+  const url = `data:application/json;base64,${encoded}`;
 
   chrome.downloads.download({ url, filename, saveAs: false }, () => {
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    // data: URLs don't need explicit revocation in MV3 service workers.
   });
 });
