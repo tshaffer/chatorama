@@ -142,6 +142,14 @@ function findResultsCounts(): ResultsCounts | null {
   const candidates = Array.from(document.querySelectorAll<HTMLElement>('body *'))
     .map((el) => el.textContent?.trim())
     .filter((t): t is string => Boolean(t));
+  const matches = candidates
+    .filter((text) => /[\d,]+\s*[\u2013-]\s*[\d,]+\s*of\s*[\d,]+/i.test(text))
+    .sort((a, b) => a.length - b.length);
+  const preferred = matches.find((text) => text.length <= 120) ?? matches[0];
+  if (preferred) {
+    const parsed = parseResultsCountText(preferred);
+    if (parsed) return parsed;
+  }
   for (const text of candidates) {
     const parsed = parseResultsCountText(text);
     if (parsed) return parsed;
@@ -256,12 +264,13 @@ async function discoverRecipeUrls(_maxPages: number): Promise<DiscoveryResult> {
   for (let page = 1; page <= totalPages; page += 1) {
     const links = getRecipeLinksOnPage();
     const firstUrl = links[0] ?? null;
-    for (const url of links) urls.add(url);
+    const uniqueLinks = new Set(links);
+    for (const url of uniqueLinks) urls.add(url);
     pagesVisited += 1;
 
     console.log('[chatworthy][recipe] page', {
       pageIndex: page,
-      recipesFound: links.length,
+      recipesFound: uniqueLinks.size,
       cumulativeTotal: urls.size,
     });
 
