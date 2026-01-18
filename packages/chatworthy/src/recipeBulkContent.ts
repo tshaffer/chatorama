@@ -268,10 +268,10 @@ async function runBulkImport(options: BulkOptions = {}) {
   const progress = await getStoredProgress();
 
   progress.discoveredUrls = discovered;
+  sendDownload(URLS_FILE, discovered);
 
   if (dryRun) {
     await saveProgress(progress);
-    sendDownload(URLS_FILE, discovered);
     return {
       totalDiscovered: discovered.length,
       pagesVisited: discovery.pagesVisited,
