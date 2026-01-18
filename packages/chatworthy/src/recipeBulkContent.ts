@@ -111,15 +111,42 @@ type DiscoveryResult = {
   urls: string[];
   pagesVisited: number;
   pageSize: number;
-  totalResultsText: string;
+  totalResults: number;
+  totalPages: number;
   stoppedReason: string;
 };
 
-function findTotalResultsText(): string {
+type ResultsCounts = {
+  start: number;
+  end: number;
+  total: number;
+  pageSize: number;
+  totalPages: number;
+  text: string;
+};
+
+function parseResultsCountText(text: string): ResultsCounts | null {
+  const match = text.match(/([\d,]+)\s*[\u2013-]\s*([\d,]+)\s*of\s*([\d,]+)/i);
+  if (!match) return null;
+  const start = Number(match[1].replace(/,/g, ''));
+  const end = Number(match[2].replace(/,/g, ''));
+  const total = Number(match[3].replace(/,/g, ''));
+  if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(total)) return null;
+  if (start <= 0 || end < start || total < end) return null;
+  const pageSize = end - start + 1;
+  const totalPages = Math.ceil(total / pageSize);
+  return { start, end, total, pageSize, totalPages, text };
+}
+
+function findResultsCounts(): ResultsCounts | null {
   const candidates = Array.from(document.querySelectorAll<HTMLElement>('body *'))
     .map((el) => el.textContent?.trim())
-    .filter((t) => t && /\d+\s*[\u2013-]\s*\d+\s*of\s*\d+/i.test(t));
-  return candidates[0] ?? '';
+    .filter((t): t is string => Boolean(t));
+  for (const text of candidates) {
+    const parsed = parseResultsCountText(text);
+    if (parsed) return parsed;
+  }
+  return null;
 }
 
 function getRecipeLinksOnPage(): string[] {
@@ -180,70 +207,102 @@ async function waitForPageChange(args: {
   return false;
 }
 
-async function discoverRecipeUrls(maxPages: number): Promise<DiscoveryResult> {
+async function discoverRecipeUrls(_maxPages: number): Promise<DiscoveryResult> {
   const urls = new Set<string>();
-  const seenPageKeys = new Set<string>();
   let pagesVisited = 0;
   let stoppedReason = '';
   let pageSize = 0;
-  let totalResultsText = '';
+  let totalResults = 0;
+  let totalPages = 0;
 
-  for (let i = 0; i < maxPages; i += 1) {
-    const pageNum = getActivePageNumber();
+  const counts = findResultsCounts();
+  if (!counts) {
+    return {
+      urls: [],
+      pagesVisited: 0,
+      pageSize: 0,
+      totalResults: 0,
+      totalPages: 0,
+      stoppedReason: 'results-text-missing',
+    };
+  }
+
+  pageSize = counts.pageSize;
+  totalResults = counts.total;
+  totalPages = counts.totalPages;
+
+  console.log('[chatworthy][recipe] results counts', {
+    text: counts.text,
+    start: counts.start,
+    end: counts.end,
+    total: counts.total,
+    pageSize: counts.pageSize,
+    totalPages: counts.totalPages,
+  });
+
+  const firstPageButton = getPageNumberButtons().find(
+    (el) => (el.textContent ?? '').trim() === '1',
+  );
+  const activePage = getActivePageNumber();
+  if (activePage && activePage !== '1' && firstPageButton && !isDisabled(firstPageButton)) {
+    firstPageButton.click();
+    await waitForPageChange({
+      prevPage: activePage,
+      prevFirstUrl: null,
+      timeoutMs: 8000,
+    });
+  }
+
+  for (let page = 1; page <= totalPages; page += 1) {
     const links = getRecipeLinksOnPage();
     const firstUrl = links[0] ?? null;
-    const pageKey = pageNum || firstUrl || `page-${i + 1}`;
-
-    if (seenPageKeys.has(pageKey)) {
-      stoppedReason = 'page-repeat';
-      break;
-    }
-    seenPageKeys.add(pageKey);
-
-    if (!totalResultsText) totalResultsText = findTotalResultsText();
-
-    pageSize = links.length;
     for (const url of links) urls.add(url);
     pagesVisited += 1;
 
+    console.log('[chatworthy][recipe] page', {
+      pageIndex: page,
+      recipesFound: links.length,
+      cumulativeTotal: urls.size,
+    });
+
+    if (page === totalPages) {
+      stoppedReason = 'completed';
+      break;
+    }
+
     const pageButtons = getPageNumberButtons();
-    const nextPageNum =
-      pageNum && /^\d+$/.test(pageNum) ? String(Number(pageNum) + 1) : null;
-    const nextPageBtn =
-      nextPageNum != null
-        ? pageButtons.find((el) => (el.textContent ?? '').trim() === nextPageNum)
-        : null;
+    const nextPageText = String(page + 1);
+    const nextPageBtn = pageButtons.find(
+      (el) => (el.textContent ?? '').trim() === nextPageText,
+    );
+    const nextButton = findNextButton();
 
     let navigationMethod: 'page-number' | 'next-button' | 'stop' = 'stop';
     if (nextPageBtn && !isDisabled(nextPageBtn)) navigationMethod = 'page-number';
-    else if (findNextButton() && !isDisabled(findNextButton() as HTMLElement)) {
-      navigationMethod = 'next-button';
-    }
+    else if (nextButton && !isDisabled(nextButton)) navigationMethod = 'next-button';
 
     console.log('[chatworthy][recipe] page', {
-      pageIndex: pageNum ?? pageKey,
-      recipesFound: links.length,
-      cumulativeTotal: urls.size,
+      pageIndex: page,
       navigation: navigationMethod,
     });
 
     if (navigationMethod === 'stop') {
-      stoppedReason = 'no-next';
+      stoppedReason = 'navigation-missing';
       break;
     }
 
     const prevFirstUrl = firstUrl;
-    const prevPage = pageNum;
+    const prevPage = getActivePageNumber();
 
     const doClick = () => {
-      const target = navigationMethod === 'page-number' ? nextPageBtn : findNextButton();
+      const target = navigationMethod === 'page-number' ? nextPageBtn : nextButton;
       if (target && !isDisabled(target)) target.click();
       return target != null;
     };
 
     let clicked = doClick();
     if (!clicked) {
-      stoppedReason = 'no-next';
+      stoppedReason = 'navigation-missing';
       break;
     }
 
@@ -271,7 +330,7 @@ async function discoverRecipeUrls(maxPages: number): Promise<DiscoveryResult> {
     }
   }
 
-  if (!stoppedReason) stoppedReason = 'max-pages';
+  if (!stoppedReason) stoppedReason = 'completed';
 
   console.log('[chatworthy][recipe] stop', { stoppedReason, pagesVisited, total: urls.size });
 
@@ -279,7 +338,8 @@ async function discoverRecipeUrls(maxPages: number): Promise<DiscoveryResult> {
     urls: Array.from(urls),
     pagesVisited,
     pageSize,
-    totalResultsText,
+    totalResults,
+    totalPages,
     stoppedReason,
   };
 }
@@ -328,9 +388,8 @@ async function runBulkImport(options: BulkOptions = {}) {
       totalDiscovered: discovered.length,
       pagesVisited: discovery.pagesVisited,
       pageSize: discovery.pageSize,
-      totalResultsText: discovery.totalResultsText,
-      stoppedReason: discovery.stoppedReason,
-      dryRun: true,
+      totalResults: discovery.totalResults,
+      totalPages: discovery.totalPages,
     };
   }
 
