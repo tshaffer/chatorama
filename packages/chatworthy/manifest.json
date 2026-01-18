@@ -44,6 +44,15 @@
         "recipeContent.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://cooking.nytimes.com/*"
+      ],
+      "js": [
+        "recipeBulkContent.js"
+      ],
+      "run_at": "document_idle"
     }
   ]
 }

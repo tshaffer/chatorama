@@ -1,6 +1,8 @@
 // packages/chatworthy/src/recipeContent.ts
 // NYT Cooking recipe capture (Schema.org Recipe JSON-LD)
 
+import { extractRecipeJsonLdFromDocument } from './recipeExtractor';
+
 const API_BASE = 'http://localhost:8080/api/v1';
 const ROOT_ID = 'chatworthy-recipe-root';
 const BTN_ID = 'chatworthy-recipe-capture-btn';
@@ -17,86 +19,6 @@ function isTopWindow() {
   } catch {
     return false;
   }
-}
-
-function safeJsonParse(text: string): unknown | null {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-
-function asArray(x: unknown): unknown[] {
-  return Array.isArray(x) ? x : [x];
-}
-
-function isRecipeNode(node: any): boolean {
-  if (!node || typeof node !== 'object') return false;
-  const t = (node['@type'] ?? node['type']) as any;
-  if (!t) return false;
-
-  if (typeof t === 'string') return t.toLowerCase() === 'recipe';
-  if (Array.isArray(t)) return t.some((v) => typeof v === 'string' && v.toLowerCase() === 'recipe');
-
-  return false;
-}
-
-/**
- * Scan all ld+json blocks. NYT typically has a single JSON object with @type Recipe,
- * but we handle arrays and @graph as well.
- */
-function findRecipeJsonLd(): { recipe: unknown; raw: string } | null {
-  const scripts = Array.from(
-    document.querySelectorAll<HTMLScriptElement>('script[type="application/ld+json"]')
-  );
-
-  for (const s of scripts) {
-    const raw = (s.textContent || '').trim();
-    if (!raw) continue;
-
-    const parsed = safeJsonParse(raw);
-    if (!parsed) continue;
-
-    // Common shapes:
-    // 1) { @type: "Recipe", ... }
-    // 2) [ { ... }, { @type:"Recipe" ... } ]
-    // 3) { @graph: [ ... { @type:"Recipe" } ... ] }
-    // 4) { ... mainEntity: { @type:"Recipe" } } (less common)
-
-    const candidates: unknown[] = [];
-
-    const pushCandidate = (x: unknown) => {
-      if (!x) return;
-      candidates.push(x);
-    };
-
-    if (Array.isArray(parsed)) {
-      for (const item of parsed) pushCandidate(item);
-    } else if (typeof parsed === 'object' && parsed) {
-      const obj: any = parsed;
-      pushCandidate(obj);
-      if (obj['@graph']) {
-        for (const g of asArray(obj['@graph'])) pushCandidate(g);
-      }
-      if (obj['mainEntity']) pushCandidate(obj['mainEntity']);
-    }
-
-    // Expand one level if any candidate is an array
-    const flattened: unknown[] = [];
-    for (const c of candidates) {
-      if (Array.isArray(c)) flattened.push(...c);
-      else flattened.push(c);
-    }
-
-    for (const node of flattened) {
-      if (isRecipeNode(node)) {
-        return { recipe: node, raw };
-      }
-    }
-  }
-
-  return null;
 }
 
 function setStatus(msg: string, isError = false) {
@@ -157,19 +79,19 @@ function ensureUi() {
   status.style.opacity = '0.9';
 
   btn.onclick = async () => {
-    btn.disabled = true;
+      btn.disabled = true;
     setStatus('Scanning...');
 
     try {
-      const found = findRecipeJsonLd();
-      if (!found) {
+      const recipeJsonLd = extractRecipeJsonLdFromDocument(document);
+      if (!recipeJsonLd) {
         setStatus('No Recipe JSON-LD found on this page.', true);
         return;
       }
 
       const payload: RecipeCapturePayload = {
         pageUrl: location.href,
-        recipeJsonLd: found.recipe,
+        recipeJsonLd,
       };
 
       setStatus('Posting...');
