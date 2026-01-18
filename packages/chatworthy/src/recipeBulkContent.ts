@@ -173,47 +173,6 @@ function getActivePageNumber(): string | null {
   return null;
 }
 
-function getPageNumberButtons(): HTMLElement[] {
-  const buttons = Array.from(document.querySelectorAll<HTMLElement>('a,button'));
-  return buttons.filter((el) => /^\d+$/.test((el.textContent ?? '').trim()));
-}
-
-function isDisabled(el: HTMLElement): boolean {
-  const ariaDisabled = el.getAttribute('aria-disabled');
-  if (ariaDisabled === 'true') return true;
-  if ('disabled' in el && (el as any).disabled) return true;
-  return el.classList.contains('disabled');
-}
-
-function findNextButton(): HTMLElement | null {
-  const candidates = Array.from(document.querySelectorAll<HTMLElement>('a,button'));
-  for (const el of candidates) {
-    const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-    const text = (el.textContent || '').trim().toLowerCase();
-    if (aria.includes('next') || text === '>' || text === '›' || text.includes('next')) {
-      return el;
-    }
-  }
-  return null;
-}
-
-async function waitForPageChange(args: {
-  prevPage: string | null;
-  prevFirstUrl: string | null;
-  timeoutMs: number;
-}) {
-  const { prevPage, prevFirstUrl, timeoutMs } = args;
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const active = getActivePageNumber();
-    const links = getRecipeLinksOnPage();
-    const first = links[0] ?? null;
-    if (active && prevPage && active !== prevPage) return true;
-    if (first && prevFirstUrl && first !== prevFirstUrl) return true;
-    await sleep(200);
-  }
-  return false;
-}
 
 async function discoverRecipeUrls(_maxPages: number): Promise<DiscoveryResult> {
   const urls = new Set<string>();
@@ -248,98 +207,18 @@ async function discoverRecipeUrls(_maxPages: number): Promise<DiscoveryResult> {
     totalPages: counts.totalPages,
   });
 
-  const firstPageButton = getPageNumberButtons().find(
-    (el) => (el.textContent ?? '').trim() === '1',
-  );
-  const activePage = getActivePageNumber();
-  if (activePage && activePage !== '1' && firstPageButton && !isDisabled(firstPageButton)) {
-    firstPageButton.click();
-    await waitForPageChange({
-      prevPage: activePage,
-      prevFirstUrl: null,
-      timeoutMs: 8000,
-    });
-  }
+  const links = getRecipeLinksOnPage();
+  const uniqueLinks = new Set(links);
+  for (const url of uniqueLinks) urls.add(url);
+  pagesVisited = links.length ? 1 : 0;
 
-  for (let page = 1; page <= totalPages; page += 1) {
-    const links = getRecipeLinksOnPage();
-    const firstUrl = links[0] ?? null;
-    const uniqueLinks = new Set(links);
-    for (const url of uniqueLinks) urls.add(url);
-    pagesVisited += 1;
+  console.log('[chatworthy][recipe] page', {
+    pageIndex: Number(getActivePageNumber() ?? 1),
+    recipesFound: uniqueLinks.size,
+    cumulativeTotal: urls.size,
+  });
 
-    console.log('[chatworthy][recipe] page', {
-      pageIndex: page,
-      recipesFound: uniqueLinks.size,
-      cumulativeTotal: urls.size,
-    });
-
-    if (page === totalPages) {
-      stoppedReason = 'completed';
-      break;
-    }
-
-    const pageButtons = getPageNumberButtons();
-    const nextPageText = String(page + 1);
-    const nextPageBtn = pageButtons.find(
-      (el) => (el.textContent ?? '').trim() === nextPageText,
-    );
-    const nextButton = findNextButton();
-
-    let navigationMethod: 'page-number' | 'next-button' | 'stop' = 'stop';
-    if (nextPageBtn && !isDisabled(nextPageBtn)) navigationMethod = 'page-number';
-    else if (nextButton && !isDisabled(nextButton)) navigationMethod = 'next-button';
-
-    console.log('[chatworthy][recipe] page', {
-      pageIndex: page,
-      navigation: navigationMethod,
-    });
-
-    if (navigationMethod === 'stop') {
-      stoppedReason = 'navigation-missing';
-      break;
-    }
-
-    const prevFirstUrl = firstUrl;
-    const prevPage = getActivePageNumber();
-
-    const doClick = () => {
-      const target = navigationMethod === 'page-number' ? nextPageBtn : nextButton;
-      if (target && !isDisabled(target)) target.click();
-      return target != null;
-    };
-
-    let clicked = doClick();
-    if (!clicked) {
-      stoppedReason = 'navigation-missing';
-      break;
-    }
-
-    let changed = await waitForPageChange({
-      prevPage,
-      prevFirstUrl,
-      timeoutMs: 8000,
-    });
-
-    if (!changed) {
-      await sleep(300);
-      clicked = doClick();
-      if (clicked) {
-        changed = await waitForPageChange({
-          prevPage,
-          prevFirstUrl,
-          timeoutMs: 8000,
-        });
-      }
-    }
-
-    if (!changed) {
-      stoppedReason = 'navigation-timeout';
-      break;
-    }
-  }
-
-  if (!stoppedReason) stoppedReason = 'completed';
+  stoppedReason = 'manual';
 
   console.log('[chatworthy][recipe] stop', { stoppedReason, pagesVisited, total: urls.size });
 
