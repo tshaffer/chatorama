@@ -10,7 +10,12 @@ async function copyStatic() {
 }
 
 const buildOptions: esbuild.BuildOptions = {
-  entryPoints: ['src/content.ts', 'src/background.ts', 'src/recipeContent.ts'],
+  entryPoints: [
+    'src/content.ts',
+    'src/background.ts',
+    'src/recipeContent.ts',
+    'src/recipeBulkContent.ts',
+  ],
   outdir: 'dist',
   bundle: true,
   format: 'esm',
