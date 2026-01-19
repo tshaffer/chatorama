@@ -129,6 +129,10 @@ export interface SearchFiltersV1 {
   keywords?: string[];
   includeIngredients?: string[];
   excludeIngredients?: string[];
+
+  cooked?: 'any' | 'ever' | 'never';
+  cookedWithinDays?: number;
+  minAvgCookedRating?: number;
 }
 
 export interface SearchRequestV1 {
@@ -197,6 +201,9 @@ export type SearchQueryFilters = {
   keywords: string[];
   includeIngredients: string[];
   excludeIngredients: string[];
+  cooked?: 'any' | 'ever' | 'never';
+  cookedWithinDays?: number;
+  minAvgCookedRating?: number;
 };
 
 export type SearchQuery = {

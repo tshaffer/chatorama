@@ -21,6 +21,10 @@ export type SearchFilters = {
 
   includeIngredients: string[];
   excludeIngredients: string[];
+
+  cooked?: 'any' | 'ever' | 'never';
+  cookedWithinDays?: number;
+  minAvgCookedRating?: number;
 };
 
 export type SearchQuery = {

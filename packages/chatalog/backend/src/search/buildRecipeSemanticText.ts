@@ -1,3 +1,5 @@
+import { computeCookedSearchFields } from '../utils/recipes/computeCookedSearchFields';
+
 function asArray(v: unknown): string[] {
   if (v == null) return [];
   if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean);
@@ -82,6 +84,13 @@ export function buildRecipeSemanticText(note: any): string {
     const picked = steps.slice(0, maxSteps).map((s, idx) => `${idx + 1}. ${s}`);
     const stepsBlock = truncateText(picked.join('\n'), 1200);
     lines.push(`Steps:\n${stepsBlock}`);
+  }
+
+  const cookedNotesText =
+    recipe?.search?.cookedNotesText ??
+    computeCookedSearchFields(note?.cookedHistory ?? []).cookedNotesText;
+  if (cookedNotesText) {
+    lines.push(`Cooked notes:\n${truncateText(cookedNotesText, 1200)}`);
   }
 
   const text = lines.join('\n').trim();

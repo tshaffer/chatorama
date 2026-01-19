@@ -1,4 +1,5 @@
 import type { SearchMode, SearchScope, SearchSpec } from '../types/searchTypes';
+import { SEARCH_MAX_LIMIT } from './constants';
 
 export type BuildSearchSpecInput = {
   query?: string;
@@ -22,6 +23,9 @@ export type BuildSearchSpecInput = {
   keywords?: unknown;
   includeIngredients?: unknown;
   excludeIngredients?: unknown;
+  cooked?: unknown;
+  cookedWithinDays?: unknown;
+  minAvgCookedRating?: unknown;
   [k: string]: unknown;
 };
 
@@ -57,6 +61,13 @@ function normalizeBool(value: unknown): boolean | undefined {
   return undefined;
 }
 
+function normalizeCooked(value: unknown): 'any' | 'ever' | 'never' | undefined {
+  const s = String(value ?? '').trim().toLowerCase();
+  if (!s) return undefined;
+  if (s === 'any' || s === 'ever' || s === 'never') return s;
+  return undefined;
+}
+
 export function buildSearchSpec(input: BuildSearchSpecInput): SearchSpec {
   const rawQuery = normalizeString(input.query ?? input.text);
   const modeRaw = normalizeString(input.mode).toLowerCase();
@@ -73,7 +84,9 @@ export function buildSearchSpec(input: BuildSearchSpecInput): SearchSpec {
       : 'all';
 
   const limitNum = normalizeNumber(input.limit);
-  const limit = Number.isFinite(limitNum) ? Math.max(1, Math.min(50, Math.floor(limitNum!))) : 20;
+  const limit = Number.isFinite(limitNum)
+    ? Math.max(1, Math.min(SEARCH_MAX_LIMIT, Math.floor(limitNum!)))
+    : 20;
 
   return {
     query: rawQuery,
@@ -97,6 +110,9 @@ export function buildSearchSpec(input: BuildSearchSpecInput): SearchSpec {
       keywords: normalizeStringArray(input.keywords),
       includeIngredients: normalizeStringArray(input.includeIngredients),
       excludeIngredients: normalizeStringArray(input.excludeIngredients),
+      cooked: normalizeCooked(input.cooked),
+      cookedWithinDays: normalizeNumber(input.cookedWithinDays),
+      minAvgCookedRating: normalizeNumber(input.minAvgCookedRating),
     },
   };
 }
