@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { SearchExplain, SearchMode } from '@chatorama/chatalog-shared';
+import { SEARCH_MAX_LIMIT } from '@chatorama/chatalog-shared';
 import {
   useCreateSavedSearchMutation,
   useDeleteSavedSearchMutation,
@@ -70,7 +71,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 
 function clampLimit(n: number) {
   if (!Number.isFinite(n)) return 20;
-  return Math.max(1, Math.min(50, Math.floor(n)));
+  return Math.max(1, Math.min(SEARCH_MAX_LIMIT, Math.floor(n)));
 }
 
 function parseIngredientList(input: string): string[] {
@@ -791,7 +792,7 @@ export default function SearchPage() {
                     const nextQuery = { ...committed, limit: nextLimit };
                     applyCommitted(nextQuery);
                   }}
-                  inputProps={{ min: 1, max: 50, step: 1 }}
+                  inputProps={{ min: 1, max: SEARCH_MAX_LIMIT, step: 1 }}
                   size="small"
                   sx={{ width: 120 }}
                 />

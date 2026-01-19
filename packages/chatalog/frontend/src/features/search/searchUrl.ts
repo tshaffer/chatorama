@@ -1,4 +1,5 @@
 import type { SearchFilters, SearchModeUi, SearchQuery, SearchScope } from './searchTypes';
+import { SEARCH_MAX_LIMIT } from '@chatorama/chatalog-shared';
 
 function splitCsv(s: string | null | undefined): string[] {
   return (s ?? '')
@@ -31,7 +32,7 @@ function boolOrUndef(s: string | null): boolean | undefined {
 
 function clampLimit(n: number | undefined): number {
   if (!Number.isFinite(n as any)) return 20;
-  return Math.max(1, Math.min(50, Math.floor(n as number)));
+  return Math.max(1, Math.min(SEARCH_MAX_LIMIT, Math.floor(n as number)));
 }
 
 function clamp01(n: number | undefined): number | undefined {

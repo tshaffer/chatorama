@@ -11,7 +11,7 @@ import type {
   SearchHitNoteV1,
   SearchSpec,
 } from '@chatorama/chatalog-shared';
-import { buildSearchSpec } from '@chatorama/chatalog-shared';
+import { buildSearchSpec, SEARCH_MAX_LIMIT } from '@chatorama/chatalog-shared';
 import {
   buildIngredientFilterForSource,
   buildNoteFilterFromSpec,
@@ -744,7 +744,7 @@ searchRouter.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Search v1 supports targetTypes: [note]' });
     }
 
-    const limit = Math.min(Math.max(body.limit ?? 20, 1), 50);
+    const limit = Math.min(Math.max(body.limit ?? 20, 1), SEARCH_MAX_LIMIT);
     const offset = Math.max(body.offset ?? 0, 0);
 
     const filters = body.filters ?? {};

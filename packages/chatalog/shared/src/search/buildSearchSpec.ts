@@ -1,4 +1,5 @@
 import type { SearchMode, SearchScope, SearchSpec } from '../types/searchTypes';
+import { SEARCH_MAX_LIMIT } from './constants';
 
 export type BuildSearchSpecInput = {
   query?: string;
@@ -83,7 +84,9 @@ export function buildSearchSpec(input: BuildSearchSpecInput): SearchSpec {
       : 'all';
 
   const limitNum = normalizeNumber(input.limit);
-  const limit = Number.isFinite(limitNum) ? Math.max(1, Math.min(50, Math.floor(limitNum!))) : 20;
+  const limit = Number.isFinite(limitNum)
+    ? Math.max(1, Math.min(SEARCH_MAX_LIMIT, Math.floor(limitNum!)))
+    : 20;
 
   return {
     query: rawQuery,
