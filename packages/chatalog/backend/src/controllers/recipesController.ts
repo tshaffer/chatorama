@@ -1,7 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import type { PipelineStage } from 'mongoose';
 import { NoteModel } from '../models/Note';
 import { normalizeIngredientLine } from '../utils/recipeNormalize';
+import { computeCookedSearchFields } from '../utils/recipes/computeCookedSearchFields';
 import {
   buildIngredientFilterForSource,
   buildNoteFilterFromSpec,
@@ -69,6 +71,7 @@ export async function addCookedEvent(req: Request, res: Response, next: NextFunc
 
     const note = await NoteModel.findById(noteId).exec();
     if (!note) return res.status(404).json({ error: 'Note not found' });
+    if (!(note as any).recipe) return res.status(400).json({ error: 'Note is not a recipe' });
 
     const dt = cookedAt ? new Date(cookedAt) : new Date();
     if (Number.isNaN(dt.getTime())) return res.status(400).json({ error: 'Invalid cookedAt' });
@@ -83,7 +86,12 @@ export async function addCookedEvent(req: Request, res: Response, next: NextFunc
       ? (note as any).cookedHistory
       : [];
 
-    (note as any).cookedHistory.push({ cookedAt: dt.toISOString(), rating: r, notes });
+    (note as any).cookedHistory.push({
+      id: crypto.randomUUID(),
+      cookedAt: dt.toISOString(),
+      rating: r,
+      notes,
+    });
 
     (note as any).cookedHistory.sort((a: any, b: any) => {
       const ta = new Date(a.cookedAt).getTime();
@@ -91,7 +99,15 @@ export async function addCookedEvent(req: Request, res: Response, next: NextFunc
       return tb - ta;
     });
 
+    const fields = computeCookedSearchFields((note as any).cookedHistory);
+    (note as any).recipe.search = { ...fields };
+
     await note.save();
+    try {
+      await computeAndPersistEmbeddings(String(note._id));
+    } catch (err) {
+      console.error('[embeddings] addCookedEvent failed', note._id, err);
+    }
     return res.json(note.toJSON());
   } catch (err) {
     next(err);

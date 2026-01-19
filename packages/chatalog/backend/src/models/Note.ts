@@ -97,6 +97,16 @@ const RecipeIngredientSchema = new Schema<RecipeIngredient>(
   { _id: false }
 );
 
+const RecipeSearchSchema = new Schema(
+  {
+    lastCookedAt: { type: String },
+    cookedCount: { type: Number, default: 0 },
+    avgCookedRating: { type: Number },
+    cookedNotesText: { type: String },
+  },
+  { _id: false }
+);
+
 const RecipeMetaSchema = new Schema<RecipeMeta>(
   {
     sourceUrl: { type: String, required: true },
@@ -118,12 +128,14 @@ const RecipeMetaSchema = new Schema<RecipeMeta>(
     ingredients: { type: [RecipeIngredientSchema], default: [] },
     ingredientsEditedRaw: { type: [String], default: undefined },
     ingredientsEdited: { type: [RecipeIngredientSchema], default: undefined },
+    search: { type: RecipeSearchSchema, default: () => ({ cookedCount: 0 }) },
   },
   { _id: false }
 );
 
 const CookedEventSchema = new Schema<CookedEvent>(
   {
+    id: { type: String, required: true },
     cookedAt: { type: String, required: true },
     rating: Number,
     notes: String,
@@ -194,10 +206,10 @@ NoteSchema.index(
 // - mongosh: db.notes.dropIndex('notes_text_search_v1')
 // - mongosh: db.notes.createIndex({ title: 'text', tags: 'text', markdown: 'text' }, { name: 'notes_text_search_v2', weights: { title: 10, tags: 3, markdown: 1 }, default_language: 'english' })
 NoteSchema.index(
-  { title: 'text', tags: 'text', markdown: 'text' },
+  { title: 'text', tags: 'text', markdown: 'text', 'recipe.search.cookedNotesText': 'text' },
   {
     name: 'notes_text_search_v2',
-    weights: { title: 10, tags: 3, markdown: 1 },
+    weights: { title: 10, tags: 3, markdown: 1, 'recipe.search.cookedNotesText': 2 },
     default_language: 'english',
   }
 );

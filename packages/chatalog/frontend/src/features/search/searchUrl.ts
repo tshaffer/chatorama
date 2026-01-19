@@ -54,6 +54,9 @@ export function getDefaultSearchQuery(): SearchQuery {
       includeIngredients: [],
       excludeIngredients: [],
       importedOnly: undefined,
+      cooked: undefined,
+      cookedWithinDays: undefined,
+      minAvgCookedRating: undefined,
     },
   };
 }
@@ -101,6 +104,14 @@ export function parseSearchQueryFromUrl(
 
     includeIngredients: splitCsv(sp.get('includeIngredients') ?? sp.get('includeIng')),
     excludeIngredients: splitCsv(sp.get('excludeIngredients') ?? sp.get('excludeIng')),
+
+    cooked: (() => {
+      const cookedRaw = (sp.get('cooked') ?? '').trim().toLowerCase();
+      if (cookedRaw === 'any' || cookedRaw === 'ever' || cookedRaw === 'never') return cookedRaw;
+      return undefined;
+    })(),
+    cookedWithinDays: numOrUndef(sp.get('cookedWithin')),
+    minAvgCookedRating: numOrUndef(sp.get('minAvgCooked')),
   };
 
   if (!filters.keywords.length) {
@@ -150,6 +161,10 @@ export function buildSearchUrlFromQuery(q: SearchQuery): string {
     const excludeIng = joinCsv(f.excludeIngredients);
     if (includeIng) sp.set('includeIng', includeIng);
     if (excludeIng) sp.set('excludeIng', excludeIng);
+
+    if (f.cooked && f.cooked !== 'any') sp.set('cooked', f.cooked);
+    if (f.cookedWithinDays != null) sp.set('cookedWithin', String(f.cookedWithinDays));
+    if (f.minAvgCookedRating != null) sp.set('minAvgCooked', String(f.minAvgCookedRating));
   }
 
   const qs = sp.toString();

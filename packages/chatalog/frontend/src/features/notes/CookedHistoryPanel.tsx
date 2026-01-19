@@ -66,8 +66,8 @@ export default function CookedHistoryPanel({ note }: Props) {
         </Typography>
       ) : (
         <List dense disablePadding>
-          {history.map((evt, idx) => (
-            <ListItem key={`${evt.cookedAt}-${idx}`} disableGutters>
+            {history.map((evt, idx) => (
+              <ListItem key={evt.id ?? `${evt.cookedAt}-${idx}`} disableGutters>
               <ListItemText
                 primary={`${formatDate(evt.cookedAt)}${evt.rating ? ` • ${evt.rating}/5` : ''}`}
                 secondary={evt.notes}

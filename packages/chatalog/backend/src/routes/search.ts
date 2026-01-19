@@ -17,6 +17,7 @@ import {
   buildNoteFilterFromSpec,
   splitAndDedupTokens,
 } from '../utils/search/noteFilters';
+import { buildCookedHistoryFilter } from '../utils/search/cookedFilters';
 import { canonicalizeFilterTokens } from '../utils/ingredientTokens';
 import { canonicalizeIngredient } from '../utils/ingredientTokens';
 import { parsePowerQuery } from '../utils/search/powerQueryParser';
@@ -859,6 +860,9 @@ searchRouter.post('/', async (req, res, next) => {
         keywords: (filters as any).keywords ?? (body as any).keywords,
         includeIngredients: (filters as any).includeIngredients ?? (body as any).includeIngredients,
         excludeIngredients: (filters as any).excludeIngredients ?? (body as any).excludeIngredients,
+        cooked: (filters as any).cooked ?? (body as any).cooked,
+        cookedWithinDays: (filters as any).cookedWithinDays ?? (body as any).cookedWithinDays,
+        minAvgCookedRating: (filters as any).minAvgCookedRating ?? (body as any).minAvgCookedRating,
       });
 
       const includeTokens = canonicalizeFilterTokens(
@@ -900,6 +904,14 @@ searchRouter.post('/', async (req, res, next) => {
       // Build a baseFilter that represents "recipes + structured filters"
       // NOTE: this baseFilter is used by both channels (text + ingredient)
       baseFilter = mergeAnd(baseFilter, cleanedCombined);
+      mongoFilter = baseFilter;
+
+      const cookedFilter = buildCookedHistoryFilter({
+        cooked: spec.filters.cooked,
+        cookedWithinDays: spec.filters.cookedWithinDays,
+        minAvgCookedRating: spec.filters.minAvgCookedRating,
+      });
+      baseFilter = mergeAnd(baseFilter, cookedFilter);
       mongoFilter = baseFilter;
 
       // If we have a real query (not wildcard), do mode-based recipe search

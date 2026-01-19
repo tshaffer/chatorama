@@ -82,9 +82,18 @@ export type RecipeMeta = {
   ingredients?: RecipeIngredient[];
   ingredientsEditedRaw?: string[];
   ingredientsEdited?: RecipeIngredient[];
+  search?: RecipeSearch;
+};
+
+export type RecipeSearch = {
+  lastCookedAt?: string;
+  cookedCount: number;
+  avgCookedRating?: number;
+  cookedNotesText?: string;
 };
 
 export type CookedEvent = {
+  id: string;
   cookedAt: string; // ISO
   rating?: number; // 1..5
   notes?: string;

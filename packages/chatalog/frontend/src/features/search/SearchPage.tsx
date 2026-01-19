@@ -98,6 +98,10 @@ function formatIngredientList(tokens: string[] | undefined | null): string {
 const PREP_TIME_OPTIONS = [10, 15, 20, 30, 45, 60];
 const COOK_TIME_OPTIONS = [10, 15, 20, 30, 45, 60, 90, 120];
 const TOTAL_TIME_OPTIONS = [15, 30, 45, 60, 90, 120, 180];
+const COOKED_WITHIN_OPTIONS = [7, 30, 90, 365];
+const MIN_AVG_RATING_OPTIONS = [3, 3.5, 4, 4.5];
+
+type CookedFilterOption = 'any' | 'ever' | 'never';
 
 export default function SearchPage() {
   const navigate = useNavigate();
@@ -122,6 +126,11 @@ export default function SearchPage() {
   const [draftTotalTimeMax, setDraftTotalTimeMax] = useState<number | undefined>(undefined);
   const [draftIncludeIngredientsInput, setDraftIncludeIngredientsInput] = useState<string>('');
   const [draftExcludeIngredientsInput, setDraftExcludeIngredientsInput] = useState<string>('');
+  const [draftCooked, setDraftCooked] = useState<CookedFilterOption>('any');
+  const [draftCookedWithinDays, setDraftCookedWithinDays] = useState<number | undefined>(undefined);
+  const [draftMinAvgCookedRating, setDraftMinAvgCookedRating] = useState<number | undefined>(
+    undefined,
+  );
   const [draftSubjectId, setDraftSubjectId] = useState<string>('');
   const [draftTopicId, setDraftTopicId] = useState<string>('');
   const [draftImportedOnly, setDraftImportedOnly] = useState(false);
@@ -238,6 +247,11 @@ export default function SearchPage() {
         cuisine: effectiveScope === 'recipes' ? cuisineValues : [],
         category: effectiveScope === 'recipes' ? categoryValues : [],
         keywords: effectiveScope === 'recipes' ? keywordValues : [],
+        cooked: effectiveScope === 'recipes' ? committed.filters.cooked : undefined,
+        cookedWithinDays:
+          effectiveScope === 'recipes' ? committed.filters.cookedWithinDays : undefined,
+        minAvgCookedRating:
+          effectiveScope === 'recipes' ? committed.filters.minAvgCookedRating : undefined,
         includeIngredients:
           effectiveScope === 'recipes'
             ? (committed.filters.includeIngredients ?? []).map((t) => t.trim()).filter(Boolean)
@@ -511,6 +525,9 @@ export default function SearchPage() {
     setDraftTotalTimeMax(maxTotalMinutes);
     setDraftIncludeIngredientsInput(formatIngredientList(includeIngredientValues));
     setDraftExcludeIngredientsInput(formatIngredientList(excludeIngredientValues));
+    setDraftCooked((committed.filters.cooked ?? 'any') as CookedFilterOption);
+    setDraftCookedWithinDays(committed.filters.cookedWithinDays);
+    setDraftMinAvgCookedRating(committed.filters.minAvgCookedRating);
     setDraftSubjectId(subjectIdFromQuery || '');
     setDraftTopicId(topicIdFromQuery || '');
     setDraftImportedOnly(importedOnlyFromQuery);
@@ -539,6 +556,9 @@ export default function SearchPage() {
       nextFilters.totalTimeMax = draftTotalTimeMax;
       nextFilters.includeIngredients = parseIngredientList(draftIncludeIngredientsInput);
       nextFilters.excludeIngredients = parseIngredientList(draftExcludeIngredientsInput);
+      nextFilters.cooked = draftCooked === 'any' ? undefined : draftCooked;
+      nextFilters.cookedWithinDays = draftCookedWithinDays;
+      nextFilters.minAvgCookedRating = draftMinAvgCookedRating;
     }
     if (isNotesScope) {
       nextFilters.subjectId = draftSubjectId || undefined;
@@ -571,6 +591,9 @@ export default function SearchPage() {
             totalTimeMax: undefined,
             includeIngredients: [],
             excludeIngredients: [],
+            cooked: undefined,
+            cookedWithinDays: undefined,
+            minAvgCookedRating: undefined,
           }
           : {}),
         ...(isNotesScope
@@ -590,6 +613,9 @@ export default function SearchPage() {
     setDraftTotalTimeMax(undefined);
     setDraftIncludeIngredientsInput('');
     setDraftExcludeIngredientsInput('');
+    setDraftCooked('any');
+    setDraftCookedWithinDays(undefined);
+    setDraftMinAvgCookedRating(undefined);
     setDraftSubjectId('');
     setDraftTopicId('');
     setDraftImportedOnly(false);
@@ -614,6 +640,10 @@ export default function SearchPage() {
         keywordValues.length ||
         includeIngredientValues.length ||
         excludeIngredientValues.length)) ||
+    (isRecipeScope &&
+      ((committed.filters.cooked && committed.filters.cooked !== 'any') ||
+        committed.filters.cookedWithinDays != null ||
+        committed.filters.minAvgCookedRating != null)) ||
     (committed.mode && committed.mode !== 'auto'),
   );
 
@@ -1609,6 +1639,64 @@ export default function SearchPage() {
                     <MenuItem value="">Any</MenuItem>
                     {TOTAL_TIME_OPTIONS.map((v) => (
                       <MenuItem key={`total-${v}`} value={v}>{v}</MenuItem>
+                    ))}
+                  </TextField>
+                </Stack>
+
+                <Typography variant="subtitle2" sx={{ mb: 0.5, mt: 2 }}>
+                  Cooked history
+                </Typography>
+                <Stack spacing={2}>
+                  <TextField
+                    select
+                    label="Cooked"
+                    value={draftCooked}
+                    onChange={(e) => setDraftCooked(e.target.value as CookedFilterOption)}
+                    size="small"
+                    fullWidth
+                  >
+                    <MenuItem value="any">Any</MenuItem>
+                    <MenuItem value="ever">Cooked at least once</MenuItem>
+                    <MenuItem value="never">Never cooked</MenuItem>
+                  </TextField>
+                  <TextField
+                    select
+                    label="Cooked within"
+                    value={draftCookedWithinDays ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const next =
+                        raw === '' ? undefined : Number.isFinite(Number(raw)) ? Number(raw) : undefined;
+                      setDraftCookedWithinDays(next);
+                    }}
+                    size="small"
+                    fullWidth
+                  >
+                    <MenuItem value="">Any time</MenuItem>
+                    {COOKED_WITHIN_OPTIONS.map((v) => (
+                      <MenuItem key={`within-${v}`} value={v}>
+                        {v} days
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    select
+                    label="Avg rating at least"
+                    value={draftMinAvgCookedRating ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const next =
+                        raw === '' ? undefined : Number.isFinite(Number(raw)) ? Number(raw) : undefined;
+                      setDraftMinAvgCookedRating(next);
+                    }}
+                    size="small"
+                    fullWidth
+                  >
+                    <MenuItem value="">Any</MenuItem>
+                    {MIN_AVG_RATING_OPTIONS.map((v) => (
+                      <MenuItem key={`avg-${v}`} value={v}>
+                        {v}
+                      </MenuItem>
                     ))}
                   </TextField>
                 </Stack>

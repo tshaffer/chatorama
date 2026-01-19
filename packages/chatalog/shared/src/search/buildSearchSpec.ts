@@ -22,6 +22,9 @@ export type BuildSearchSpecInput = {
   keywords?: unknown;
   includeIngredients?: unknown;
   excludeIngredients?: unknown;
+  cooked?: unknown;
+  cookedWithinDays?: unknown;
+  minAvgCookedRating?: unknown;
   [k: string]: unknown;
 };
 
@@ -54,6 +57,13 @@ function normalizeBool(value: unknown): boolean | undefined {
   if (!s) return undefined;
   if (s === '1' || s === 'true' || s === 'yes') return true;
   if (s === '0' || s === 'false' || s === 'no') return false;
+  return undefined;
+}
+
+function normalizeCooked(value: unknown): 'any' | 'ever' | 'never' | undefined {
+  const s = String(value ?? '').trim().toLowerCase();
+  if (!s) return undefined;
+  if (s === 'any' || s === 'ever' || s === 'never') return s;
   return undefined;
 }
 
@@ -97,6 +107,9 @@ export function buildSearchSpec(input: BuildSearchSpecInput): SearchSpec {
       keywords: normalizeStringArray(input.keywords),
       includeIngredients: normalizeStringArray(input.includeIngredients),
       excludeIngredients: normalizeStringArray(input.excludeIngredients),
+      cooked: normalizeCooked(input.cooked),
+      cookedWithinDays: normalizeNumber(input.cookedWithinDays),
+      minAvgCookedRating: normalizeNumber(input.minAvgCookedRating),
     },
   };
 }

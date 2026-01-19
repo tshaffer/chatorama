@@ -32,5 +32,8 @@ export const selectSearchSpec = createSelector([selectSearchCommitted], (search)
     keywords: search.filters.keywords,
     includeIngredients: search.filters.includeIngredients,
     excludeIngredients: search.filters.excludeIngredients,
+    cooked: search.filters.cooked,
+    cookedWithinDays: search.filters.cookedWithinDays,
+    minAvgCookedRating: search.filters.minAvgCookedRating,
   })
 );

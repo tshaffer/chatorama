@@ -16,6 +16,7 @@ export function buildSearchRequestV1(spec: SearchSpec): SearchRequestV1 {
   const keywords = sortedCsv(f.keywords);
   const includeIngredients = sortedCsv(f.includeIngredients);
   const excludeIngredients = sortedCsv(f.excludeIngredients);
+  const cooked = f.cooked === 'any' ? undefined : f.cooked;
 
   return {
     version: 1,
@@ -40,6 +41,9 @@ export function buildSearchRequestV1(spec: SearchSpec): SearchRequestV1 {
       keywords,
       includeIngredients,
       excludeIngredients,
+      cooked,
+      cookedWithinDays: f.cookedWithinDays,
+      minAvgCookedRating: f.minAvgCookedRating,
       createdAtFrom: undefined,
       createdAtTo: undefined,
       importedOnly: f.importedOnly ? true : undefined,
