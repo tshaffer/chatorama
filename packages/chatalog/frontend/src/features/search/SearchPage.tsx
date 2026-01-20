@@ -10,15 +10,12 @@ import {
   useSearchMutation,
 } from './searchApi';
 import { useGetSubjectsWithTopicsQuery, resolveSubjectAndTopicNames } from '../subjects/subjectsApi';
-import SearchBox from '../../components/SearchBox';
-import { parseSearchInput } from './queryParser';
 import { useAppDispatch, useAppSelector } from '../../store';
 import {
   hydrateFromUrl,
   resetDraftToCommitted,
   setDraftMinSemanticScore,
   setDraftMode,
-  setDraftText,
   setDraftUpdatedFrom,
   setDraftUpdatedTo,
   setFiltersDialogOpen,
@@ -136,6 +133,8 @@ export default function SearchPage() {
   const [draftTopicId, setDraftTopicId] = useState<string>('');
   const [draftImportedOnly, setDraftImportedOnly] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [selectedSavedSearchId, setSelectedSavedSearchId] = useState<string>('');
+  const [manageSavedSearchesOpen, setManageSavedSearchesOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saveErrorMessage, setSaveErrorMessage] = useState<string>('');
   const [explainEnabled, setExplainEnabled] = useState(false);
@@ -171,6 +170,12 @@ export default function SearchPage() {
   const savedSearches = savedSearchesData?.items ?? [];
   const [createSavedSearch, createSavedSearchState] = useCreateSavedSearchMutation();
   const [deleteSavedSearch] = useDeleteSavedSearchMutation();
+
+  useEffect(() => {
+    if (!selectedSavedSearchId) return;
+    const stillExists = savedSearches.some((s) => s.id === selectedSavedSearchId);
+    if (!stillExists) setSelectedSavedSearchId('');
+  }, [savedSearches, selectedSavedSearchId]);
 
   const cuisineCounts = useMemo(() => {
     return new Map((recipeFacets?.cuisines ?? []).map((b) => [b.value, b.count]));
@@ -486,36 +491,6 @@ export default function SearchPage() {
     };
   }, []);
 
-  const onSubmitQuery = () => {
-    const parsed = parseSearchInput(draft.text);
-    const nextText = (parsed.q ?? '').trim();
-    const scopeParam = (parsed.params.scope ?? '').trim().toLowerCase();
-    const scope =
-      scopeParam === 'recipes' || scopeParam === 'notes' || scopeParam === 'all'
-        ? scopeParam
-        : undefined;
-    if (scope) {
-      dispatch(setSelectedScope(scope as any));
-    }
-
-    const nextQuery = {
-      ...committed,
-      text: nextText,
-      scope: (scope ?? selectedScope) as any,
-      filters: {
-        ...committed.filters,
-        tags: parsed.params.tags
-          ? parsed.params.tags.split(',').map((t) => t.trim()).filter(Boolean)
-          : [],
-        status: parsed.params.status?.trim() || undefined,
-        updatedFrom: parsed.params.updatedFrom?.trim() || undefined,
-        updatedTo: parsed.params.updatedTo?.trim() || undefined,
-      },
-    };
-
-    applyCommitted(nextQuery);
-  };
-
   const openFilters = () => {
     dispatch(resetDraftToCommitted());
     setDraftCuisine(cuisineValues[0] ?? '');
@@ -723,122 +698,142 @@ export default function SearchPage() {
         <Stack spacing={2}>
           <Typography variant="h5">Search</Typography>
 
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Stack spacing={2}>
-              <Tooltip title="Edit the query in the Search box below and press Enter">
-                <Box sx={{ width: '100%' }}>
-                  <TextField
-                    label="Query (read-only)"
-                    value={committed.text}
-                    placeholder="Type to search..."
-                    autoFocus
-                    fullWidth
-                    InputProps={{ readOnly: true }}
-                    sx={(theme) => ({
-                      '& .MuiInputBase-root': {
-                        bgcolor: theme.palette.action.disabledBackground,
-                      },
-                      '& .MuiOutlinedInput-notchedOutline': {
-                        borderColor: theme.palette.divider,
-                        borderStyle: 'solid',
-                      },
-                    })}
-                  />
-                </Box>
-              </Tooltip>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: '256px' }}>
+            <Paper id="search-results" variant="outlined" sx={{ px: 2, py: 1, flexShrink: 0 }}>
+              <Stack spacing={2}>
+                <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+                  <Typography variant="body2" color="text.secondary">
+                    {results.length} result{results.length === 1 ? '' : 's'}
+                  </Typography>
 
-              <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-                <ToggleButtonGroup
-                  value={selectedScope}
-                  exclusive
-                  onChange={(_e, v) => {
-                    if (!v) return;
-                    dispatch(setSelectedScope(v as any));
-                    const nextQuery = {
-                      ...committed,
-                      scope: v as any,
-                    };
-                    applyCommitted(nextQuery);
-                  }}
-                  size="small"
-                >
-                  <ToggleButton value="all">All</ToggleButton>
-                  <ToggleButton value="notes">Notes</ToggleButton>
-                  <ToggleButton value="recipes">Recipes</ToggleButton>
-                </ToggleButtonGroup>
-
-                <ToggleButtonGroup
-                  value={committed.mode}
-                  exclusive
-                  onChange={(_e, v) => {
-                    if (!v) return;
-                    const nextQuery = { ...committed, mode: v as any };
-                    applyCommitted(nextQuery);
-                  }}
-                  size="small"
-                >
-                  <ToggleButton value="auto">Auto</ToggleButton>
-                  <ToggleButton value="hybrid">Hybrid</ToggleButton>
-                  <ToggleButton value="semantic">Semantic</ToggleButton>
-                  <ToggleButton value="keyword">Keyword</ToggleButton>
-                </ToggleButtonGroup>
-
-                <TextField
-                  label="Limit"
-                  type="number"
-                  value={committed.limit}
-                  onChange={(e) => {
-                    const nextLimit = clampLimit(Number(e.target.value));
-                    const nextQuery = { ...committed, limit: nextLimit };
-                    applyCommitted(nextQuery);
-                  }}
-                  inputProps={{ min: 1, max: SEARCH_MAX_LIMIT, step: 1 }}
-                  size="small"
-                  sx={{ width: 120 }}
-                />
-
-                {isFetching && (
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <CircularProgress size={18} />
-                    <Typography variant="body2">Searching…</Typography>
-                  </Stack>
-                )}
-              </Stack>
-
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                {effectiveSubjectId || effectiveTopicId ? (
-                  <Chip
-                    label={`Within: ${[
-                      effectiveSubjectName ??
-                      (effectiveSubjectId ? `Subject ${effectiveSubjectId}` : ''),
-                      effectiveTopicName ?? (effectiveTopicId ? `Topic ${effectiveTopicId}` : ''),
-                    ]
-                      .filter(Boolean)
-                      .join(' / ')}`}
-                    onDelete={() => {
+                  <ToggleButtonGroup
+                    value={selectedScope}
+                    exclusive
+                    onChange={(_e, v) => {
+                      if (!v) return;
+                      dispatch(setSelectedScope(v as any));
                       const nextQuery = {
                         ...committed,
-                        filters: {
-                          ...committed.filters,
-                          subjectId: undefined,
-                          topicId: undefined,
-                        },
+                        scope: v as any,
                       };
                       applyCommitted(nextQuery);
-                      setOverrideSubjectId('');
-                      setOverrideTopicId('');
                     }}
                     size="small"
-                    variant="outlined"
+                  >
+                    <ToggleButton value="all">All</ToggleButton>
+                    <ToggleButton value="notes">Notes</ToggleButton>
+                    <ToggleButton value="recipes">Recipes</ToggleButton>
+                  </ToggleButtonGroup>
+
+                  <ToggleButtonGroup
+                    value={committed.mode}
+                    exclusive
+                    onChange={(_e, v) => {
+                      if (!v) return;
+                      const nextQuery = { ...committed, mode: v as any };
+                      applyCommitted(nextQuery);
+                    }}
+                    size="small"
+                  >
+                    <ToggleButton value="auto">Auto</ToggleButton>
+                    <ToggleButton value="hybrid">Hybrid</ToggleButton>
+                    <ToggleButton value="semantic">Semantic</ToggleButton>
+                    <ToggleButton value="keyword">Keyword</ToggleButton>
+                  </ToggleButtonGroup>
+
+                  <TextField
+                    label="Limit"
+                    type="number"
+                    value={committed.limit}
+                    onChange={(e) => {
+                      const nextLimit = clampLimit(Number(e.target.value));
+                      const nextQuery = { ...committed, limit: nextLimit };
+                      applyCommitted(nextQuery);
+                    }}
+                    inputProps={{ min: 1, max: SEARCH_MAX_LIMIT, step: 1 }}
+                    size="small"
+                    sx={{ width: 120 }}
                   />
+
+                  {isFetching && (
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <CircularProgress size={18} />
+                      <Typography variant="body2">Searching…</Typography>
+                    </Stack>
+                  )}
+                </Stack>
+
+                {error ? (
+                  <Alert severity="error">Search failed. Check server logs.</Alert>
                 ) : null}
               </Stack>
+            </Paper>
 
-              {error ? (
-                <Alert severity="error">Search failed. Check server logs.</Alert>
-              ) : null}
-            </Stack>
-          </Paper>
+            <Paper id="saved-searches" variant="outlined" sx={{ px: 2, py: 1, flex: 1 }}>
+              <Stack
+                direction="row"
+                spacing={1}
+                alignItems="center"
+                useFlexGap
+                flexWrap="wrap"
+                sx={{ minHeight: 40, justifyContent: 'flex-end' }}
+              >
+                <Typography variant="subtitle2" sx={{ whiteSpace: 'nowrap' }}>
+                  Saved Searches
+                </Typography>
+
+                <TextField
+                  select
+                  size="small"
+                  value={selectedSavedSearchId}
+                  onChange={(e) => {
+                    const id = String(e.target.value);
+                    setSelectedSavedSearchId(id);
+                    if (!id) return;
+
+                    const s = savedSearches.find((x) => x.id === id);
+                    if (!s) return;
+
+                    const normalized = normalizeSavedQuery(s.query as any);
+                    applyCommitted(normalized);
+                  }}
+                  sx={{ minWidth: 260, flex: '1 1 260px' }}
+                >
+                  <MenuItem value="">
+                    <em>{savedSearches.length ? 'Select…' : 'None yet'}</em>
+                  </MenuItem>
+
+                  {savedSearches
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((s) => (
+                      <MenuItem key={s.id} value={s.id}>
+                        {s.name}
+                      </MenuItem>
+                    ))}
+                </TextField>
+
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={openSaveDialog}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  Save…
+                </Button>
+
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setManageSavedSearchesOpen(true)}
+                  disabled={savedSearches.length === 0}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  Manage…
+                </Button>
+              </Stack>
+            </Paper>
+          </Box>
 
           {!shouldQuery ? (
             <Typography variant="body2" color="text.secondary">
@@ -848,83 +843,9 @@ export default function SearchPage() {
           ) : null}
         </Stack>
       </Box>
-      <Box sx={{ mt: 2 }}>
-        <Paper variant="outlined" sx={{ p: 2 }}>
-          <Stack spacing={1}>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="subtitle2">Saved searches</Typography>
-              <Button size="small" variant="outlined" onClick={openSaveDialog}>
-                Save search…
-              </Button>
-            </Stack>
-            {savedSearches.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                None yet.
-              </Typography>
-            ) : (
-              <Stack spacing={0.5}>
-                {savedSearches.map((s) => (
-                  <Stack
-                    key={s.id}
-                    direction="row"
-                    spacing={1}
-                    alignItems="center"
-                    sx={{ width: '100%' }}
-                  >
-                    <Button
-                      size="small"
-                      variant="text"
-                      onClick={() => {
-                        const normalized = normalizeSavedQuery(s.query as any);
-                        applyCommitted(normalized);
-                      }}
-                      sx={{ justifyContent: 'flex-start', textTransform: 'none' }}
-                      fullWidth
-                    >
-                      {s.name}
-                    </Button>
-                    <Tooltip title="Delete saved search">
-                      <IconButton
-                        size="small"
-                        onClick={() => deleteSavedSearch(s.id)}
-                        aria-label={`Delete ${s.name}`}
-                      >
-                        <DeleteOutlineIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
-                ))}
-              </Stack>
-            )}
-          </Stack>
-        </Paper>
-      </Box>
-
       <Box sx={{ flex: 1, minHeight: 0, mt: 2 }}>
         {shouldQuery ? (
           <Paper variant="outlined" sx={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <Box sx={{ px: 2, py: 1, flexShrink: 0 }}>
-              <Typography variant="body2" color="text.secondary">
-                {results.length} result{results.length === 1 ? '' : 's'}
-                {committed.mode ? ` • mode: ${committed.mode}` : ''}
-                {selectedScope !== 'all' ? ` • scope: ${selectedScope}` : ''}
-              </Typography>
-            </Box>
-            <Box sx={{ px: 2, pb: 1, flexShrink: 0 }}>
-              <SearchBox
-                value={draft.text}
-                onChange={(v) => dispatch(setDraftText(v))}
-                onSubmit={onSubmitQuery}
-                placeholder="Search…"
-                sx={(theme) => ({
-                  width: '100%',
-                  maxWidth: 720,
-                  bgcolor: theme.palette.background.paper,
-                  border: `1px solid ${theme.palette.divider}`,
-                  borderRadius: 999,
-                })}
-              />
-            </Box>
             <Box sx={{ px: 2, pb: 1, flexShrink: 0 }}>
               <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ alignItems: 'center' }}>
                 {hasAnyFilterChips && (
@@ -1278,8 +1199,8 @@ export default function SearchPage() {
                                   {explain?.sources?.keyword && explain?.sources?.semantic
                                     ? 'Matched by keyword and semantic similarity'
                                     : explain?.sources?.keyword
-                                    ? 'Matched by keyword only'
-                                    : 'Matched by semantic similarity only'}
+                                      ? 'Matched by keyword only'
+                                      : 'Matched by semantic similarity only'}
                                 </Typography>
                                 <Typography variant="caption" color="text.secondary">
                                   {(() => {
@@ -1311,10 +1232,10 @@ export default function SearchPage() {
                                     <Typography variant="caption" color="text.secondary">
                                       Keyword rank: {explain.sources.keyword.rank}
                                       {explain?.fusion?.contributions?.keyword != null &&
-                                      explain?.fusion?.k != null
+                                        explain?.fusion?.k != null
                                         ? ` • 1 / (${explain.fusion.k} + ${explain.sources.keyword.rank}) = ${formatExplainNumber(
-                                            explain.fusion.contributions.keyword,
-                                          )}`
+                                          explain.fusion.contributions.keyword,
+                                        )}`
                                         : ''}
                                     </Typography>
                                   ) : null}
@@ -1323,14 +1244,14 @@ export default function SearchPage() {
                                       Semantic rank: {explain.sources.semantic.rank}
                                       {explain?.sources?.semantic?.score != null
                                         ? ` • raw score: ${formatExplainNumber(
-                                            explain.sources.semantic.score,
-                                          )}`
+                                          explain.sources.semantic.score,
+                                        )}`
                                         : ''}
                                       {explain?.fusion?.contributions?.semantic != null &&
-                                      explain?.fusion?.k != null
+                                        explain?.fusion?.k != null
                                         ? ` • 1 / (${explain.fusion.k} + ${explain.sources.semantic.rank}) = ${formatExplainNumber(
-                                            explain.fusion.contributions.semantic,
-                                          )}`
+                                          explain.fusion.contributions.semantic,
+                                        )}`
                                         : ''}
                                     </Typography>
                                   ) : null}
@@ -1344,8 +1265,8 @@ export default function SearchPage() {
                                   Method: {explain?.fusion?.method ?? 'rrf'}
                                   {explain?.fusion?.combinedScore != null
                                     ? ` • combined score: ${formatExplainNumber(
-                                        explain.fusion.combinedScore,
-                                      )}`
+                                      explain.fusion.combinedScore,
+                                    )}`
                                     : ''}
                                 </Typography>
                               </Box>
@@ -1736,6 +1657,59 @@ export default function SearchPage() {
           >
             Save
           </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={manageSavedSearchesOpen}
+        onClose={() => setManageSavedSearchesOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Manage saved searches</DialogTitle>
+        <DialogContent dividers>
+          {savedSearches.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No saved searches yet.
+            </Typography>
+          ) : (
+            <List disablePadding>
+              {savedSearches
+                .slice()
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((s) => (
+                  <ListItemButton
+                    key={s.id}
+                    onClick={() => { }}
+                    sx={{ cursor: 'default' }}
+                  >
+                    <ListItemText primary={s.name} />
+                    <Tooltip title="Delete saved search">
+                      <IconButton
+                        edge="end"
+                        onClick={(e) => {
+                          e.stopPropagation();
+
+                          const ok = window.confirm(`Delete saved search "${s.name}"?`);
+                          if (!ok) return;
+
+                          deleteSavedSearch(s.id);
+
+                          if (selectedSavedSearchId === s.id) {
+                            setSelectedSavedSearchId('');
+                          }
+                        }}
+                        aria-label={`Delete ${s.name}`}
+                      >
+                        <DeleteOutlineIcon />
+                      </IconButton>
+                    </Tooltip>
+                  </ListItemButton>
+                ))}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setManageSavedSearchesOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
       <SearchDebugPanel
