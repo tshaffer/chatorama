@@ -9,7 +9,6 @@ import {
   useGetTopicNotesWithRelationsQuery, // ⬅️ NEW
   useUploadImageMutation,
   useAttachAssetToNoteMutation,
-  useSearchRecipesQuery,
 } from './notesApi';
 import {
   type Note,
@@ -41,9 +40,6 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  List,
-  ListItemButton,
-  ListItemText,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DoneIcon from '@mui/icons-material/Done';
@@ -446,11 +442,6 @@ export default function NoteEditor({
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [recipePropsOpen, setRecipePropsOpen] = useState(false);
   const [editIngredientsOpen, setEditIngredientsOpen] = useState(false);
-  const [recipeSearchOpen, setRecipeSearchOpen] = useState(false);
-  const [recipeSearchQuery, setRecipeSearchQuery] = useState('');
-  const [recipeSearchMode, setRecipeSearchMode] = useState<'any' | 'all'>('any');
-  const [recipeSearchSubmitted, setRecipeSearchSubmitted] = useState<string | null>(null);
-  const [recipeSearchModeSubmitted, setRecipeSearchModeSubmitted] = useState<'any' | 'all'>('any');
   const [resizeOpen, setResizeOpen] = useState(false);
   const [resizeTarget, setResizeTarget] = useState<{
     src?: string;
@@ -464,12 +455,6 @@ export default function NoteEditor({
     msg: string;
     sev: 'success' | 'error';
   }>({ open: false, msg: '', sev: 'success' });
-
-  const recipeSearchArgs = recipeSearchSubmitted
-    ? { query: recipeSearchSubmitted, mode: recipeSearchModeSubmitted }
-    : skipToken;
-  const { data: recipeSearchResults = [], isFetching: isRecipeSearching } =
-    useSearchRecipesQuery(recipeSearchArgs);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastInitNoteIdRef = useRef<string | undefined>(undefined);
@@ -1187,15 +1172,6 @@ export default function NoteEditor({
               Insert Image...
             </Button>
           )}
-          {!editing && (
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => setRecipeSearchOpen(true)}
-            >
-              Recipe Search
-            </Button>
-          )}
           <Tooltip title="View note properties">
             <span>
               <Button
@@ -1676,73 +1652,6 @@ export default function NoteEditor({
           {renderPreviewContent()}
         </Box>
       )}
-
-      <Dialog
-        open={recipeSearchOpen}
-        onClose={() => setRecipeSearchOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Recipe Search</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2}>
-            <TextField
-              label="Ingredients"
-              value={recipeSearchQuery}
-              onChange={(e) => setRecipeSearchQuery(e.target.value)}
-              placeholder="shrimp garlic"
-              fullWidth
-            />
-            <FormControl fullWidth size="small">
-              <InputLabel id="recipe-search-mode">Mode</InputLabel>
-              <Select
-                labelId="recipe-search-mode"
-                label="Mode"
-                value={recipeSearchMode}
-                onChange={(e) => setRecipeSearchMode(e.target.value as 'any' | 'all')}
-              >
-                <MenuItem value="any">Any</MenuItem>
-                <MenuItem value="all">All</MenuItem>
-              </Select>
-            </FormControl>
-
-            {recipeSearchSubmitted && (
-              <>
-                <Typography variant="caption" color="text.secondary">
-                  {isRecipeSearching ? 'Searching…' : `${recipeSearchResults.length} results`}
-                </Typography>
-                <List dense disablePadding>
-                  {recipeSearchResults.map((result) => (
-                    <ListItemButton
-                      key={result.id}
-                      onClick={() => {
-                        goToNote(result);
-                        setRecipeSearchOpen(false);
-                      }}
-                    >
-                      <ListItemText primary={result.title || 'Untitled'} />
-                    </ListItemButton>
-                  ))}
-                </List>
-              </>
-            )}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRecipeSearchOpen(false)}>Close</Button>
-          <Button
-            variant="contained"
-            onClick={() => {
-              const trimmed = recipeSearchQuery.trim();
-              if (!trimmed) return;
-              setRecipeSearchSubmitted(trimmed);
-              setRecipeSearchModeSubmitted(recipeSearchMode);
-            }}
-          >
-            Search
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <RecipePropertiesDialog
         open={recipePropsOpen}
