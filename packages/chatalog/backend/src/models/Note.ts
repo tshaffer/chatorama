@@ -44,6 +44,15 @@ export interface NoteDoc extends Document {
   // source metadata
   sourceType?: string;
   sourceChatId?: string;
+  pdfAssetId?: string | null;
+  pdfSummaryMarkdown?: string;
+  derived?: {
+    pdf?: {
+      extractedText?: string;
+      pageCount?: number;
+      extractedAt?: Date;
+    };
+  };
 
   importBatchId?: string;
   importedAt?: Date;
@@ -149,7 +158,7 @@ const NoteSchema = new Schema<NoteDoc>(
     topicId:   { type: String, index: true },
     title:     { type: String, required: true, default: 'Untitled' },
     slug:      { type: String, required: true, index: true },
-    markdown:  { type: String, required: true, default: '' },
+    markdown:  { type: String, required: false, default: '' },
     summary:   { type: String },
     status:    { type: String, enum: NOTE_STATUS_VALUES },
     tags:      { type: [String], default: [] },
@@ -184,6 +193,15 @@ const NoteSchema = new Schema<NoteDoc>(
 
     sourceType: { type: String },
     sourceChatId: { type: String },
+    pdfAssetId: { type: String, default: null, index: true },
+    pdfSummaryMarkdown: { type: String, default: '' },
+    derived: {
+      pdf: {
+        extractedText: { type: String, default: '' },
+        pageCount: { type: Number },
+        extractedAt: { type: Date },
+      },
+    },
 
     importBatchId: { type: String, index: true },
     importedAt: { type: Date, default: Date.now },
@@ -201,15 +219,29 @@ NoteSchema.index(
   { unique: true, partialFilterExpression: { slug: { $type: 'string' } } }
 );
 
-// Full-text search (v2): title highest, tags medium, markdown lowest.
+// Full-text search (v3): title highest, tags medium, markdown lowest.
 // To rebuild locally:
 // - mongosh: db.notes.dropIndex('notes_text_search_v1')
-// - mongosh: db.notes.createIndex({ title: 'text', tags: 'text', markdown: 'text' }, { name: 'notes_text_search_v2', weights: { title: 10, tags: 3, markdown: 1 }, default_language: 'english' })
+// - mongosh: db.notes.createIndex({ title: 'text', tags: 'text', markdown: 'text' }, { name: 'notes_text_search_v3', weights: { title: 10, tags: 3, markdown: 1 }, default_language: 'english' })
 NoteSchema.index(
-  { title: 'text', tags: 'text', markdown: 'text', 'recipe.search.cookedNotesText': 'text' },
   {
-    name: 'notes_text_search_v2',
-    weights: { title: 10, tags: 3, markdown: 1, 'recipe.search.cookedNotesText': 2 },
+    title: 'text',
+    tags: 'text',
+    markdown: 'text',
+    pdfSummaryMarkdown: 'text',
+    'derived.pdf.extractedText': 'text',
+    'recipe.search.cookedNotesText': 'text',
+  },
+  {
+    name: 'notes_text_search_v3',
+    weights: {
+      title: 10,
+      tags: 3,
+      pdfSummaryMarkdown: 2,
+      'derived.pdf.extractedText': 1,
+      markdown: 1,
+      'recipe.search.cookedNotesText': 2,
+    },
     default_language: 'english',
   }
 );
@@ -260,6 +292,9 @@ const CONTENT_PATH_PREFIXES = [
   'tags',
   'recipe',
   'cookedHistory',
+  'pdfAssetId',
+  'pdfSummaryMarkdown',
+  'derived',
 ];
 
 const SYSTEM_ONLY_PREFIXES = [

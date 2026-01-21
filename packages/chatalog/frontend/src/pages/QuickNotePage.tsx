@@ -25,10 +25,10 @@ import {
   Select,
   MenuItem,
 } from '@mui/material';
-import Autocomplete from '@mui/material/Autocomplete';
 
 import MarkdownBody from '../components/MarkdownBody';
 import '../styles/markdown.css';
+import SubjectTopicPickerDialog from '../components/SubjectTopicPickerDialog';
 
 import {
   useGetQuickNotesQuery,
@@ -81,8 +81,10 @@ export default function QuickNotePage() {
 
   // Convert dialog state
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
-  const [subjectLabel, setSubjectLabel] = useState('');
-  const [topicLabel, setTopicLabel] = useState('');
+  const [convertDefaults, setConvertDefaults] = useState<{
+    subjectLabel: string;
+    topicLabel: string;
+  }>({ subjectLabel: '', topicLabel: '' });
   const markdownInputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [resizeOpen, setResizeOpen] = useState(false);
@@ -160,48 +162,6 @@ export default function QuickNotePage() {
     setResizeOpen(true);
   }, []);
 
-  // Build options like ImportResultsDialog
-  const subjectOptions = useMemo(() => {
-    const set = new Set<string>();
-    subjects
-      .map((s: Subject) => s.name?.trim())
-      .filter(Boolean)
-      .forEach(name => set.add(name as string));
-    return Array.from(set);
-  }, [subjects]);
-
-  // Subject currently selected/typed in the Convert dialog
-  const selectedSubject = useMemo(() => {
-    const trimmed = subjectLabel.trim();
-    if (!trimmed) return undefined;
-
-    return subjects.find(
-      (s: Subject) => s.name?.trim() === trimmed
-    ) as (Subject & { topics?: Topic[] }) | undefined;
-  }, [subjects, subjectLabel]);
-
-  // Topic options: ONLY topics for the selected Subject.
-  // Still keep the current typed topicLabel in the list so it doesn't "disappear".
-  const topicOptions = useMemo(() => {
-    const set = new Set<string>();
-
-    if (selectedSubject) {
-      (selectedSubject.topics ?? []).forEach((t: Topic) => {
-        const name = t.name?.trim();
-        if (name) set.add(name);
-      });
-    }
-
-    // If user typed a new topic that's not in the subject's topics yet,
-    // include it so Autocomplete still shows it in the dropdown.
-    const trimmedTopic = topicLabel.trim();
-    if (trimmedTopic && !set.has(trimmedTopic)) {
-      set.add(trimmedTopic);
-    }
-
-    return Array.from(set);
-  }, [selectedSubject, topicLabel]);
-
   // Initialize edit fields + convert dialog defaults when note loads
   useEffect(() => {
     if (note) {
@@ -217,8 +177,10 @@ export default function QuickNotePage() {
         | undefined;
       const topic = subject?.topics?.find(t => t.id === note.topicId);
 
-      setSubjectLabel(subject?.name ?? '');
-      setTopicLabel(topic?.name ?? '');
+      setConvertDefaults({
+        subjectLabel: subject?.name ?? '',
+        topicLabel: topic?.name ?? '',
+      });
     }
   }, [note, subjects]);
 
@@ -375,24 +337,26 @@ export default function QuickNotePage() {
         | undefined;
       const topic = subject?.topics?.find(t => t.id === note.topicId);
 
-      setSubjectLabel(prev => prev || subject?.name || '');
-      setTopicLabel(prev => prev || topic?.name || '');
+      setConvertDefaults({
+        subjectLabel: subject?.name ?? '',
+        topicLabel: topic?.name ?? '',
+      });
     }
     setConvertDialogOpen(true);
   };
 
-  const handleConvertConfirm = async () => {
-    const trimmedSubject = subjectLabel.trim();
-    const trimmedTopic = topicLabel.trim();
-    if (!trimmedSubject || !trimmedTopic) {
-      return;
-    }
-
+  const handleConvertConfirm = async ({
+    subjectLabel,
+    topicLabel,
+  }: {
+    subjectLabel: string;
+    topicLabel: string;
+  }) => {
     try {
       const res = await convertQuickNote({
         id: note.id,
-        subjectLabel: trimmedSubject,
-        topicLabel: trimmedTopic,
+        subjectLabel,
+        topicLabel,
       }).unwrap();
 
       setConvertDialogOpen(false);
@@ -415,9 +379,6 @@ export default function QuickNotePage() {
       });
     }
   };
-
-  const isConvertConfirmDisabled =
-    isConverting || !subjectLabel.trim() || !topicLabel.trim();
 
   return (
     <Box
@@ -710,73 +671,18 @@ export default function QuickNotePage() {
       </Dialog>
 
       {/* Convert dialog with Subject / Topic (ImportResults-style) */}
-      <Dialog
+      <SubjectTopicPickerDialog
         open={convertDialogOpen}
-        onClose={() => setConvertDialogOpen(false)}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>Convert to full note</DialogTitle>
-        <DialogContent dividers>
-          <Typography variant="body2" sx={{ mb: 2 }}>
-            Choose a Subject and Topic for the new note. You can pick an existing
-            label or type a new one.
-          </Typography>
-
-          <Stack spacing={2}>
-            <Autocomplete
-              freeSolo
-              options={subjectOptions}
-              value={subjectLabel}
-              onChange={(_e, newValue) => setSubjectLabel(newValue ?? '')}
-              onInputChange={(_e, newInputValue) =>
-                setSubjectLabel(newInputValue ?? '')
-              }
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Subject label"
-                  placeholder="Subject label"
-                  size="small"
-                />
-              )}
-            />
-
-            <Autocomplete
-              freeSolo
-              options={topicOptions}
-              value={topicLabel}
-              onChange={(_e, newValue) => setTopicLabel(newValue ?? '')}
-              onInputChange={(_e, newInputValue) =>
-                setTopicLabel(newInputValue ?? '')
-              }
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Topic label"
-                  placeholder="Topic label"
-                  size="small"
-                />
-              )}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => setConvertDialogOpen(false)}
-            disabled={isConverting}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleConvertConfirm}
-            disabled={isConvertConfirmDisabled}
-          >
-            {isConverting ? 'Converting…' : 'OK'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        title="Convert to full note"
+        description="Choose a Subject and Topic for the new note. You can pick an existing label or type a new one."
+        initialSubjectLabel={convertDefaults.subjectLabel}
+        initialTopicLabel={convertDefaults.topicLabel}
+        okText={isConverting ? 'Converting…' : 'OK'}
+        cancelText="Cancel"
+        busy={isConverting}
+        onCancel={() => setConvertDialogOpen(false)}
+        onConfirm={handleConvertConfirm}
+      />
 
       {/* Snackbar for success/error messages */}
       <Snackbar

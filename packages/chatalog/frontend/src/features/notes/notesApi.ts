@@ -21,7 +21,16 @@ type UpdateNoteRequest = {
   patch: Partial<
     Pick<
       Note,
-      'title' | 'markdown' | 'summary' | 'status' | 'tags' | 'links' | 'relations' | 'subjectId' | 'topicId'
+      'title'
+      | 'markdown'
+      | 'pdfSummaryMarkdown'
+      | 'summary'
+      | 'status'
+      | 'tags'
+      | 'links'
+      | 'relations'
+      | 'subjectId'
+      | 'topicId'
     >
   > & {
     recipe?: Partial<RecipeMeta>;

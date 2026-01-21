@@ -51,6 +51,7 @@ import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
 
 import MarkdownBody from '../../components/MarkdownBody';
 import '../../styles/markdown.css';
+import { API_BASE } from '../../lib/apiBase';
 
 import {
   useGetSubjectsQuery,
@@ -316,6 +317,7 @@ export default function NoteEditor({
   const [createTopic] = useCreateTopicMutation();
   const { data: topics = [] } = useGetAllTopicsQuery();
   const { data: notesForPicker = [] } = useGetAllNotesForRelationsQuery();
+  const isPdfNote = note?.sourceType === 'pdf';
 
   const subjectOptions: SubjectOption[] = useMemo(
     () =>
@@ -648,7 +650,11 @@ export default function NoteEditor({
     lastInitNoteIdRef.current = resolvedNoteId;
 
     setTitle(note.title ?? '');
-    setMarkdown(note.markdown ?? '');
+    setMarkdown(
+      note.sourceType === 'pdf'
+        ? note.pdfSummaryMarkdown ?? ''
+        : note.markdown ?? ''
+    );
     setRelations(note.relations ?? []);
     setNoteStatus((note as Note).status ?? '');
     setSubjectLabel(noteSubject?.name ?? '');
@@ -672,7 +678,7 @@ export default function NoteEditor({
           noteId: resolvedNoteId,
           patch: {
             title,
-            markdown,
+            ...(isPdfNote ? { pdfSummaryMarkdown: markdown } : { markdown }),
             relations,
             status: trimmedStatus || undefined,
             subjectId: resolvedSubjectId,
@@ -699,6 +705,7 @@ export default function NoteEditor({
     updateNote,
     note,
     noteStatus,
+    isPdfNote,
     resolveSubjectTopicIds,
   ]);
 
@@ -718,7 +725,7 @@ export default function NoteEditor({
             noteId: resolvedNoteId,
             patch: {
               title,
-              markdown,
+              ...(isPdfNote ? { pdfSummaryMarkdown: markdown } : { markdown }),
               relations,
               status: trimmedStatus || undefined,
               subjectId: resolvedSubjectId,
@@ -741,6 +748,7 @@ export default function NoteEditor({
     markdown,
     relations,
     noteStatus,
+    isPdfNote,
     updateNote,
     resolveSubjectTopicIds,
   ]);
@@ -785,6 +793,9 @@ export default function NoteEditor({
     );
   }
 
+  const pdfUrl = isPdfNote && note?.pdfAssetId
+    ? `${API_BASE}/assets/${note.pdfAssetId}/content`
+    : undefined;
   const body = stripFrontMatter(markdown ?? '');
   const previewBody = normalizeTurns(
     body.replace(/^#\s*Transcript\s*\r?\n?/, ''),
@@ -1162,7 +1173,7 @@ export default function NoteEditor({
               </Button>
             </span>
           </Tooltip>
-          {editing && (
+          {editing && !isPdfNote && (
             <Button
               size="small"
               variant="outlined"
@@ -1171,6 +1182,19 @@ export default function NoteEditor({
             >
               Insert Image...
             </Button>
+          )}
+          {pdfUrl && (
+            <Tooltip title="Open PDF">
+              <span>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => window.open(pdfUrl, '_blank', 'noopener,noreferrer')}
+                >
+                  Open PDF
+                </Button>
+              </span>
+            </Tooltip>
           )}
           <Tooltip title="View note properties">
             <span>
@@ -1614,7 +1638,7 @@ export default function NoteEditor({
 
           {/* Markdown editor */}
           <TextField
-            label="Markdown"
+            label={isPdfNote ? 'PDF Summary (Markdown)' : 'Markdown'}
             value={markdown}
             onChange={(e) => {
               setMarkdown(e.target.value);

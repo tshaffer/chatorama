@@ -81,6 +81,24 @@ const importsApi = baseApi.injectEndpoints({
       // No invalidatesTags here; preview only.
     }),
 
+    importPdf: build.mutation<
+      { noteId: string; assetId: string },
+      { file: File; subjectLabel: string; topicLabel: string; pdfSummaryMarkdown: string }
+    >({
+      query: ({ file, subjectLabel, topicLabel, pdfSummaryMarkdown }) => {
+        const body = new FormData();
+        body.append('file', file);
+        body.append('subjectLabel', subjectLabel);
+        body.append('topicLabel', topicLabel);
+        body.append('pdfSummaryMarkdown', pdfSummaryMarkdown);
+        return { url: 'imports/pdf', method: 'POST', body };
+      },
+      invalidatesTags: [
+        { type: 'Note' as const, id: 'LIST' },
+        { type: 'ImportBatch' as const, id: 'LIST' },
+      ],
+    }),
+
     // NEW: PREVIEW import from AI classification (paths come from backend env vars)
     importAiClassificationPreview: build.mutation<
       ImportResponse,
@@ -158,6 +176,7 @@ const importsApi = baseApi.injectEndpoints({
 
 export const {
   useImportChatworthyMutation,
+  useImportPdfMutation,
   useImportAiClassificationPreviewMutation,
   useApplyChatworthyImportMutation,
   useGetImportBatchesQuery,
