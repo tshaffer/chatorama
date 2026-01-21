@@ -3,10 +3,14 @@ import multer from 'multer';
 import crypto from 'crypto';
 import fs from 'fs';
 import { AssetModel } from '../models/Asset';
-import { saveImageToLocal, getLocalAssetPath } from '../services/assetStorage';
+import { saveImageToLocal, savePdfToLocal, getLocalAssetPath } from '../services/assetStorage';
 
 const assetsRouter = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+const pdfUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
 
 assetsRouter.post('/images', upload.single('file'), async (req, res, next) => {
   try {
@@ -40,6 +44,46 @@ assetsRouter.post('/images', upload.single('file'), async (req, res, next) => {
     } catch (err: any) {
       if (err?.code === 11000) {
         const dup = await AssetModel.findOne({ sha256: saved.sha256 }).exec();
+        if (dup) return res.json({ asset: dup.toJSON() });
+      }
+      throw err;
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+assetsRouter.post('/pdfs', pdfUpload.single('file'), async (req, res, next) => {
+  try {
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'file is required' });
+
+    const isPdfMime = file.mimetype === 'application/pdf';
+    const hasPdfExtension = file.originalname?.toLowerCase().endsWith('.pdf');
+    if (!isPdfMime || !hasPdfExtension) {
+      return res.status(400).json({ error: 'Only PDF files are supported' });
+    }
+
+    const sha256 = crypto.createHash('sha256').update(file.buffer).digest('hex');
+    const existing = await AssetModel.findOne({ sha256 }).exec();
+    if (existing) {
+      return res.json({ asset: existing.toJSON() });
+    }
+
+    const saved = await savePdfToLocal(file.buffer);
+
+    try {
+      const created = await AssetModel.create({
+        type: 'pdf',
+        mimeType: 'application/pdf',
+        byteSize: saved.size,
+        sha256,
+        storage: { provider: 'local', path: saved.path },
+      });
+      return res.status(201).json({ asset: created.toJSON() });
+    } catch (err: any) {
+      if (err?.code === 11000) {
+        const dup = await AssetModel.findOne({ sha256 }).exec();
         if (dup) return res.json({ asset: dup.toJSON() });
       }
       throw err;

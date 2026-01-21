@@ -4,6 +4,7 @@ import notesRouter from './notes';
 import subjectsRouter from './subjects';
 import importsChatworthyRouter from './imports.chatworthy';
 import importsBaselineRouter from './imports.baseline';
+import importsPdfRouter from './imports.pdf';
 import quicknotesRouter from './quicknotes';
 import notesMoveRouter from './notes.move';
 import topicsRouter from './topics';
@@ -37,6 +38,7 @@ export function createRoutes(app: Express) {
   // Chatworthy imports
   api.use('/imports', importsChatworthyRouter);
   api.use('/imports/baseline', importsBaselineRouter);
+  api.use('/imports', importsPdfRouter);
   api.use('/import-batches', importBatchesRouter);
 
   // QuickNotes CRUD

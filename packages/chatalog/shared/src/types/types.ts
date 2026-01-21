@@ -139,6 +139,15 @@ export interface Note {
   // Legacy/source metadata
   sourceType?: string;
   sourceChatId?: string;
+  pdfAssetId?: string | null;
+  pdfSummaryMarkdown?: string;
+  derived?: {
+    pdf?: {
+      extractedText?: string;
+      pageCount?: number;
+      extractedAt?: string;
+    };
+  };
 
   createdAt: string;         // ISO
   updatedAt: string;         // ISO
@@ -191,7 +200,7 @@ export interface TopicNotesWithRelations {
 
 // -------- Assets --------
 
-export type AssetType = 'image';
+export type AssetType = 'image' | 'pdf';
 
 export type Asset = {
   id: string;

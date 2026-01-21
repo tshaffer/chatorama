@@ -13,7 +13,8 @@
     "audit:downloads": "tsx src/scripts/auditChatworthyDownloads.ts",
     "audit:aberrant": "tsx src/scripts/detectAberrantTurnBlocks.ts --out audit-aberrant-exports.json",
     "import:baseline": "tsx scripts/importChatRegistriesFromConversations.ts",
-    "unreviewed:html": "tsx scripts/generateUnreviewedChatsHtml.ts"
+    "unreviewed:html": "tsx scripts/generateUnreviewedChatsHtml.ts",
+    "smoke:pdf-text": "tsx src/scripts/smokePdfText.ts"
   },
   "dependencies": {
     "@chatorama/chatalog-shared": "file:../shared",
@@ -27,6 +28,7 @@
     "mongoose": "^8.19.2",
     "multer": "^2.0.2",
     "openai": "^4.0.0",
+    "pdf-parse": "^2.4.5",
     "unzipper": "^0.12.3"
   },
   "devDependencies": {

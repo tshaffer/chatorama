@@ -58,6 +58,27 @@ export async function saveImageToLocal(buffer: Buffer, mimeType: string) {
   };
 }
 
+export async function savePdfToLocal(buffer: Buffer): Promise<{
+  path: string;
+  filename: string;
+  size: number;
+}> {
+  const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+  const byteSize = buffer.length;
+  const ext = '.pdf';
+  const filename = `${sha256}${ext}`;
+
+  await fs.mkdir(ASSET_DIR, { recursive: true });
+  const absolutePath = path.join(ASSET_DIR, filename);
+  await fs.writeFile(absolutePath, buffer);
+
+  return {
+    path: path.join('storage', 'assets', filename),
+    filename,
+    size: byteSize,
+  };
+}
+
 export async function deleteLocalFile(storagePath: string) {
   const absolutePath = resolveStoragePath(storagePath);
   await fs.rm(absolutePath, { force: true });

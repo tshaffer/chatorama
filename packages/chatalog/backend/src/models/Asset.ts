@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 import { applyToJSON } from '../db/toJsonPlugin';
 
-export type AssetType = 'image';
+export type AssetType = 'image' | 'pdf';
 
 export interface AssetDoc extends Document {
   _id: Types.ObjectId;
@@ -17,7 +17,7 @@ export interface AssetDoc extends Document {
 
 const AssetSchema = new Schema<AssetDoc>(
   {
-    type: { type: String, enum: ['image'], required: true },
+    type: { type: String, enum: ['image', 'pdf'], required: true },
     mimeType: { type: String, required: true },
     byteSize: { type: Number, required: true },
     sha256: { type: String, required: true, unique: true, index: true },

@@ -17,6 +17,7 @@ import {
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import type { Note } from '@chatorama/chatalog-shared';
+import { API_BASE } from '../../lib/apiBase';
 
 type Props = {
   open: boolean;
@@ -166,6 +167,10 @@ export default function NotePropertiesDialog({
   const chatLink = note?.chatworthyChatId
     ? `https://chat.openai.com/c/${note.chatworthyChatId}`
     : undefined;
+  const pdfLink =
+    note?.sourceType === 'pdf' && note.pdfAssetId
+      ? `${API_BASE}/assets/${note.pdfAssetId}/content`
+      : undefined;
 
   const timeRows = [
     { label: 'Created', value: createdAt },
@@ -391,6 +396,14 @@ export default function NotePropertiesDialog({
       </DialogContent>
 
       <DialogActions sx={{ px: 3, py: 2 }}>
+        {pdfLink ? (
+          <Button
+            variant="outlined"
+            onClick={() => window.open(pdfLink, '_blank', 'noopener,noreferrer')}
+          >
+            Open PDF
+          </Button>
+        ) : null}
         <Button onClick={onClose} variant="contained">
           Close
         </Button>
