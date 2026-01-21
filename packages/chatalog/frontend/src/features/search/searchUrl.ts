@@ -78,7 +78,9 @@ export function parseSearchQueryFromUrl(
 
   const modeRaw = (sp.get('mode') ?? '').trim() as SearchModeUi;
   const mode: SearchModeUi =
-    modeRaw === 'auto' || modeRaw === 'semantic' || modeRaw === 'keyword' ? modeRaw : 'auto';
+    modeRaw === 'auto' || modeRaw === 'semantic' || modeRaw === 'keyword' || modeRaw === 'hybrid'
+      ? modeRaw
+      : 'auto';
 
   const limit = clampLimit(numOrUndef(sp.get('limit')));
 

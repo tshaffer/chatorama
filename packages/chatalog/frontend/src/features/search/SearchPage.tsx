@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { SearchExplain, SearchMode } from '@chatorama/chatalog-shared';
 import { SEARCH_MAX_LIMIT } from '@chatorama/chatalog-shared';
 import {
@@ -1131,10 +1131,8 @@ export default function SearchPage() {
                           primary={
                             <Stack direction="row" spacing={1} alignItems="baseline" flexWrap="wrap">
                               <Typography
-                                component="a"
-                                href={`/n/${r.id}`}
-                                target="_blank"
-                                rel="noreferrer"
+                                component={Link}
+                                to={`/n/${r.id}`}
                                 onClick={(e) => e.stopPropagation()}
                                 variant="subtitle1"
                                 sx={{
