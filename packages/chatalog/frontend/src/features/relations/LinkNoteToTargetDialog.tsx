@@ -27,6 +27,7 @@ import {
 import { NoteStatusIndicator } from '../notes/NoteStatusIndicator';
 import { useSelector } from 'react-redux';
 import { selectNoteStatusVisibility } from '../settings/settingsSlice';
+import { sortByStringKeyCI } from '../../utils/sort';
 
 type Props = {
   open: boolean;
@@ -77,9 +78,7 @@ export default function LinkNoteToTargetDialog({
   const noteStatusVisibility = useSelector(selectNoteStatusVisibility);
 
   const sortedNotes = useMemo(() => {
-    const arr = [...notes] as NotePreview[];
-    arr.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-    return arr;
+    return sortByStringKeyCI(notes as NotePreview[], (n) => n.title || '');
   }, [notes]);
 
   const selectedNote = useMemo(

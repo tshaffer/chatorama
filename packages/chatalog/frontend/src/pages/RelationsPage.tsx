@@ -235,6 +235,7 @@ export default function RelationsPage() {
               </TableRow>
             </TableHead>
             <TableBody>
+              {/* NOTE: Do not alphabetize relation edges; order is derived. */}
               {edges.map((edge, idx) => {
                 const { source, relation } = edge;
                 const targetLabel = renderTargetLabel(relation);

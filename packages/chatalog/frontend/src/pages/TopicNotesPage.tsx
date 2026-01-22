@@ -221,6 +221,7 @@ export default function TopicNotesPage() {
         <Typography variant="subtitle1" sx={{ mb: 1 }}>
           {title}
         </Typography>
+        {/* NOTE: Do not alphabetize relation-derived lists; order may be meaningful. */}
         <List dense>
           {items.map(n => (
             <ListItemButton key={n.id} onClick={() => onOpenNote(n.id)}>
@@ -531,6 +532,7 @@ export default function TopicNotesPage() {
                                       >
                                         Other topics that reference this one
                                       </Typography>
+                                      {/* NOTE: Do not alphabetize relation-derived lists; order may be meaningful. */}
                                       <List dense>
                                         {topicRelSummary.relatedTopics.map(rt => {
                                           const t = rt.topic;
@@ -587,6 +589,7 @@ export default function TopicNotesPage() {
                                       >
                                         Notes that reference this topic
                                       </Typography>
+                                      {/* NOTE: Do not alphabetize relation-derived lists; order may be meaningful. */}
                                       <List dense>
                                         {topicRelSummary.relatedNotes.map(n => (
                                           <ListItemButton
@@ -728,6 +731,7 @@ function ImportHistorySection({
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
 
   const items = useMemo(
+    // NOTE: Do not alphabetize; newest-first is meaningful for import history.
     () => [...batches].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
     [batches],
   );

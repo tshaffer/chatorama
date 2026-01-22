@@ -10,6 +10,7 @@ import {
   useGetSubjectsQuery,
   useGetTopicsForSubjectQuery,
 } from './subjectsApi';
+import { sortByStringKeyCI } from '../../utils/sort';
 
 // --- helpers ---
 
@@ -60,6 +61,12 @@ export default function SubjectTopicTree({
   }, [selectedSubjectId, selectedTopicId]);
 
   const { data: subjects = [], isLoading } = useGetSubjectsQuery();
+  // Intentionally alphabetized (case-insensitive) based on real-world usage/customer feedback.
+  // Subjects and topics are presented as a navigational tree where name-based scanning is primary.
+  const subjectsSorted = useMemo(
+    () => sortByStringKeyCI(subjects, (s) => s.name),
+    [subjects],
+  );
 
   const [expanded, setExpanded] = React.useState<string[]>(() =>
     selectedSubjectId ? [subjectItemId(selectedSubjectId)] : [],
@@ -123,8 +130,8 @@ export default function SubjectTopicTree({
                 setExpanded(itemIds);
               }}
               selectedItems={selectedItemId}
-            >
-              {subjects.map((s) => (
+          >
+              {subjectsSorted.map((s) => (
                 <SubjectNode key={s.id} subject={s} />
               ))}
             </SimpleTreeView>
@@ -143,6 +150,10 @@ type SubjectNodeProps = {
 
 function SubjectNode({ subject }: SubjectNodeProps) {
   const { data: topics = [] } = useGetTopicsForSubjectQuery(subject.id);
+  const topicsSorted = useMemo(
+    () => sortByStringKeyCI(topics, (t) => t.name),
+    [topics],
+  );
   const navigate = useNavigate();
   const { onSubjectSelected } = React.useContext(CallbacksContext) || {};
 
@@ -171,7 +182,7 @@ function SubjectNode({ subject }: SubjectNodeProps) {
         </Box>
       }
     >
-      {topics.map((t: Topic) => (
+      {topicsSorted.map((t: Topic) => (
         <TopicNode
           key={t.id}
           subject={subject}

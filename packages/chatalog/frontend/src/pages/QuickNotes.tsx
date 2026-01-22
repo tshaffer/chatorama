@@ -69,6 +69,7 @@ export default function QuickNotesPage() {
 
         {!isLoading && quickNotes.length > 0 && (
           <List sx={{ bgcolor: 'background.paper', borderRadius: 1 }}>
+            {/* NOTE: Do not alphabetize; order reflects API/recency. */}
             {quickNotes.map((qn: QuickNote) => {
               const title =
                 qn.title?.trim() ||

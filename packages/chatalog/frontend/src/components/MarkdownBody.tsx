@@ -331,6 +331,7 @@ export default function MarkdownBody({
                 '& .MuiListItemText-primary': { lineHeight: 1.1, fontSize: '0.9rem' },
               }}
             >
+              {/* NOTE: Do not alphabetize; TOC reflects document order. */}
               {promptTocItems.map((it) => (
                 <ListItemButton
                   key={it.anchorId}

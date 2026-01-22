@@ -37,6 +37,7 @@ import MarkdownBody from '../../components/MarkdownBody';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import { sortStringsCI } from '../../utils/sort';
 import type {
   DuplicateStatus,
   DuplicateDecision,
@@ -307,7 +308,7 @@ export function ImportResultsDialog({
       .filter(Boolean)
       .forEach((name) => set.add(name as string));
 
-    return Array.from(set);
+    return sortStringsCI(Array.from(set));
   }, [defaultSubjectLabel, importedNotes, activeRows, subjects]);
 
   const topicOptionsForSubject = (subjectLabel: string, currentTopicLabel: string) => {
@@ -327,7 +328,7 @@ export function ImportResultsDialog({
 
     if (trimmedTopic) set.add(trimmedTopic);
 
-    return Array.from(set);
+    return sortStringsCI(Array.from(set));
   };
 
   const handleRowChange = (
@@ -565,6 +566,7 @@ export function ImportResultsDialog({
             </TableRow>
           </TableHead>
           <TableBody>
+            {/* NOTE: Do not alphabetize; import order is meaningful. */}
             {(activeRows.length ? activeRows : rows).map((row) => (
               <TableRow
                 key={row.importKey}
@@ -785,30 +787,32 @@ export function ImportResultsDialog({
             No subjects yet.
           </Typography>
         ) : (
-          <SimpleTreeView
-            expandedItems={expandedItems}
-            onExpandedItemsChange={(_event, itemIds) => {
-              setExpandedItems(itemIds);
-              itemIds
-                .filter((id) => id.startsWith('topic-'))
-                .forEach((topicItemId) => {
-                  const topicId = topicItemId.replace('topic-', '');
-                  const parentSubject = subjectsWithTopics.find((s) =>
-                    (s.topics ?? []).some((t) => t.id === topicId),
-                  );
-                  if (parentSubject) {
-                    void ensureTopicNotes(parentSubject.id, topicId);
-                  }
-                });
-            }}
-            selectedItems={
-              previewMode === 'existing' && selectedExistingNoteId
-                ? `note-${selectedExistingNoteId}`
-                : undefined
-            }
-          >
-            {subjectsWithTopics.map((subject) => (
-              <TreeItem key={subject.id} itemId={`subject-${subject.id}`} label={subject.name}>
+          <>
+            {/* NOTE: Do not alphabetize; hierarchy order is meaningful. */}
+            <SimpleTreeView
+              expandedItems={expandedItems}
+              onExpandedItemsChange={(_event, itemIds) => {
+                setExpandedItems(itemIds);
+                itemIds
+                  .filter((id) => id.startsWith('topic-'))
+                  .forEach((topicItemId) => {
+                    const topicId = topicItemId.replace('topic-', '');
+                    const parentSubject = subjectsWithTopics.find((s) =>
+                      (s.topics ?? []).some((t) => t.id === topicId),
+                    );
+                    if (parentSubject) {
+                      void ensureTopicNotes(parentSubject.id, topicId);
+                    }
+                  });
+              }}
+              selectedItems={
+                previewMode === 'existing' && selectedExistingNoteId
+                  ? `note-${selectedExistingNoteId}`
+                  : undefined
+              }
+            >
+              {subjectsWithTopics.map((subject) => (
+                <TreeItem key={subject.id} itemId={`subject-${subject.id}`} label={subject.name}>
                 {(subject.topics ?? []).map((topic) => {
                   const notes = topicNotesMap[topic.id] ?? [];
                   const loading = loadingTopicNotes[topic.id];
@@ -867,8 +871,9 @@ export function ImportResultsDialog({
                   );
                 })}
               </TreeItem>
-            ))}
-          </SimpleTreeView>
+              ))}
+            </SimpleTreeView>
+          </>
         )}
       </Box>
     </Box>
@@ -953,6 +958,7 @@ export function ImportResultsDialog({
                       </TableRow>
                     </TableHead>
                     <TableBody>
+                      {/* NOTE: Do not alphabetize; conflict order is analysis/import-derived. */}
                       {selectedRow.conflicts.map((conflict) => {
                         const noteId = selectedRow.importKey;
                         const resolution = duplicateResolutions[noteId];

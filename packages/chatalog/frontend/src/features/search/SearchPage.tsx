@@ -35,6 +35,7 @@ import {
 } from './searchUrl';
 import { buildSearchRequestV1 } from './buildSearchRequest';
 import SearchDebugPanel from './debug/SearchDebugPanel';
+import { sortByStringKeyCI, sortStringsCI } from '../../utils/sort';
 import {
   Alert,
   Autocomplete,
@@ -192,19 +193,19 @@ export default function SearchPage() {
   const cuisineOptions = useMemo(() => {
     const vals = new Set((recipeFacets?.cuisines ?? []).map((b) => b.value));
     if (draftCuisine) vals.add(draftCuisine);
-    return Array.from(vals);
+    return sortStringsCI(Array.from(vals));
   }, [recipeFacets, draftCuisine]);
 
   const categoryOptions = useMemo(() => {
     const vals = new Set((recipeFacets?.categories ?? []).map((b) => b.value));
     draftCategories.forEach((v) => vals.add(v));
-    return Array.from(vals);
+    return sortStringsCI(Array.from(vals));
   }, [recipeFacets, draftCategories]);
 
   const keywordOptions = useMemo(() => {
     const vals = new Set((recipeFacets?.keywords ?? []).map((b) => b.value));
     draftKeywords.forEach((v) => vals.add(v));
-    return Array.from(vals);
+    return sortStringsCI(Array.from(vals));
   }, [recipeFacets, draftKeywords]);
 
 
@@ -331,7 +332,7 @@ export default function SearchPage() {
   const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery();
 
   const subjectOptions = useMemo(
-    () => [...subjectsWithTopics].sort((a, b) => a.name.localeCompare(b.name)),
+    () => sortByStringKeyCI(subjectsWithTopics, (s) => s.name),
     [subjectsWithTopics],
   );
 
@@ -349,17 +350,21 @@ export default function SearchPage() {
 
   const topicOptions = useMemo(() => {
     if (!draftSubjectId) {
-      return allTopicOptions.sort((a, b) =>
-        `${a.subjectName} ${a.name}`.localeCompare(`${b.subjectName} ${b.name}`),
-      );
+      return sortByStringKeyCI(allTopicOptions, (t) => `${t.subjectName} ${t.name}`);
     }
     const subject = subjectsWithTopics.find((s) => s.id === draftSubjectId);
-    return (subject?.topics ?? []).map((t) => ({
+    const subjectTopics = (subject?.topics ?? []).map((t) => ({
       ...t,
       subjectName: subject?.name ?? '',
       subjectId: subject?.id ?? '',
     }));
+    return sortByStringKeyCI(subjectTopics, (t) => t.name);
   }, [subjectsWithTopics, allTopicOptions, draftSubjectId]);
+
+  const savedSearchesSorted = useMemo(
+    () => sortByStringKeyCI(savedSearches, (s) => s.name),
+    [savedSearches],
+  );
 
   useEffect(() => {
     search(requestBody);
@@ -803,10 +808,7 @@ export default function SearchPage() {
                     <em>{savedSearches.length ? 'Select…' : 'None yet'}</em>
                   </MenuItem>
 
-                  {savedSearches
-                    .slice()
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((s) => (
+                  {savedSearchesSorted.map((s) => (
                       <MenuItem key={s.id} value={s.id}>
                         {s.name}
                       </MenuItem>
@@ -1089,6 +1091,7 @@ export default function SearchPage() {
             <Divider />
             <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', pr: 0.5 }}>
               <List disablePadding>
+                {/* NOTE: Do not alphabetize search results; order is relevance/ranking. */}
                 {displayRows.map((row, i) => {
                   if (row.kind === 'header') {
                     return (
@@ -1671,10 +1674,7 @@ export default function SearchPage() {
             </Typography>
           ) : (
             <List disablePadding>
-              {savedSearches
-                .slice()
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((s) => (
+              {savedSearchesSorted.map((s) => (
                   <ListItemButton
                     key={s.id}
                     onClick={() => { }}

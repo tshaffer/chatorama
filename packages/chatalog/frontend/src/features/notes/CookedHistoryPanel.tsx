@@ -66,6 +66,7 @@ export default function CookedHistoryPanel({ note }: Props) {
         </Typography>
       ) : (
         <List dense disablePadding>
+            {/* NOTE: Do not alphabetize; cooked history is time-ordered. */}
             {history.map((evt, idx) => (
               <ListItem key={evt.id ?? `${evt.cookedAt}-${idx}`} disableGutters>
               <ListItemText
