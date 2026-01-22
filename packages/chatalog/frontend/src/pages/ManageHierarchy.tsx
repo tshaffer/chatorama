@@ -38,6 +38,7 @@ import {
 import type { Topic } from '@chatorama/chatalog-shared';
 import InlineEditableName from '../components/InlineEditableName';
 import ConfirmIconButton from '../components/ConfirmIconButton';
+import { sortByStringKeyCI } from '../utils/sort';
 
 import ReorderSubjectsDialog, {
   type ReorderItem as ReorderSubjectItem,
@@ -155,7 +156,7 @@ export default function ManageHierarchyPage() {
           )}
 
           {!isLoading &&
-            subjects.map((s) => (
+            sortByStringKeyCI(subjects, (s) => s.name).map((s) => (
               <SubjectCard
                 key={safeId(s)}
                 subjectId={safeId(s)}
@@ -355,7 +356,7 @@ const SubjectCard = memo(function SubjectCard(props: {
             </Typography>
           )}
 
-          {topics.map((t: Topic) => {
+          {sortByStringKeyCI(topics, (t) => t.name).map((t: Topic) => {
             const tid = safeId(t);
             const topicHref =
               `/s/${props.subjectId}-${slugify(props.subjectName)}/t/${tid}-${slugify(t.name)}`;

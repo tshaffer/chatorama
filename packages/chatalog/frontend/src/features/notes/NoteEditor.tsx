@@ -66,6 +66,7 @@ import NotePropertiesDialog from './NotePropertiesDialog';
 import EditIngredientsDialog from './EditIngredientsDialog';
 import RecipeView from './RecipeView';
 import RecipePropertiesDialog from './RecipePropertiesDialog';
+import { sortByStringKeyCI, sortStringsCI } from '../../utils/sort';
 
 // ---------------- helpers ----------------
 
@@ -319,13 +320,10 @@ export default function NoteEditor({
   const { data: notesForPicker = [] } = useGetAllNotesForRelationsQuery();
   const isPdfNote = note?.sourceType === 'pdf';
 
-  const subjectOptions: SubjectOption[] = useMemo(
-    () =>
-      (subjects as Subject[])
-        .map((s) => ({ id: s.id, label: s.name }))
-        .sort((a, b) => a.label.localeCompare(b.label)),
-    [subjects],
-  );
+  const subjectOptions: SubjectOption[] = useMemo(() => {
+    const sortedSubjects = sortByStringKeyCI(subjects as Subject[], (s) => s.name);
+    return sortedSubjects.map((s) => ({ id: s.id, label: s.name }));
+  }, [subjects]);
 
   const topicOptions: TopicOption[] = useMemo(() => {
     const subjectNameById = new Map<string, string>();
@@ -341,8 +339,7 @@ export default function NoteEditor({
       topicName: t.name,
     }));
 
-    opts.sort((a, b) => a.label.localeCompare(b.label));
-    return opts;
+    return sortByStringKeyCI(opts, (opt) => opt.label);
   }, [subjects, topics]);
 
   const noteOptions: NoteOption[] = useMemo(() => {
@@ -352,8 +349,7 @@ export default function NoteEditor({
       subjectId: (n as any).subjectId,
       topicId: (n as any).topicId,
     }));
-    opts.sort((a, b) => a.label.localeCompare(b.label));
-    return opts;
+    return sortByStringKeyCI(opts, (opt) => opt.label);
   }, [notesForPicker]);
 
   // Helper for topic-notes args
@@ -582,7 +578,7 @@ export default function NoteEditor({
       if (s.name?.trim()) set.add(s.name.trim());
     });
     if (subjectLabel.trim()) set.add(subjectLabel.trim());
-    return Array.from(set);
+    return sortStringsCI(Array.from(set));
   }, [subjectsWithTopics, subjectLabel]);
 
   const selectedSubjectForEdit = useMemo(() => {
@@ -600,7 +596,7 @@ export default function NoteEditor({
     });
     const trimmedTopic = topicLabel.trim();
     if (trimmedTopic) set.add(trimmedTopic);
-    return Array.from(set);
+    return sortStringsCI(Array.from(set));
   }, [selectedSubjectForEdit, topicLabel]);
 
   const resolveSubjectTopicIds = useCallback(async () => {
@@ -1328,6 +1324,7 @@ export default function NoteEditor({
 
             {relations && relations.length > 0 ? (
               <Stack spacing={1}>
+                {/* NOTE: Do not alphabetize relations; order is user-defined/current. */}
                 {relations.map((rel, idx) => {
                   const topicId = rel.targetType === 'topic' ? rel.targetId : '';
                   const knownTopic = topicOptions.find((t) => t.id === topicId);

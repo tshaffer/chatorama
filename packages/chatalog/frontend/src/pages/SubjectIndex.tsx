@@ -19,6 +19,7 @@ import {
 import { useGetTopicsForSubjectQuery } from '../features/subjects/subjectsApi';
 import { useGetSubjectsQuery, useGetSubjectRelationsSummaryQuery } from '../features/subjects/subjectsApi';
 import { skipToken } from '@reduxjs/toolkit/query';
+import { sortByStringKeyCI } from '../utils/sort';
 
 const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
 const slugify = (s: string) =>
@@ -57,6 +58,7 @@ export default function SubjectIndex() {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
 
   const loading = subjectsLoading || topicsLoading;
+  const sortedTopics = useMemo(() => sortByStringKeyCI(topics, (t) => t.name), [topics]);
 
   // ---- render ----
 
@@ -183,7 +185,7 @@ export default function SubjectIndex() {
             ) : (
               <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', mt: 0.5 }}>
                 <List dense>
-                  {topics.map((t) => {
+                  {sortedTopics.map((t) => {
                     const topicId = t.id ?? (t as any)._id;
                     const topicHref = `/s/${subjectSlug}/t/${topicId}-${slugify(t.name)}`;
                     return (
@@ -273,6 +275,7 @@ export default function SubjectIndex() {
                           Related topics
                         </Typography>
                         <List dense>
+                          {/* NOTE: Do not alphabetize relation-derived lists; order may be meaningful. */}
                           {relationsSummary.relatedTopics.map((rt) => {
                             const t = rt.topic;
                             const topicHref = `/s/${subjectSlug}/t/${t.id}-${slugify(
@@ -305,6 +308,7 @@ export default function SubjectIndex() {
                           Related notes
                         </Typography>
                         <List dense>
+                          {/* NOTE: Do not alphabetize relation-derived lists; order may be meaningful. */}
                           {relationsSummary.relatedNotes.map((n) => (
                             <ListItemButton
                               key={n.id}

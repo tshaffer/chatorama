@@ -12,6 +12,7 @@ import {
 import Autocomplete from '@mui/material/Autocomplete';
 import { useGetSubjectsWithTopicsQuery } from '../features/subjects/subjectsApi';
 import type { Subject, Topic } from '@chatorama/chatalog-shared';
+import { sortStringsCI } from '../utils/sort';
 
 type Props = {
   open: boolean;
@@ -54,7 +55,7 @@ export default function SubjectTopicPickerDialog({
       .map((s: Subject) => s.name?.trim())
       .filter(Boolean)
       .forEach((name) => set.add(name as string));
-    return Array.from(set);
+    return sortStringsCI(Array.from(set));
   }, [subjects]);
 
   const selectedSubject = useMemo(() => {
@@ -81,7 +82,7 @@ export default function SubjectTopicPickerDialog({
       set.add(trimmedTopic);
     }
 
-    return Array.from(set);
+    return sortStringsCI(Array.from(set));
   }, [selectedSubject, topicLabel]);
 
   const handleConfirm = () => {

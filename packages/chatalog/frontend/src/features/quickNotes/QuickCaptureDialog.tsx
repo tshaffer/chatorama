@@ -5,6 +5,7 @@ import { useAddQuickNoteMutation, useAddQuickNoteAssetMutation } from './quickNo
 import { useUploadImageMutation } from '../notes/notesApi';
 import { useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
 import type { Subject, Topic } from '@chatorama/chatalog-shared';
+import { sortByStringKeyCI } from '../../utils/sort';
 
 type Props = {
   open: boolean;
@@ -172,7 +173,15 @@ export default function QuickCaptureDialog({
 
   // simple subject→topic select data
   const selectedSubject = subjects.find(s => s.id === subjectId) as (Subject & { topics?: Topic[] }) | undefined;
+  const sortedSubjects = useMemo(
+    () => sortByStringKeyCI(subjects, (s) => s.name),
+    [subjects],
+  );
   const topics = selectedSubject?.topics ?? [];
+  const sortedTopics = useMemo(
+    () => sortByStringKeyCI(topics, (t) => t.name),
+    [topics],
+  );
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
@@ -231,7 +240,7 @@ export default function QuickCaptureDialog({
                 }}
               >
                 <MenuItem value=""><em>Unfiled</em></MenuItem>
-                {subjects.map(s => (
+                {sortedSubjects.map(s => (
                   <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
                 ))}
               </Select>
@@ -245,7 +254,7 @@ export default function QuickCaptureDialog({
                 onChange={e => setTopicId((e.target.value as string) || undefined)}
               >
                 <MenuItem value=""><em>Unfiled</em></MenuItem>
-                {topics.map(t => (
+                {sortedTopics.map(t => (
                   <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>
                 ))}
               </Select>

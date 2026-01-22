@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import { useGetSubjectsQuery, useGetTopicsForSubjectQuery } from '../features/subjects/subjectsApi';
 import type { Topic } from '@chatorama/chatalog-shared';
+import { sortByStringKeyCI } from '../utils/sort';
 
 // at top of the file
 const slugify = (s: string) =>
@@ -24,7 +25,7 @@ const safeId = (o: { id?: string } | undefined) => o?.id ?? '';
 export default function Home() {
   const { data: subjects = [], isLoading } = useGetSubjectsQuery();
 
-  const topSubjects = subjects.slice(0, 3);
+  const topSubjects = sortByStringKeyCI(subjects, (s) => s.name).slice(0, 3);
 
   return (
     <Box
@@ -101,7 +102,7 @@ const SubjectCard = memo(function SubjectCard(props: {
   const navigate = useNavigate();
   const { data: topics = [], isLoading } = useGetTopicsForSubjectQuery(props.subjectId);
 
-  const chips = topics.slice(0, 3);
+  const chips = sortByStringKeyCI(topics, (t) => t.name).slice(0, 3);
   const subjectHref = `/s/${props.subjectId}-${slugify(props.subjectName)}`;
 
   return (

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   Button, Stack, FormControl, InputLabel, Select, MenuItem, CircularProgress
@@ -6,6 +6,7 @@ import {
 import { useMoveNotesMutation } from './notesApi';
 import { subjectsApi } from '../subjects/subjectsApi';
 import { skipToken } from '@reduxjs/toolkit/query/react';
+import { sortByStringKeyCI } from '../../utils/sort';
 
 type Props = {
   open: boolean;
@@ -17,6 +18,10 @@ type Props = {
 
 export default function MoveNotesDialog({ open, onClose, noteIds, source }: Props) {
   const { data: subjects } = subjectsApi.useGetSubjectsQuery();
+  const sortedSubjects = useMemo(
+    () => sortByStringKeyCI(subjects ?? [], (s) => s.name),
+    [subjects],
+  );
   const [subjectId, setSubjectId] = useState<string>('');
   const [topicId, setTopicId] = useState<string>('');
 
@@ -38,6 +43,10 @@ export default function MoveNotesDialog({ open, onClose, noteIds, source }: Prop
   // Lazy-fetch topics for the chosen subject (adjust to your API)
   const { data: topicsData, isFetching: topicsLoading } =
     subjectsApi.useGetTopicsForSubjectQuery(subjectId ? subjectId : skipToken);
+  const sortedTopics = useMemo(
+    () => sortByStringKeyCI(topicsData ?? [], (t) => t.name),
+    [topicsData],
+  );
 
   const [moveNotes, { isLoading }] = useMoveNotesMutation();
 
@@ -76,7 +85,7 @@ export default function MoveNotesDialog({ open, onClose, noteIds, source }: Prop
                 setTopicId(''); // reset topic when subject changes
               }}
             >
-              {(subjects ?? []).map((s) => (
+              {sortedSubjects.map((s) => (
                 <MenuItem key={s.id} value={s.id}>
                   {s.name}
                 </MenuItem>
@@ -101,7 +110,7 @@ export default function MoveNotesDialog({ open, onClose, noteIds, source }: Prop
                   <CircularProgress size={18} />
                 </MenuItem>
               )}
-              {(topicsData ?? []).map((t) => (
+              {sortedTopics.map((t) => (
                 <MenuItem key={t.id} value={t.id}>
                   {t.name}
                 </MenuItem>
