@@ -9,7 +9,7 @@ import {
   useGetTopicNotesWithRelationsQuery, // ⬅️ NEW
   useUploadImageMutation,
   useAttachAssetToNoteMutation,
-  useIndexLinkedPagesMutation,
+  useIndexLinkedPagesTextMutation,
 } from './notesApi';
 import {
   type Note,
@@ -68,6 +68,7 @@ import EditIngredientsDialog from './EditIngredientsDialog';
 import RecipeView from './RecipeView';
 import RecipePropertiesDialog from './RecipePropertiesDialog';
 import { sortByStringKeyCI, sortStringsCI } from '../../utils/sort';
+import { Readability } from '@mozilla/readability';
 
 // ---------------- helpers ----------------
 
@@ -311,7 +312,8 @@ export default function NoteEditor({
   const [deleteNote, { isLoading: isDeleting }] = useDeleteNoteMutation();
   const [uploadImage] = useUploadImageMutation();
   const [attachAssetToNote] = useAttachAssetToNoteMutation();
-  const [indexLinkedPages, { isLoading: isIndexingLinkedPages }] = useIndexLinkedPagesMutation();
+  const [indexLinkedPagesText, { isLoading: isIndexingLinkedPages }] =
+    useIndexLinkedPagesTextMutation();
 
   // Data for pickers
   const { data: subjects = [] } = useGetSubjectsQuery();
@@ -429,10 +431,99 @@ export default function NoteEditor({
 
   const handleIndexLinkedPages = async () => {
     if (!resolvedNoteId || isIndexingLinkedPages) return;
+    const MAX_URLS = 5;
+    const MAX_EXTRACTED_CHARS = 100_000;
+
+    const extractUrls = (md: string) => {
+      const out = new Set<string>();
+      const linkRe = /\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/gi;
+      let match: RegExpExecArray | null;
+      while ((match = linkRe.exec(md)) !== null) {
+        const raw = match[1].trim();
+        const cleaned = raw.replace(/[),.;\]]+$/g, '');
+        out.add(cleaned);
+      }
+      const stripped = md.replace(linkRe, '');
+      const bareRe = /https?:\/\/[^\s)]+/gi;
+      while ((match = bareRe.exec(stripped)) !== null) {
+        const raw = match[0].trim();
+        const cleaned = raw.replace(/[),.;\]]+$/g, '');
+        out.add(cleaned);
+      }
+      return Array.from(out);
+    };
+
+    const urls = extractUrls(markdown ?? note?.markdown ?? '');
+    if (!urls.length) {
+      setSnack({ open: true, msg: 'No links found in note', sev: 'error' });
+      return;
+    }
+    if (urls.length > MAX_URLS) {
+      setSnack({
+        open: true,
+        msg: `Too many links (max ${MAX_URLS})`,
+        sev: 'error',
+      });
+      return;
+    }
+
+    const snapshots: Array<{
+      url: string;
+      title?: string;
+      excerpt?: string;
+      extractedText: string;
+    }> = [];
+    let failed = 0;
+
+    for (const url of urls) {
+      try {
+        const resp = await fetch(url, {
+          headers: { Accept: 'text/html,application/xhtml+xml' },
+        });
+        if (!resp.ok) {
+          failed += 1;
+          continue;
+        }
+        const ct = resp.headers.get('content-type') ?? '';
+        if (!ct.includes('text/html')) {
+          failed += 1;
+          continue;
+        }
+        const html = await resp.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const article = new Readability(doc).parse();
+        const text = (article?.textContent ?? doc.body?.textContent ?? '')
+          .replace(/\r/g, '')
+          .replace(/[ \t]+\n/g, '\n')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+        if (!text) {
+          failed += 1;
+          continue;
+        }
+        snapshots.push({
+          url,
+          title: article?.title ?? doc.title ?? undefined,
+          excerpt: article?.excerpt ?? undefined,
+          extractedText: text.slice(0, MAX_EXTRACTED_CHARS),
+        });
+      } catch {
+        failed += 1;
+      }
+    }
+
+    if (!snapshots.length) {
+      setSnack({ open: true, msg: 'No pages could be fetched (CORS?)', sev: 'error' });
+      return;
+    }
+
     try {
-      const res = await indexLinkedPages({ noteId: resolvedNoteId }).unwrap();
-      const okCount = res.results.filter((r) => r.status === 'ok').length;
-      const failCount = res.results.length - okCount;
+      const res = await indexLinkedPagesText({
+        noteId: resolvedNoteId,
+        snapshots,
+      }).unwrap();
+      const okCount = res.results.filter((r: { status: string; }) => r.status === 'ok').length;
+      const failCount = res.results.length - okCount + failed;
       const okLabel = `${okCount} page${okCount === 1 ? '' : 's'}`;
       const failLabel = failCount ? `, ${failCount} failed` : '';
       setSnack({
@@ -440,7 +531,7 @@ export default function NoteEditor({
         msg: `Indexed ${okLabel}${failLabel}`,
         sev: failCount ? 'error' : 'success',
       });
-    } catch (err) {
+    } catch {
       setSnack({ open: true, msg: 'Failed to index linked pages', sev: 'error' });
     }
   };

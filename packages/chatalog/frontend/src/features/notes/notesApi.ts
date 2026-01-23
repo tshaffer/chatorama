@@ -50,6 +50,16 @@ type IndexLinkedPagesResponse = {
     error?: string;
   }>;
 };
+type IndexLinkedPagesTextRequest = {
+  noteId: string;
+  force?: boolean;
+  snapshots: Array<{
+    url: string;
+    title?: string;
+    excerpt?: string;
+    extractedText: string;
+  }>;
+};
 
 export const notesApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
@@ -222,6 +232,14 @@ export const notesApi = baseApi.injectEndpoints({
       }),
     }),
 
+    indexLinkedPagesText: build.mutation<IndexLinkedPagesResponse, IndexLinkedPagesTextRequest>({
+      query: ({ noteId, ...body }) => ({
+        url: `notes/${noteId}/index-linked-pages-text`,
+        method: 'POST',
+        body,
+      }),
+    }),
+
     moveNotes: build.mutation<
       MoveNotesResult,
       MoveNotesPayload & { source?: { subjectId: string; topicId: string } }
@@ -297,4 +315,5 @@ export const {
   useGetAllNotesForRelationsQuery,
   useMergeNotesInTopicMutation,
   useIndexLinkedPagesMutation,
+  useIndexLinkedPagesTextMutation,
 } = notesApi;
