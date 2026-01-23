@@ -19,6 +19,7 @@
     "knip": "knip"
   },
   "devDependencies": {
+    "@types/jsdom": "^27.0.0",
     "@types/node": "^25.0.7",
     "knip": "^5.80.2",
     "rimraf": "^6.1.0",
@@ -29,5 +30,10 @@
     "vfile": "6.0.3",
     "vfile-message": "4.0.3",
     "remark-slug": "8.0.0"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "jsdom": "^27.0.1",
+    "openai": "^6.16.0"
   }
 }

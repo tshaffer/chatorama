@@ -38,6 +38,18 @@ type UpdateNoteRequest = {
 };
 
 type DeleteNoteRequest = { noteId: string };
+type IndexLinkedPagesRequest = { noteId: string; urls?: string[]; force?: boolean };
+type IndexLinkedPagesResponse = {
+  noteId: string;
+  results: Array<{
+    url: string;
+    status: 'ok' | 'error' | 'blocked' | 'timeout';
+    fetchedAt?: string;
+    title?: string;
+    textChars?: number;
+    error?: string;
+  }>;
+};
 
 export const notesApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
@@ -202,6 +214,14 @@ export const notesApi = baseApi.injectEndpoints({
       invalidatesTags: [{ type: 'Note', id: 'LIST' }],
     }),
 
+    indexLinkedPages: build.mutation<IndexLinkedPagesResponse, IndexLinkedPagesRequest>({
+      query: ({ noteId, ...body }) => ({
+        url: `notes/${noteId}/index-linked-pages`,
+        method: 'POST',
+        body,
+      }),
+    }),
+
     moveNotes: build.mutation<
       MoveNotesResult,
       MoveNotesPayload & { source?: { subjectId: string; topicId: string } }
@@ -276,4 +296,5 @@ export const {
   useGetTopicNotesWithRelationsQuery,
   useGetAllNotesForRelationsQuery,
   useMergeNotesInTopicMutation,
+  useIndexLinkedPagesMutation,
 } = notesApi;

@@ -145,6 +145,7 @@ export interface SearchRequestV1 {
   scope?: SearchScopeV1;
   lastUsedScope?: SearchScopeV1;
   mode?: SearchMode;
+  includeLinkedSnapshots?: boolean;
 }
 
 export interface SearchHitNoteV1 {

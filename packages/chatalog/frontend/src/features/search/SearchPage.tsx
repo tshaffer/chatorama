@@ -103,6 +103,7 @@ const MIN_AVG_RATING_OPTIONS = [3, 3.5, 4, 4.5];
 type CookedFilterOption = 'any' | 'ever' | 'never';
 
 export default function SearchPage() {
+  const INCLUDE_LINKED_SNAPSHOTS_KEY = 'chatalog.search.includeLinkedSnapshots.v1';
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams();
@@ -139,12 +140,23 @@ export default function SearchPage() {
   const [saveName, setSaveName] = useState('');
   const [saveErrorMessage, setSaveErrorMessage] = useState<string>('');
   const [explainEnabled, setExplainEnabled] = useState(false);
+  const [includeLinkedSnapshots, setIncludeLinkedSnapshots] = useState(false);
   const [explainOpenById, setExplainOpenById] = useState<Record<string, boolean>>({});
   useEffect(() => {
     dispatch(
       hydrateFromUrl(parseSearchQueryFromUrl(location.search, { fallbackScope: lastUsedScope })),
     );
   }, [dispatch, location.search, lastUsedScope]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(INCLUDE_LINKED_SNAPSHOTS_KEY);
+      if (raw === 'true') setIncludeLinkedSnapshots(true);
+      else if (raw === 'false') setIncludeLinkedSnapshots(false);
+    } catch {
+      // ignore storage failures
+    }
+  }, []);
 
   const topicIdFromQuery = committed.filters.topicId ?? '';
   const subjectIdFromQuery = committed.filters.subjectId ?? '';
@@ -322,7 +334,13 @@ export default function SearchPage() {
     ],
   );
 
-  const requestBody = useMemo(() => buildSearchRequestV1(requestSpec), [requestSpec]);
+  const requestBody = useMemo(
+    () => ({
+      ...buildSearchRequestV1(requestSpec),
+      includeLinkedSnapshots,
+    }),
+    [requestSpec, includeLinkedSnapshots],
+  );
   const requestForDebug = requestBody;
   const requestKey = useMemo(() => JSON.stringify(requestBody), [requestBody]);
 
@@ -745,6 +763,29 @@ export default function SearchPage() {
                     <ToggleButton value="semantic">Semantic</ToggleButton>
                     <ToggleButton value="keyword">Keyword</ToggleButton>
                   </ToggleButtonGroup>
+
+                  <Tooltip title="Search includes text from pages you’ve indexed from note links.">
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          size="small"
+                          checked={includeLinkedSnapshots}
+                          onChange={(_e, checked) => {
+                            setIncludeLinkedSnapshots(checked);
+                            try {
+                              window.localStorage.setItem(
+                                INCLUDE_LINKED_SNAPSHOTS_KEY,
+                                String(checked),
+                              );
+                            } catch {
+                              // ignore storage failures
+                            }
+                          }}
+                        />
+                      }
+                      label="Include linked pages"
+                    />
+                  </Tooltip>
 
                   <TextField
                     label="Limit"

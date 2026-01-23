@@ -26,6 +26,7 @@ export function buildSearchRequestV1(spec: SearchSpec): SearchRequestV1 {
     targetTypes: ['note'],
     limit: spec.limit ?? 20,
     offset: 0,
+    includeLinkedSnapshots: false,
     filters: {
       subjectId: f.subjectId || undefined,
       topicId: f.topicId || undefined,

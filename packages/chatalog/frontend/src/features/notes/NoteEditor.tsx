@@ -9,6 +9,7 @@ import {
   useGetTopicNotesWithRelationsQuery, // ⬅️ NEW
   useUploadImageMutation,
   useAttachAssetToNoteMutation,
+  useIndexLinkedPagesMutation,
 } from './notesApi';
 import {
   type Note,
@@ -310,6 +311,7 @@ export default function NoteEditor({
   const [deleteNote, { isLoading: isDeleting }] = useDeleteNoteMutation();
   const [uploadImage] = useUploadImageMutation();
   const [attachAssetToNote] = useAttachAssetToNoteMutation();
+  const [indexLinkedPages, { isLoading: isIndexingLinkedPages }] = useIndexLinkedPagesMutation();
 
   // Data for pickers
   const { data: subjects = [] } = useGetSubjectsQuery();
@@ -422,6 +424,24 @@ export default function NoteEditor({
       }
     } catch (err) {
       console.error('Failed to delete note', err);
+    }
+  };
+
+  const handleIndexLinkedPages = async () => {
+    if (!resolvedNoteId || isIndexingLinkedPages) return;
+    try {
+      const res = await indexLinkedPages({ noteId: resolvedNoteId }).unwrap();
+      const okCount = res.results.filter((r) => r.status === 'ok').length;
+      const failCount = res.results.length - okCount;
+      const okLabel = `${okCount} page${okCount === 1 ? '' : 's'}`;
+      const failLabel = failCount ? `, ${failCount} failed` : '';
+      setSnack({
+        open: true,
+        msg: `Indexed ${okLabel}${failLabel}`,
+        sev: failCount ? 'error' : 'success',
+      });
+    } catch (err) {
+      setSnack({ open: true, msg: 'Failed to index linked pages', sev: 'error' });
     }
   };
 
@@ -1201,6 +1221,18 @@ export default function NoteEditor({
                 disabled={isLoading}
               >
                 Properties
+              </Button>
+            </span>
+          </Tooltip>
+          <Tooltip title="Search includes text from pages you’ve indexed from note links.">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={handleIndexLinkedPages}
+                disabled={isLoading || isSaving || isIndexingLinkedPages || !resolvedNoteId}
+              >
+                {isIndexingLinkedPages ? 'Indexing…' : 'Index linked pages'}
               </Button>
             </span>
           </Tooltip>

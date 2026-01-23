@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { NoteModel } from '../models/Note';
+import {
+  LinkedPageSnapshotModel,
+  LINKED_SNAPSHOT_VECTOR_INDEX_NAME,
+  LINKED_SNAPSHOT_VECTOR_PATH,
+} from '../models/LinkedPageSnapshot';
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
 import { computeEmbeddingTextAndHash } from '../ai/embeddingText';
@@ -29,6 +34,8 @@ const RECIPES_VECTOR_INDEX_NAME = 'recipes_vector_index';
 const NOTES_VECTOR_PATH = 'embedding';
 const RECIPES_VECTOR_PATH = 'recipeEmbedding';
 const RRF_K = 60;
+const SNAPSHOT_FETCH_CAP = 100;
+const SNAPSHOT_RRF_WEIGHT = 0.6;
 // Vector indexes are created in the Atlas UI; names/paths must match these constants.
 
 function requireAdminToken(req: Request, res: Response, next: NextFunction) {
@@ -297,15 +304,74 @@ function rrfFuse(
     .sort((a, b) => (b.fusedScore ?? 0) - (a.fusedScore ?? 0));
 }
 
-async function buildSemanticDocsForNotes(args: {
-  q: string;
+function rrfFuseWeighted(
+  channels: Record<string, Array<{ _id: any; score?: number }>>,
+  weights: Record<string, number>,
+  k = RRF_K,
+): Array<any> {
+  const merged = new Map<string, { doc: any; fusedScore: number; channels: Set<string> }>();
+
+  for (const [name, docs] of Object.entries(channels)) {
+    const weight = weights[name] ?? 1;
+    for (let i = 0; i < (docs ?? []).length; i += 1) {
+      const doc = docs[i];
+      if (!doc?._id) continue;
+      const id = String(doc._id);
+      const rrf = (1 / (k + i + 1)) * weight;
+      const existing = merged.get(id);
+      if (existing) {
+        existing.fusedScore += rrf;
+        existing.channels.add(name);
+      } else {
+        merged.set(id, { doc, fusedScore: rrf, channels: new Set([name]) });
+      }
+    }
+  }
+
+  return Array.from(merged.values())
+    .map((entry) => ({
+      ...entry.doc,
+      fusedScore: entry.fusedScore,
+      __channels: Array.from(entry.channels),
+    }))
+    .sort((a, b) => (b.fusedScore ?? 0) - (a.fusedScore ?? 0));
+}
+
+function mapSnapshotHitsToNoteDocs(hits: Array<{ noteId?: any }>) {
+  const seen = new Set<string>();
+  const docs: Array<{ _id: any }> = [];
+  for (const hit of hits ?? []) {
+    const noteId = hit?.noteId;
+    if (!noteId) continue;
+    const id = String(noteId);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    docs.push({ _id: noteId });
+  }
+  return docs;
+}
+
+async function filterDocsByNoteFilter(
+  docs: Array<{ _id: any }>,
+  baseFilter: any,
+): Promise<Array<{ _id: any }>> {
+  if (!docs.length) return docs;
+  if (!baseFilter || !Object.keys(baseFilter).length) return docs;
+
+  const ids = docs.map((d) => d._id);
+  const filter = mergeAnd(baseFilter, { _id: { $in: ids } });
+  const allowed = await NoteModel.find(filter).select({ _id: 1 }).lean().exec();
+  const allowedSet = new Set(allowed.map((d: any) => String(d._id)));
+  return docs.filter((d) => allowedSet.has(String(d._id)));
+}
+
+async function buildSemanticDocsForNotesFromVector(args: {
+  queryVector: number[];
   baseFilter: any;
   fetchCap: number;
 }) {
-  const { q, baseFilter, fetchCap } = args;
-  if (!q) return [];
+  const { queryVector, baseFilter, fetchCap } = args;
   try {
-    const { vector: queryVector } = await embedText(q, { model: 'text-embedding-3-small' });
     const pipeline: any[] = [
       {
         $vectorSearch: {
@@ -331,6 +397,72 @@ async function buildSemanticDocsForNotes(args: {
       },
     ];
     return await NoteModel.aggregate(pipeline).exec();
+  } catch (err) {
+    return [];
+  }
+}
+
+async function buildSemanticDocsForSnapshotsFromVector(args: {
+  queryVector: number[];
+  fetchCap: number;
+  baseFilter: any;
+}) {
+  const { queryVector, fetchCap, baseFilter } = args;
+  try {
+    const pipeline: any[] = [
+      {
+        $vectorSearch: {
+          index: LINKED_SNAPSHOT_VECTOR_INDEX_NAME,
+          path: LINKED_SNAPSHOT_VECTOR_PATH,
+          queryVector,
+          numCandidates: Math.max(fetchCap * 10, 100),
+          limit: fetchCap,
+        },
+      },
+      {
+        $project: {
+          noteId: 1,
+          score: { $meta: 'vectorSearchScore' },
+        },
+      },
+    ];
+    const hits = await LinkedPageSnapshotModel.aggregate(pipeline).exec();
+    const docs = mapSnapshotHitsToNoteDocs(hits);
+    return await filterDocsByNoteFilter(docs, baseFilter);
+  } catch (err) {
+    return [];
+  }
+}
+
+async function buildSnapshotKeywordDocs(args: {
+  q: string;
+  baseFilter: any;
+  fetchCap: number;
+}) {
+  const { q, baseFilter, fetchCap } = args;
+  if (!q) return [];
+  const pipeline: any[] = [
+    { $match: { $text: { $search: q } } },
+    { $addFields: { score: { $meta: 'textScore' } } },
+    { $sort: { score: -1 } },
+    { $limit: Math.min(fetchCap, SNAPSHOT_FETCH_CAP) },
+    { $project: { noteId: 1, score: 1 } },
+  ];
+  const hits = await LinkedPageSnapshotModel.aggregate(pipeline).exec();
+  const docs = mapSnapshotHitsToNoteDocs(hits);
+  return await filterDocsByNoteFilter(docs, baseFilter);
+}
+
+async function buildSemanticDocsForNotes(args: {
+  q: string;
+  baseFilter: any;
+  fetchCap: number;
+}) {
+  const { q, baseFilter, fetchCap } = args;
+  if (!q) return [];
+  try {
+    const { vector: queryVector } = await embedText(q, { model: 'text-embedding-3-small' });
+    return await buildSemanticDocsForNotesFromVector({ queryVector, baseFilter, fetchCap });
   } catch (err) {
     // Missing embeddings/index should not break keyword flow.
     return [];
@@ -550,23 +682,76 @@ async function buildNoteResultsByMode(args: {
   baseFilter: any;
   offset: number;
   limit: number;
+  includeLinkedSnapshots?: boolean;
 }) {
-  const { mode, q, baseFilter, offset, limit } = args;
+  const { mode, q, baseFilter, offset, limit, includeLinkedSnapshots } = args;
   const fetchCap = Math.min(Math.max((offset + limit) * 5, 50), 500);
+  const snapshotFetchCap = Math.min(fetchCap, SNAPSHOT_FETCH_CAP);
+  const weights: Record<string, number> = includeLinkedSnapshots
+    ? { snapshotKeyword: SNAPSHOT_RRF_WEIGHT, snapshotSemantic: SNAPSHOT_RRF_WEIGHT }
+    : {};
 
   if (mode === 'semantic') {
-    const semanticDocs = await buildSemanticDocsForNotes({ q, baseFilter, fetchCap });
-    const total = semanticDocs.length;
-    const page = semanticDocs.slice(offset, offset + limit);
+    let semanticDocs = await buildSemanticDocsForNotes({ q, baseFilter, fetchCap });
+    let fused = semanticDocs;
+    if (includeLinkedSnapshots) {
+      const { vector: queryVector } = await embedText(q, { model: 'text-embedding-3-small' });
+      semanticDocs = await buildSemanticDocsForNotesFromVector({
+        queryVector,
+        baseFilter,
+        fetchCap,
+      });
+      const snapshotSemanticDocs = await buildSemanticDocsForSnapshotsFromVector({
+        queryVector,
+        baseFilter,
+        fetchCap: snapshotFetchCap,
+      });
+      fused = rrfFuseWeighted(
+        { semantic: semanticDocs, snapshotSemantic: snapshotSemanticDocs },
+        weights,
+      );
+    }
+    const total = fused.length;
+    const page = fused.slice(offset, offset + limit);
     return { total, docs: page };
   }
 
   if (mode === 'auto') {
-    const [keywordDocs, semanticDocs] = await Promise.all([
-      buildKeywordDocsForNotes({ q, baseFilter, fetchCap }),
-      buildSemanticDocsForNotes({ q, baseFilter, fetchCap }),
-    ]);
-    const fused = rrfFuse({ text: keywordDocs, semantic: semanticDocs });
+    let keywordDocs: any[] = [];
+    let semanticDocs: any[] = [];
+    let snapshotKeywordDocs: any[] = [];
+    let snapshotSemanticDocs: any[] = [];
+
+    if (includeLinkedSnapshots) {
+      const { vector: queryVector } = await embedText(q, { model: 'text-embedding-3-small' });
+      [keywordDocs, semanticDocs, snapshotKeywordDocs, snapshotSemanticDocs] = await Promise.all([
+        buildKeywordDocsForNotes({ q, baseFilter, fetchCap }),
+        buildSemanticDocsForNotesFromVector({ queryVector, baseFilter, fetchCap }),
+        buildSnapshotKeywordDocs({ q, baseFilter, fetchCap: snapshotFetchCap }),
+        buildSemanticDocsForSnapshotsFromVector({
+          queryVector,
+          baseFilter,
+          fetchCap: snapshotFetchCap,
+        }),
+      ]);
+    } else {
+      [keywordDocs, semanticDocs] = await Promise.all([
+        buildKeywordDocsForNotes({ q, baseFilter, fetchCap }),
+        buildSemanticDocsForNotes({ q, baseFilter, fetchCap }),
+      ]);
+    }
+
+    const fused = includeLinkedSnapshots
+      ? rrfFuseWeighted(
+          {
+            text: keywordDocs,
+            semantic: semanticDocs,
+            snapshotKeyword: snapshotKeywordDocs,
+            snapshotSemantic: snapshotSemanticDocs,
+          },
+          weights,
+        )
+      : rrfFuse({ text: keywordDocs, semantic: semanticDocs });
     const total = fused.length;
     const page = fused.slice(offset, offset + limit);
     return { total, docs: page };
@@ -579,8 +764,20 @@ async function buildNoteResultsByMode(args: {
     ? await fetchTextDocs({ search: plan.secondary, baseFilter, fetchCap })
     : [];
   const merged = mergeDocs(primaryDocs, secondaryDocs);
-  const total = merged.length;
-  const page = merged.slice(offset, offset + limit);
+  let fused = merged;
+  if (includeLinkedSnapshots) {
+    const snapshotKeywordDocs = await buildSnapshotKeywordDocs({
+      q,
+      baseFilter,
+      fetchCap: snapshotFetchCap,
+    });
+    fused = rrfFuseWeighted(
+      { text: merged, snapshotKeyword: snapshotKeywordDocs },
+      weights,
+    );
+  }
+  const total = fused.length;
+  const page = fused.slice(offset, offset + limit);
   return { total, docs: page };
 }
 
@@ -734,6 +931,7 @@ searchRouter.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Unsupported search request version' });
     }
 
+    const includeLinkedSnapshots = Boolean(body.includeLinkedSnapshots);
     const parsedOps = parseQueryOperators(String(body.q ?? '').trim());
     const q = parsedOps.text;
     const treatedAsWildcard = q === '' || q === '*';
@@ -985,6 +1183,7 @@ searchRouter.post('/', async (req, res, next) => {
         baseFilter: mongoFilter,
         offset,
         limit,
+        includeLinkedSnapshots,
       });
 
       const terms = extractQueryTerms(q);
@@ -1006,6 +1205,16 @@ searchRouter.post('/', async (req, res, next) => {
       }));
 
       const response: SearchResponseV1 = { version: 1, total, hits };
+      if (includeLinkedSnapshots) {
+        (response as any).debug = {
+          ...(response as any).debug,
+          includeLinkedSnapshots: true,
+          snapshotChannels: {
+            keyword: docs.filter((d: any) => d.__channels?.includes('snapshotKeyword')).length,
+            semantic: docs.filter((d: any) => d.__channels?.includes('snapshotSemantic')).length,
+          },
+        };
+      }
       return res.json(response);
     }
   } catch (err) {
