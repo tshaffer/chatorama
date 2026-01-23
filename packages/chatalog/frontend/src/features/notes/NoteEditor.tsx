@@ -9,7 +9,7 @@ import {
   useGetTopicNotesWithRelationsQuery, // ⬅️ NEW
   useUploadImageMutation,
   useAttachAssetToNoteMutation,
-  useIndexLinkedPagesMutation,
+  useIndexLinkedPagesTextMutation,
 } from './notesApi';
 import {
   type Note,
@@ -311,7 +311,8 @@ export default function NoteEditor({
   const [deleteNote, { isLoading: isDeleting }] = useDeleteNoteMutation();
   const [uploadImage] = useUploadImageMutation();
   const [attachAssetToNote] = useAttachAssetToNoteMutation();
-  const [indexLinkedPages, { isLoading: isIndexingLinkedPages }] = useIndexLinkedPagesMutation();
+  const [indexLinkedPagesText, { isLoading: isIndexingLinkedPagesText }] =
+    useIndexLinkedPagesTextMutation();
 
   // Data for pickers
   const { data: subjects = [] } = useGetSubjectsQuery();
@@ -428,9 +429,30 @@ export default function NoteEditor({
   };
 
   const handleIndexLinkedPages = async () => {
-    if (!resolvedNoteId || isIndexingLinkedPages) return;
+    if (!resolvedNoteId) return;
+    setLinkedPagesDialogOpen(true);
+  };
+
+  const handleSubmitLinkedPageText = async () => {
+    if (!resolvedNoteId || isIndexingLinkedPagesText) return;
+    const url = linkedPageUrl.trim();
+    const extractedText = linkedPageText.trim();
+    if (!url || !extractedText) {
+      setSnack({
+        open: true,
+        msg: 'URL and extracted text are required',
+        sev: 'error',
+      });
+      return;
+    }
     try {
-      const res = await indexLinkedPages({ noteId: resolvedNoteId }).unwrap();
+      const res = await indexLinkedPagesText({
+        noteId: resolvedNoteId,
+        url,
+        title: linkedPageTitle.trim() || undefined,
+        excerpt: linkedPageExcerpt.trim() || undefined,
+        extractedText,
+      }).unwrap();
       const okCount = res.results.filter((r) => r.status === 'ok').length;
       const failCount = res.results.length - okCount;
       const okLabel = `${okCount} page${okCount === 1 ? '' : 's'}`;
@@ -440,8 +462,13 @@ export default function NoteEditor({
         msg: `Indexed ${okLabel}${failLabel}`,
         sev: failCount ? 'error' : 'success',
       });
-    } catch (err) {
-      setSnack({ open: true, msg: 'Failed to index linked pages', sev: 'error' });
+      setLinkedPagesDialogOpen(false);
+      setLinkedPageUrl('');
+      setLinkedPageTitle('');
+      setLinkedPageExcerpt('');
+      setLinkedPageText('');
+    } catch {
+      setSnack({ open: true, msg: 'Failed to index linked page text', sev: 'error' });
     }
   };
 
@@ -466,6 +493,11 @@ export default function NoteEditor({
     title?: string;
     alt?: string;
   } | null>(null);
+  const [linkedPagesDialogOpen, setLinkedPagesDialogOpen] = useState(false);
+  const [linkedPageUrl, setLinkedPageUrl] = useState('');
+  const [linkedPageTitle, setLinkedPageTitle] = useState('');
+  const [linkedPageExcerpt, setLinkedPageExcerpt] = useState('');
+  const [linkedPageText, setLinkedPageText] = useState('');
   const [resizePreset, setResizePreset] = useState<'sm' | 'md' | 'lg' | 'full' | 'custom'>('md');
   const [resizePx, setResizePx] = useState<string>('520');
   const [snack, setSnack] = useState<{
@@ -1224,15 +1256,15 @@ export default function NoteEditor({
               </Button>
             </span>
           </Tooltip>
-          <Tooltip title="Search includes text from pages you’ve indexed from note links.">
+          <Tooltip title="Paste linked page text to include it in search.">
             <span>
               <Button
                 size="small"
                 variant="outlined"
                 onClick={handleIndexLinkedPages}
-                disabled={isLoading || isSaving || isIndexingLinkedPages || !resolvedNoteId}
+                disabled={isLoading || isSaving || isIndexingLinkedPagesText || !resolvedNoteId}
               >
-                {isIndexingLinkedPages ? 'Indexing…' : 'Index linked pages'}
+                {isIndexingLinkedPagesText ? 'Indexing…' : 'Index linked pages'}
               </Button>
             </span>
           </Tooltip>
@@ -1784,6 +1816,63 @@ export default function NoteEditor({
             }}
           >
             Apply
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={linkedPagesDialogOpen}
+        onClose={() => setLinkedPagesDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Index linked page text</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Paste the page text from your browser to index it for search.
+            </Typography>
+            <TextField
+              label="URL"
+              value={linkedPageUrl}
+              onChange={(e) => setLinkedPageUrl(e.target.value)}
+              fullWidth
+            />
+            <TextField
+              label="Title (optional)"
+              value={linkedPageTitle}
+              onChange={(e) => setLinkedPageTitle(e.target.value)}
+              fullWidth
+            />
+            <TextField
+              label="Excerpt (optional)"
+              value={linkedPageExcerpt}
+              onChange={(e) => setLinkedPageExcerpt(e.target.value)}
+              fullWidth
+            />
+            <TextField
+              label="Extracted text"
+              value={linkedPageText}
+              onChange={(e) => setLinkedPageText(e.target.value)}
+              fullWidth
+              multiline
+              minRows={6}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setLinkedPagesDialogOpen(false)}
+            disabled={isIndexingLinkedPagesText}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSubmitLinkedPageText}
+            disabled={isIndexingLinkedPagesText}
+          >
+            {isIndexingLinkedPagesText ? 'Indexing…' : 'Index'}
           </Button>
         </DialogActions>
       </Dialog>

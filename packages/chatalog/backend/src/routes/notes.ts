@@ -450,6 +450,119 @@ notesRouter.post('/:noteId/index-linked-pages', async (req, res, next) => {
   }
 });
 
+notesRouter.post('/:noteId/index-linked-pages-text', async (req, res, next) => {
+  try {
+    const { noteId } = req.params;
+    if (!isValidObjectId(noteId)) {
+      return res.status(400).json({ error: 'Invalid noteId' });
+    }
+
+    const body = req.body ?? {};
+    const force = Boolean(body.force);
+    const snapshotsRaw = Array.isArray(body.snapshots)
+      ? body.snapshots
+      : body.url && body.extractedText
+        ? [{ url: body.url, title: body.title, excerpt: body.excerpt, extractedText: body.extractedText }]
+        : [];
+
+    if (!snapshotsRaw.length) {
+      return res.status(400).json({ error: 'snapshots or url+extractedText is required' });
+    }
+    if (snapshotsRaw.length > MAX_URLS_PER_REQUEST) {
+      return res.status(400).json({ error: `Too many urls (max ${MAX_URLS_PER_REQUEST})` });
+    }
+
+    const note = await NoteModel.findById(noteId).lean().exec();
+    if (!note) return res.status(404).json({ error: 'Note not found' });
+
+    const results: SnapshotResult[] = [];
+
+    for (const raw of snapshotsRaw) {
+      const urlRaw = String(raw?.url ?? '').trim();
+      if (!urlRaw) {
+        results.push({ url: urlRaw, status: 'error', error: 'Missing url' });
+        continue;
+      }
+
+      try {
+        const resolved = assertHttpUrl(urlRaw);
+        const extractedTextRaw = String(raw?.extractedText ?? '');
+        const trimmedText = extractedTextRaw.slice(0, MAX_EXTRACTED_CHARS).trim();
+        if (!trimmedText) {
+          results.push({ url: resolved.toString(), status: 'error', error: 'Empty extracted text' });
+          continue;
+        }
+
+        const contentHash = hashEmbeddingText(trimmedText);
+        const existing = await LinkedPageSnapshotModel.findOne({
+          noteId,
+          url: resolved.toString(),
+        }).lean();
+
+        if (existing && !force && existing.contentHash === contentHash) {
+          results.push({
+            url: resolved.toString(),
+            status: existing.status,
+            fetchedAt: existing.fetchedAt?.toISOString?.() ?? undefined,
+            title: existing.title,
+            textChars: existing.textChars,
+          });
+          continue;
+        }
+
+        const title = raw?.title ? String(raw.title) : undefined;
+        const excerpt = raw?.excerpt ? String(raw.excerpt) : undefined;
+        const embeddingText = `${title ?? ''}\n\n${trimmedText}`
+          .trim()
+          .slice(0, MAX_EMBEDDING_CHARS);
+        const { vector, model } = await embedText(embeddingText, {
+          model: 'text-embedding-3-small',
+        });
+
+        const doc = await LinkedPageSnapshotModel.findOneAndUpdate(
+          { noteId, url: resolved.toString() },
+          {
+            $set: {
+              noteId,
+              url: resolved.toString(),
+              title,
+              excerpt,
+              extractedText: trimmedText,
+              contentHash,
+              fetchedAt: new Date(),
+              status: 'ok',
+              error: undefined,
+              textChars: trimmedText.length,
+              embedding: vector,
+              embeddingModel: model,
+              embeddingTextHash: contentHash,
+              embeddingUpdatedAt: new Date(),
+            },
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true },
+        ).lean();
+
+        results.push({
+          url: resolved.toString(),
+          status: 'ok',
+          fetchedAt: doc?.fetchedAt?.toISOString?.() ?? new Date().toISOString(),
+          title: doc?.title,
+          textChars: doc?.textChars,
+        });
+      } catch (err: any) {
+        const status: SnapshotResult['status'] =
+          err instanceof SnapshotFetchError ? err.status : 'error';
+        const message = err instanceof Error ? err.message : String(err);
+        results.push({ url: urlRaw, status, error: message });
+      }
+    }
+
+    return res.json({ noteId: String(noteId), results });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 notesRouter.patch('/:id', patchNote);               // PATCH  /api/v1/notes/:id
 notesRouter.delete('/:id', deleteNote);             // DELETE /api/v1/notes/:id
 
