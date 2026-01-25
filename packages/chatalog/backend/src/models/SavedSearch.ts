@@ -17,7 +17,6 @@ const SavedSearchSchema = new Schema<SavedSearchDoc>(
   { timestamps: true }
 );
 
-SavedSearchSchema.index({ name: 1 }, { unique: true });
 
 applyToJSON(SavedSearchSchema);
 

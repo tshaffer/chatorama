@@ -184,7 +184,7 @@ const NoteSchema = new Schema<NoteDoc>(
     docKind: { type: String, enum: ['note', 'recipe'], index: true },
 
     // Chatworthy provenance
-    chatworthyNoteId:     { type: String, index: true },
+    chatworthyNoteId:     { type: String },
     chatworthyChatId:     { type: String, index: true },
     chatworthyChatTitle:  { type: String },
     chatworthyFileName:   { type: String },
