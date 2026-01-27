@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import path from 'path';
 import { AssetModel } from '../models/Asset';
 import { NoteModel } from '../models/Note';
+import { NoteAssetModel } from '../models/NoteAsset';
 import { ImportBatchModel } from '../models/ImportBatch';
 import { savePdfToLocal } from '../services/assetStorage';
 import { extractPdfText } from '../services/pdfText';
@@ -109,6 +110,18 @@ router.post('/pdf', upload.single('file'), async (req, res, next) => {
           extractedAt,
         },
       },
+    });
+
+    await NoteAssetModel.create({
+      noteId: note._id.toString(),
+      assetId: asset._id,
+      role: 'viewer',
+      sourceType: 'pdf',
+      mimeType: asset.mimeType,
+      filename: file.originalname,
+      storageKey: asset.storage?.path,
+      sizeBytes: asset.byteSize,
+      order: 0,
     });
 
     const batch = await ImportBatchModel.create({

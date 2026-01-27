@@ -9,6 +9,7 @@ export const chatalogApi = createApi({
     'Subject',
     'Topic',
     'Note',
+    'NoteAsset',
     'SubjectTopics',
     'QuickNote',
     'QuickNoteAsset',

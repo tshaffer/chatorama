@@ -7,6 +7,7 @@ import {
   useDeleteNoteMutation,
   useGetAllNotesForRelationsQuery,
   useGetTopicNotesWithRelationsQuery, // ⬅️ NEW
+  useGetNoteAssetsQuery,
   useUploadImageMutation,
   useAttachAssetToNoteMutation,
 } from './notesApi';
@@ -305,6 +306,7 @@ export default function NoteEditor({
   } = useGetNoteQuery(resolvedNoteId ?? skipToken, {
     refetchOnMountOrArgChange: true,
   });
+  const { data: noteAssets = [] } = useGetNoteAssetsQuery(resolvedNoteId ?? skipToken);
 
   const [updateNote, { isLoading: isSaving }] = useUpdateNoteMutation();
   const [deleteNote, { isLoading: isDeleting }] = useDeleteNoteMutation();
@@ -789,9 +791,22 @@ export default function NoteEditor({
     );
   }
 
-  const pdfUrl = isPdfNote && note?.pdfAssetId
-    ? `${API_BASE}/assets/${note.pdfAssetId}/content`
-    : undefined;
+  const viewerAsset = useMemo(() => {
+    const match = noteAssets.find((asset) => asset.role === 'viewer');
+    const asset = match?.asset as any;
+    if (!asset) return undefined;
+    const isPdf = asset.type === 'pdf' || asset.mimeType === 'application/pdf';
+    return isPdf ? asset : undefined;
+  }, [noteAssets]);
+  const viewerPdfUrl =
+    note?.sourceType === 'googleDoc' && viewerAsset?.id
+      ? `${API_BASE}/assets/${viewerAsset.id}/content`
+      : undefined;
+  const pdfUrl =
+    viewerPdfUrl ??
+    (isPdfNote && note?.pdfAssetId
+      ? `${API_BASE}/assets/${note.pdfAssetId}/content`
+      : undefined);
   const body = stripFrontMatter(markdown ?? '');
   const previewBody = normalizeTurns(
     body.replace(/^#\s*Transcript\s*\r?\n?/, ''),

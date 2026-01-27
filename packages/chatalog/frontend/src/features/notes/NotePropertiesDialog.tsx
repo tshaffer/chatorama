@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { skipToken } from '@reduxjs/toolkit/query';
 import {
   Dialog,
   DialogTitle,
@@ -18,6 +19,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import type { Note } from '@chatorama/chatalog-shared';
 import { API_BASE } from '../../lib/apiBase';
+import { useGetNoteAssetsQuery } from './notesApi';
 
 type Props = {
   open: boolean;
@@ -164,13 +166,26 @@ export default function NotePropertiesDialog({
     }
   };
 
+  const noteId = note?.id ?? skipToken;
+  const { data: noteAssets = [] } = useGetNoteAssetsQuery(noteId);
+  const viewerAsset = useMemo(() => {
+    if (note?.sourceType !== 'googleDoc') return undefined;
+    const match = noteAssets.find((asset) => asset.role === 'viewer');
+    const asset = match?.asset as any;
+    if (!asset) return undefined;
+    const isPdf = asset.type === 'pdf' || asset.mimeType === 'application/pdf';
+    return isPdf ? asset : undefined;
+  }, [note?.sourceType, noteAssets]);
+
   const chatLink = note?.chatworthyChatId
     ? `https://chat.openai.com/c/${note.chatworthyChatId}`
     : undefined;
   const pdfLink =
-    note?.sourceType === 'pdf' && note.pdfAssetId
-      ? `${API_BASE}/assets/${note.pdfAssetId}/content`
-      : undefined;
+    (viewerAsset?.id
+      ? `${API_BASE}/assets/${viewerAsset.id}/content`
+      : note?.sourceType === 'pdf' && note.pdfAssetId
+        ? `${API_BASE}/assets/${note.pdfAssetId}/content`
+        : undefined);
 
   const timeRows = [
     { label: 'Created', value: createdAt },

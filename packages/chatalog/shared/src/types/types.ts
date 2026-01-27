@@ -219,6 +219,12 @@ export type NoteAsset = {
   noteId: string;
   assetId: string;
   caption?: string;
+  role?: 'viewer' | 'source' | 'other';
+  sourceType?: string;
+  mimeType?: string;
+  filename?: string;
+  storageKey?: string;
+  sizeBytes?: number;
   createdAt: string;
   updatedAt: string;
 };
