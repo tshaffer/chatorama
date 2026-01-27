@@ -1,9 +1,11 @@
 import { Router } from 'express';
+import { isValidObjectId } from 'mongoose';
 import {
   upsertGoogleDocFromArtifacts,
   type UpsertGoogleDocArtifactsInput,
 } from '../services/googleDocNotes';
 import { exportDrivePdf, exportDriveTextPlain, fetchDriveFileMeta } from '../services/googleDrive';
+import { NoteModel } from '../models/Note';
 
 const googleDocNotesRouter = Router();
 
@@ -62,6 +64,57 @@ googleDocNotesRouter.post('/importFromDrive', async (req, res, next) => {
       importedAt: now.toISOString(),
       driveModifiedTimeAtImport: meta.modifiedTime,
       stale: false,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/v1/googleDocNotes/:noteId/driveStatus
+googleDocNotesRouter.get('/:noteId/driveStatus', async (req, res, next) => {
+  try {
+    const { noteId } = req.params;
+    if (!isValidObjectId(noteId)) {
+      return res.status(400).json({ error: 'Invalid noteId' });
+    }
+
+    const note = await NoteModel.findById(noteId).lean().exec();
+    if (!note) return res.status(404).json({ error: 'Note not found' });
+
+    const googleSource = Array.isArray(note.sources)
+      ? note.sources.find((s: any) => s?.type === 'googleDoc')
+      : undefined;
+    if (!googleSource || note.sourceType !== 'googleDoc') {
+      return res.status(400).json({ error: 'Note is not a Google Doc source' });
+    }
+
+    const driveFileId = googleSource.driveFileId;
+    if (!driveFileId) {
+      return res.status(400).json({ error: 'driveFileId is missing on note source' });
+    }
+
+    const meta = await fetchDriveFileMeta(driveFileId);
+    const driveModifiedTimeAtImport = googleSource.driveModifiedTimeAtImport
+      ? new Date(googleSource.driveModifiedTimeAtImport).toISOString()
+      : undefined;
+    const importedAt = googleSource.importedAt
+      ? new Date(googleSource.importedAt).toISOString()
+      : note.importedAt
+        ? new Date(note.importedAt).toISOString()
+        : undefined;
+
+    const isStale = Boolean(
+      driveModifiedTimeAtImport &&
+        new Date(meta.modifiedTime).getTime() > new Date(driveModifiedTimeAtImport).getTime(),
+    );
+
+    return res.json({
+      driveFileId,
+      driveName: meta.name,
+      driveModifiedTimeCurrent: meta.modifiedTime,
+      driveModifiedTimeAtImport,
+      importedAt,
+      isStale,
     });
   } catch (err) {
     next(err);
