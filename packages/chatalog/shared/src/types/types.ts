@@ -125,7 +125,15 @@ export interface Note {
   recipe?: RecipeMeta;
   cookedHistory?: CookedEvent[];
 
-  sources?: { url?: string; type?: 'chatworthy' | 'clip' | 'manual' }[];
+  sources?: {
+    url?: string;
+    type?: 'chatworthy' | 'clip' | 'manual' | 'googleDoc';
+    driveFileId?: string;
+    driveUrl?: string;
+    importedAt?: string;
+    driveModifiedTimeAtImport?: string;
+    driveNameAtImport?: string;
+  }[];
 
   // Chatworthy provenance
   chatworthyNoteId?: string;
@@ -146,6 +154,12 @@ export interface Note {
       extractedText?: string;
       pageCount?: number;
       extractedAt?: string;
+    };
+    googleDoc?: {
+      textPlain?: string;
+      textHash?: string;
+      textChars?: number;
+      exportedAt?: string;
     };
   };
 

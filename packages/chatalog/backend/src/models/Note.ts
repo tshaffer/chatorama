@@ -4,7 +4,7 @@ import { applyToJSON } from '../db/toJsonPlugin';
 import { NoteRelation, RecipeIngredient, RecipeMeta, CookedEvent } from '@chatorama/chatalog-shared';
 
 export const NOTE_STATUS_VALUES = ['completed'] as const;
-const MAX_GOOGLE_DOC_TEXT_CHARS = 250_000;
+const MAX_GOOGLE_DOC_TEXT_CHARS = 300_000;
 
 export interface NoteDoc extends Document {
   _id: Types.ObjectId;
