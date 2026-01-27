@@ -1,0 +1,95 @@
+import { getValidAccessToken } from './googleAuth';
+
+const GOOGLE_DOC_MIME = 'application/vnd.google-apps.document';
+const MAX_TEXT_BYTES = 2_000_000;
+const MAX_PDF_BYTES = 20_000_000;
+const REQUEST_TIMEOUT_MS = 20_000;
+
+export type DriveFileMeta = {
+  id: string;
+  name: string;
+  modifiedTime: string;
+  mimeType: string;
+};
+
+async function fetchWithTimeout(url: string, init: RequestInit = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function readBodyWithLimit(res: Response, limitBytes: number): Promise<Buffer> {
+  const reader = res.body?.getReader();
+  if (!reader) {
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > limitBytes) throw new Error('Export too large');
+    return buf;
+  }
+
+  const chunks: Buffer[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      total += value.length;
+      if (total > limitBytes) throw new Error('Export too large');
+      chunks.push(Buffer.from(value));
+    }
+  }
+  return Buffer.concat(chunks);
+}
+
+export async function fetchDriveFileMeta(driveFileId: string): Promise<DriveFileMeta> {
+  const token = await getValidAccessToken();
+  const url = new URL(`https://www.googleapis.com/drive/v3/files/${driveFileId}`);
+  url.searchParams.set('fields', 'id,name,modifiedTime,mimeType');
+
+  const res = await fetchWithTimeout(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Drive metadata fetch failed (${res.status}): ${text}`);
+  }
+  const data = (await res.json()) as DriveFileMeta;
+  if (data.mimeType !== GOOGLE_DOC_MIME) {
+    throw new Error('Drive file is not a Google Doc');
+  }
+  return data;
+}
+
+export async function exportDriveTextPlain(driveFileId: string): Promise<string> {
+  const token = await getValidAccessToken();
+  const url = new URL(`https://www.googleapis.com/drive/v3/files/${driveFileId}/export`);
+  url.searchParams.set('mimeType', 'text/plain');
+
+  const res = await fetchWithTimeout(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Drive text export failed (${res.status}): ${text}`);
+  }
+  const buf = await readBodyWithLimit(res, MAX_TEXT_BYTES);
+  return buf.toString('utf8');
+}
+
+export async function exportDrivePdf(driveFileId: string): Promise<Buffer> {
+  const token = await getValidAccessToken();
+  const url = new URL(`https://www.googleapis.com/drive/v3/files/${driveFileId}/export`);
+  url.searchParams.set('mimeType', 'application/pdf');
+
+  const res = await fetchWithTimeout(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Drive PDF export failed (${res.status}): ${text}`);
+  }
+  return await readBodyWithLimit(res, MAX_PDF_BYTES);
+}
