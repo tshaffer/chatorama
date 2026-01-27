@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
 import {
   Dialog,
@@ -19,7 +19,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import type { Note } from '@chatorama/chatalog-shared';
 import { API_BASE } from '../../lib/apiBase';
-import { useGetNoteAssetsQuery } from './notesApi';
+import { useGetNoteAssetsQuery, useImportGoogleDocFromDriveMutation } from './notesApi';
 
 type Props = {
   open: boolean;
@@ -168,6 +168,13 @@ export default function NotePropertiesDialog({
 
   const noteId = note?.id ?? skipToken;
   const { data: noteAssets = [] } = useGetNoteAssetsQuery(noteId);
+  const [importGoogleDoc, { isLoading: isReimporting }] =
+    useImportGoogleDocFromDriveMutation();
+  const [reimportError, setReimportError] = useState<string | null>(null);
+  const googleSource = useMemo(() => {
+    if (!note?.sources?.length) return undefined;
+    return note.sources.find((s) => s?.type === 'googleDoc');
+  }, [note?.sources]);
   const viewerAsset = useMemo(() => {
     if (note?.sourceType !== 'googleDoc') return undefined;
     const match = noteAssets.find((asset) => asset.role === 'viewer');
@@ -419,10 +426,41 @@ export default function NotePropertiesDialog({
             Open PDF
           </Button>
         ) : null}
+        {note?.sourceType === 'googleDoc' ? (
+          <Button
+            variant="outlined"
+            disabled={!googleSource?.driveFileId || isReimporting}
+            onClick={async () => {
+              if (!note?.id || !googleSource?.driveFileId) return;
+              const ok = window.confirm('Re-import from Google Doc? This will overwrite the stored export.');
+              if (!ok) return;
+              setReimportError(null);
+              try {
+                await importGoogleDoc({
+                  driveFileId: googleSource.driveFileId,
+                  noteId: note.id,
+                }).unwrap();
+                onClose();
+              } catch (err: any) {
+                const msg = err?.data?.error ?? err?.message ?? 'Re-import failed';
+                setReimportError(String(msg));
+              }
+            }}
+          >
+            {isReimporting ? 'Re-importing…' : 'Re-import from Google Doc'}
+          </Button>
+        ) : null}
         <Button onClick={onClose} variant="contained">
           Close
         </Button>
       </DialogActions>
+      {reimportError ? (
+        <DialogContent sx={{ pt: 0 }}>
+          <Typography variant="body2" color="error">
+            {reimportError}
+          </Typography>
+        </DialogContent>
+      ) : null}
     </Dialog>
   );
 }
