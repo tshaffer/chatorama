@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { NoteModel } from '../models/Note';
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
-import { computeEmbeddingTextAndHash } from '../ai/embeddingText';
+import { buildNoteEmbeddingInput } from '../ai/embeddingText';
 import { embedText } from '../ai/embed';
 import type {
   SearchRequestV1,
@@ -1227,7 +1227,7 @@ searchRouter.post(
         examined += 1;
 
         try {
-          const { text, hash } = computeEmbeddingTextAndHash(note, {
+          const { text, hash } = buildNoteEmbeddingInput(note, {
             includeMarkdown: true,
             maxMarkdownChars,
             includeSummary: true,

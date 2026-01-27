@@ -1,0 +1,288 @@
+import crypto from 'crypto';
+import { isValidObjectId } from 'mongoose';
+import { slugifyStandard } from '@chatorama/chatalog-shared';
+import { NoteModel } from '../models/Note';
+import { AssetModel } from '../models/Asset';
+import { NoteAssetModel } from '../models/NoteAsset';
+import { dedupeSlug, ensureSubjectTopicExist } from '../utilities';
+import { embedText } from '../ai/embed';
+import { buildNoteEmbeddingInput } from '../ai/embeddingText';
+import { deleteLocalFile, savePdfToLocal } from './assetStorage';
+
+const MAX_GOOGLE_DOC_TEXT_CHARS = 300_000;
+const MIN_EMBED_TEXT_LEN = 10;
+
+export type GoogleDocArtifactSource = {
+  driveFileId: string;
+  driveUrl?: string;
+  driveMimeType?: string;
+  driveModifiedTime: string;
+  driveName?: string;
+};
+
+export type UpsertGoogleDocArtifactsInput = {
+  noteId?: string;
+  source: GoogleDocArtifactSource;
+  textPlain: string;
+  viewerPdfBase64?: string;
+  viewerPdfFilename?: string;
+  subjectId?: string;
+  topicId?: string;
+};
+
+export type UpsertGoogleDocArtifactsResult = {
+  noteId: string;
+  status: 'created' | 'updated';
+  embedded: true;
+  viewerStored: boolean;
+};
+
+function normalizeTextPlain(text: string): string {
+  return text.slice(0, MAX_GOOGLE_DOC_TEXT_CHARS).trim();
+}
+
+function parseDriveModifiedTime(value: string): Date {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error('source.driveModifiedTime must be a valid ISO timestamp');
+  }
+  return parsed;
+}
+
+function decodeBase64(input: string): Buffer {
+  const trimmed = input.trim();
+  const commaIdx = trimmed.indexOf('base64,');
+  const payload = commaIdx >= 0 ? trimmed.slice(commaIdx + 7) : trimmed;
+  return Buffer.from(payload, 'base64');
+}
+
+async function removeViewerAttachments(noteId: string): Promise<void> {
+  const existing = await NoteAssetModel.find({ noteId, role: 'viewer' }).exec();
+  for (const rel of existing) {
+    await NoteAssetModel.deleteOne({ _id: rel._id }).exec();
+    const remaining = await NoteAssetModel.countDocuments({ assetId: rel.assetId }).exec();
+    if (remaining === 0) {
+      const asset = await AssetModel.findById(rel.assetId).exec();
+      if (asset) {
+        await AssetModel.deleteOne({ _id: asset.id }).exec();
+        await deleteLocalFile(asset.storage.path);
+      }
+    }
+  }
+}
+
+async function persistViewerPdf(
+  noteId: string,
+  pdfBase64: string,
+  filename?: string,
+): Promise<boolean> {
+  const buffer = decodeBase64(pdfBase64);
+  if (!buffer.length) return false;
+
+  await removeViewerAttachments(noteId);
+
+  const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+  let asset = await AssetModel.findOne({ sha256 }).exec();
+  if (!asset) {
+    const saved = await savePdfToLocal(buffer);
+    try {
+      asset = await AssetModel.create({
+        type: 'pdf',
+        mimeType: 'application/pdf',
+        byteSize: saved.size,
+        sha256,
+        storage: { provider: 'local', path: saved.path },
+      });
+    } catch (err: any) {
+      if (err?.code === 11000) {
+        asset = await AssetModel.findOne({ sha256 }).exec();
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  if (!asset) return false;
+
+  await NoteAssetModel.create({
+    noteId,
+    assetId: asset._id,
+    order: 0,
+    role: 'viewer',
+    sourceType: 'googleDoc',
+    mimeType: asset.mimeType,
+    filename: filename?.trim() || undefined,
+    storageKey: asset.storage?.path,
+    sizeBytes: asset.byteSize,
+  });
+
+  return true;
+}
+
+function mergeGoogleDocSource(existing: any[] | undefined, next: any) {
+  const rest = Array.isArray(existing)
+    ? existing.filter((s) => s?.type !== 'googleDoc')
+    : [];
+  return [...rest, next];
+}
+
+const GOOGLE_DOC_MIME = 'application/vnd.google-apps.document';
+const GOOGLE_SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
+const GOOGLE_SLIDES_MIME = 'application/vnd.google-apps.presentation';
+
+function deriveDocsUrl(driveFileId: string, mimeType?: string): string | undefined {
+  if (!mimeType || mimeType === GOOGLE_DOC_MIME) {
+    return `https://docs.google.com/document/d/${driveFileId}/edit`;
+  }
+  if (mimeType === GOOGLE_SHEET_MIME) {
+    return `https://docs.google.com/spreadsheets/d/${driveFileId}/edit`;
+  }
+  if (mimeType === GOOGLE_SLIDES_MIME) {
+    return `https://docs.google.com/presentation/d/${driveFileId}/edit`;
+  }
+  return undefined;
+}
+
+export async function upsertGoogleDocFromArtifacts(
+  input: UpsertGoogleDocArtifactsInput,
+): Promise<UpsertGoogleDocArtifactsResult> {
+  const source = input.source ?? ({} as GoogleDocArtifactSource);
+  if (!source.driveFileId) throw new Error('source.driveFileId is required');
+  if (!source.driveModifiedTime) throw new Error('source.driveModifiedTime is required');
+
+  const textPlain = normalizeTextPlain(String(input.textPlain ?? ''));
+  if (!textPlain) throw new Error('textPlain is required');
+
+  const driveModifiedTimeAtImport = parseDriveModifiedTime(source.driveModifiedTime);
+  const now = new Date();
+  const textHash = crypto.createHash('sha256').update(textPlain).digest('hex');
+  const textChars = textPlain.length;
+
+  let status: UpsertGoogleDocArtifactsResult['status'] = 'created';
+  let noteId = input.noteId;
+  let sources: any[] = [];
+  let existingNote: any | undefined;
+  const subjectId = input.subjectId;
+  const topicId = input.topicId;
+
+  if (subjectId || topicId) {
+    await ensureSubjectTopicExist(subjectId, topicId);
+  }
+
+  const googleSource = {
+    type: 'googleDoc',
+    driveFileId: source.driveFileId,
+    driveUrl: source.driveUrl,
+    docsUrl: deriveDocsUrl(source.driveFileId, source.driveMimeType),
+    importedAt: now,
+    driveModifiedTimeAtImport,
+    driveNameAtImport: source.driveName,
+  };
+
+  if (noteId) {
+    if (!isValidObjectId(noteId)) throw new Error('noteId is invalid');
+    const existing = await NoteModel.findById(noteId).lean().exec();
+    if (!existing) throw new Error('noteId not found');
+    status = 'updated';
+    existingNote = existing;
+    sources = mergeGoogleDocSource(existing.sources as any, googleSource);
+  } else {
+    if (!subjectId || !topicId) {
+      throw new Error('subjectId and topicId are required for googleDoc import');
+    }
+    const title = source.driveName?.trim() || 'Untitled';
+    const slug = await dedupeSlug(slugifyStandard(title || 'untitled'), undefined);
+    sources = mergeGoogleDocSource(undefined, googleSource);
+
+    const { text: embeddingText, hash } = buildNoteEmbeddingInput({
+      sourceType: 'googleDoc',
+      markdown: '',
+      derived: { googleDoc: { textPlain } },
+    });
+    const { vector, model } =
+      embeddingText.length >= MIN_EMBED_TEXT_LEN
+        ? await embedText(embeddingText, { model: 'text-embedding-3-small' })
+        : { vector: undefined, model: undefined };
+
+    const created = await NoteModel.create({
+      title,
+      slug,
+      markdown: '',
+      summary: undefined,
+      tags: [],
+      links: [],
+      backlinks: [],
+      relations: [],
+      subjectId,
+      topicId,
+      sources,
+      docKind: 'note',
+      sourceType: 'googleDoc',
+      importedAt: now,
+      derived: {
+        googleDoc: {
+          textPlain,
+          textHash,
+          textChars,
+          exportedAt: now,
+        },
+      },
+      embedding: vector,
+      embeddingModel: model,
+      embeddingTextHash: hash,
+      embeddingUpdatedAt: now,
+    });
+    noteId = created._id.toString();
+  }
+
+  if (status === 'updated') {
+    const { text: embeddingText, hash } = buildNoteEmbeddingInput({
+      sourceType: 'googleDoc',
+      markdown: existingNote?.markdown ?? '',
+      derived: { googleDoc: { textPlain } },
+    });
+    const { vector, model } =
+      embeddingText.length >= MIN_EMBED_TEXT_LEN
+        ? await embedText(embeddingText, { model: 'text-embedding-3-small' })
+        : { vector: undefined, model: undefined };
+
+    const subjectTopicUpdate: any = {};
+    if (subjectId) subjectTopicUpdate.subjectId = subjectId;
+    if (topicId) subjectTopicUpdate.topicId = topicId;
+
+    await NoteModel.updateOne(
+      { _id: noteId },
+      {
+        $set: {
+          sourceType: 'googleDoc',
+          sources,
+          derived: {
+            googleDoc: {
+              textPlain,
+              textHash,
+              textChars,
+              exportedAt: now,
+            },
+          },
+          embedding: vector,
+          embeddingModel: model,
+          embeddingTextHash: hash,
+          embeddingUpdatedAt: now,
+          ...subjectTopicUpdate,
+        },
+      },
+    ).exec();
+  }
+
+  let viewerStored = false;
+  if (input.viewerPdfBase64 && noteId) {
+    viewerStored = await persistViewerPdf(noteId, input.viewerPdfBase64, input.viewerPdfFilename);
+  }
+
+  return {
+    noteId: noteId!,
+    status,
+    embedded: true,
+    viewerStored,
+  };
+}

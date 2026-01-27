@@ -1,6 +1,6 @@
 import { NoteModel } from '../models/Note';
 import { embedText } from '../ai/embed';
-import { computeEmbeddingTextAndHash, hashEmbeddingText } from '../ai/embeddingText';
+import { buildNoteEmbeddingInput, hashEmbeddingText } from '../ai/embeddingText';
 import { buildRecipeSemanticText } from './buildRecipeSemanticText';
 
 type EmbedOptions = {
@@ -28,7 +28,7 @@ export async function computeAndPersistEmbeddings(
 }
 
 async function computeAndPersistNoteEmbedding(note: any, opts: EmbedOptions) {
-  const { text, hash } = computeEmbeddingTextAndHash(note, {
+  const { text, hash } = buildNoteEmbeddingInput(note, {
     includeMarkdown: true,
     includeSummary: true,
     includeTags: true,

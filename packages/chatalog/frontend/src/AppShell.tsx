@@ -6,6 +6,7 @@ import ImportChatworthyButton from './features/imports/ImportChatworthyButton';
 import ImportPdfButton from './features/imports/ImportPdfButton';
 import { fetchJSON } from './lib/api';
 import NoteAddIcon from '@mui/icons-material/NoteAdd';
+import CloudDownloadOutlinedIcon from '@mui/icons-material/CloudDownloadOutlined';
 
 // NEW: nav icons
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
@@ -24,6 +25,7 @@ import { hydrateFromUrl, setDraftText } from './features/search/searchSlice';
 import { buildSearchUrlFromQuery } from './features/search/searchUrl';
 
 import ImportAiClassificationButton from './features/imports/ImportAiClassificationButton';
+import { useGoogleDocImportDialog } from './features/imports/useGoogleDocImportDialog';
 
 type TopNavButtonProps = {
   to: string;
@@ -71,6 +73,10 @@ export default function AppShell() {
   const searchDraftText = useAppSelector(selectSearchDraftText);
   const [qcOpen, setQcOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { openImport: openGoogleDocImport, dialog: googleDocImportDialog } =
+    useGoogleDocImportDialog({
+      onImported: (noteId) => navigate(`/n/${noteId}`),
+    });
 
   useEffect(() => {
     fetchJSON<{ ok: boolean }>('/health')
@@ -85,6 +91,15 @@ export default function AppShell() {
 
   const subjectSlug = (m?.params as any)?.subjectSlug as string | undefined;
   const topicSlug = (m?.params as any)?.topicSlug as string | undefined;
+  const subjectId = takeObjectId(subjectSlug);
+  const topicId = takeObjectId(topicSlug);
+
+  const handleOpenGoogleDocImport = () => {
+    openGoogleDocImport({
+      subjectId,
+      topicId,
+    });
+  };
 
   const goSearch = () => {
     const parsed = parseSearchInput(searchDraftText);
@@ -111,9 +126,6 @@ export default function AppShell() {
         updatedTo: parsed.params.updatedTo?.trim() || undefined,
       },
     };
-
-    const subjectId = takeObjectId(subjectSlug);
-    const topicId = takeObjectId(topicSlug);
 
     if (subjectId) nextQuery.filters.subjectId = subjectId;
     if (topicId) nextQuery.filters.topicId = topicId;
@@ -176,6 +188,23 @@ export default function AppShell() {
             {/* NEW: AI classification import (seed + classification JSON) */}
             <ImportAiClassificationButton mode="icon" />
 
+            <Tooltip title="Import Google Doc">
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={handleOpenGoogleDocImport}
+                  aria-label="Import Google Doc"
+                  sx={(theme) => ({
+                    borderRadius: 2,
+                    backgroundColor: alpha(theme.palette.common.white, 0.18),
+                    '&:hover': { backgroundColor: alpha(theme.palette.common.white, 0.28) },
+                  })}
+                >
+                  <CloudDownloadOutlinedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+
             {/* Quick Capture as an action icon */}
             <Tooltip title="Quick Capture">
               <IconButton
@@ -208,6 +237,8 @@ export default function AppShell() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
       />
+
+      {googleDocImportDialog}
 
       {/* Full-width main area with small side padding */}
       <Box

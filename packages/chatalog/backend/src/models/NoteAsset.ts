@@ -7,6 +7,12 @@ export interface NoteAssetDoc extends Document {
   assetId: Types.ObjectId;
   order: number;
   caption?: string;
+  role?: 'viewer' | 'source' | 'other';
+  sourceType?: string;
+  mimeType?: string;
+  filename?: string;
+  storageKey?: string;
+  sizeBytes?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -17,6 +23,12 @@ const NoteAssetSchema = new Schema<NoteAssetDoc>(
     assetId: { type: Schema.Types.ObjectId, ref: 'Asset', required: true, index: true },
     order: { type: Number, default: 0 },
     caption: { type: String },
+    role: { type: String, enum: ['viewer', 'source', 'other'] },
+    sourceType: { type: String },
+    mimeType: { type: String },
+    filename: { type: String },
+    storageKey: { type: String },
+    sizeBytes: { type: Number },
   },
   { timestamps: true }
 );

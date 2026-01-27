@@ -46,6 +46,30 @@ export const notesApi = baseApi.injectEndpoints({
       providesTags: (_res, _err, noteId) => [{ type: 'Note', id: noteId }],
     }),
 
+    getNoteAssets: build.query<NoteAssetWithAsset[], string>({
+      query: (noteId) => ({ url: `notes/${noteId}/assets` }),
+      providesTags: (_res, _err, noteId) => [{ type: 'NoteAsset' as const, id: `LIST:${noteId}` }],
+    }),
+
+    getGoogleOAuthStatus: build.query<{ connected: boolean; hasRefreshToken?: boolean }, void>({
+      query: () => ({ url: 'google/oauth/status' }),
+    }),
+
+    getGoogleDocDriveStatus: build.query<
+      {
+        driveFileId: string;
+        driveName?: string;
+        driveModifiedTimeCurrent?: string;
+        driveModifiedTimeAtImport?: string;
+        importedAt?: string;
+        isStale: boolean;
+      },
+      string
+    >({
+      query: (noteId) => ({ url: `googleDocNotes/${noteId}/driveStatus` }),
+      providesTags: (_res, _err, noteId) => [{ type: 'GoogleDocStatus' as const, id: noteId }],
+    }),
+
     getTopicNotesWithRelations: build.query<
       TopicNotesWithRelations,
       { subjectId: string; topicId: string }
@@ -113,14 +137,27 @@ export const notesApi = baseApi.injectEndpoints({
 
     attachAssetToNote: build.mutation<
       NoteAssetWithAsset,
-      { noteId: string; assetId: string; caption?: string }
+      {
+        noteId: string;
+        assetId: string;
+        caption?: string;
+        role?: 'viewer' | 'source' | 'other';
+        sourceType?: string;
+        mimeType?: string;
+        filename?: string;
+        storageKey?: string;
+        sizeBytes?: number;
+      }
     >({
       query: ({ noteId, ...body }) => ({
         url: `notes/${noteId}/assets`,
         method: 'POST',
         body,
       }),
-      invalidatesTags: (_res, _err, { noteId }) => [{ type: 'Note' as const, id: noteId }],
+      invalidatesTags: (_res, _err, { noteId }) => [
+        { type: 'Note' as const, id: noteId },
+        { type: 'NoteAsset' as const, id: `LIST:${noteId}` },
+      ],
     }),
 
     addCookedEvent: build.mutation<Note, { noteId: string } & Partial<CookedEvent>>({
@@ -259,12 +296,35 @@ export const notesApi = baseApi.injectEndpoints({
         return tags;
       },
     }),
+
+    importGoogleDocFromDrive: build.mutation<
+      { noteId: string; importedAt: string; driveModifiedTimeAtImport: string; stale: boolean },
+      { driveFileId: string; noteId?: string; subjectId: string; topicId: string }
+    >({
+      query: (body) => ({
+        url: 'googleDocNotes/importFromDrive',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_res, _err, { noteId, subjectId, topicId }) => {
+        const tags: Array<{ type: 'Note' | 'GoogleDocStatus'; id: string }> = [
+          { type: 'Note', id: 'LIST' },
+          { type: 'Note', id: `LIST:${subjectId}:${topicId}` },
+        ];
+        if (noteId) tags.push({ type: 'Note' as const, id: noteId });
+        if (noteId) tags.push({ type: 'GoogleDocStatus', id: noteId });
+        return tags;
+      },
+    }),
   }),
   overrideExisting: true,
 });
 
 export const {
   useGetNoteQuery,
+  useGetNoteAssetsQuery,
+  useGetGoogleOAuthStatusQuery,
+  useGetGoogleDocDriveStatusQuery,
   useUpdateNoteMutation,
   useDeleteNoteMutation,
   useUploadImageMutation,
@@ -276,4 +336,5 @@ export const {
   useGetTopicNotesWithRelationsQuery,
   useGetAllNotesForRelationsQuery,
   useMergeNotesInTopicMutation,
+  useImportGoogleDocFromDriveMutation,
 } = notesApi;

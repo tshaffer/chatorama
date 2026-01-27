@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { skipToken } from '@reduxjs/toolkit/query';
 import {
   Dialog,
   DialogTitle,
@@ -18,6 +19,11 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import type { Note } from '@chatorama/chatalog-shared';
 import { API_BASE } from '../../lib/apiBase';
+import {
+  useGetGoogleDocDriveStatusQuery,
+  useGetNoteAssetsQuery,
+  useImportGoogleDocFromDriveMutation,
+} from './notesApi';
 
 type Props = {
   open: boolean;
@@ -164,13 +170,49 @@ export default function NotePropertiesDialog({
     }
   };
 
+  const noteId = note?.id ?? skipToken;
+  const { data: noteAssets = [] } = useGetNoteAssetsQuery(noteId);
+  const {
+    data: driveStatus,
+    isError: driveStatusError,
+    isFetching: driveStatusLoading,
+  } = useGetGoogleDocDriveStatusQuery(
+    note?.sourceType === 'googleDoc' && note?.id ? note.id : skipToken
+  );
+  const [importGoogleDoc, { isLoading: isReimporting }] =
+    useImportGoogleDocFromDriveMutation();
+  const [reimportError, setReimportError] = useState<string | null>(null);
+  const googleSource = useMemo(() => {
+    if (!note?.sources?.length) return undefined;
+    return note.sources.find((s) => s?.type === 'googleDoc');
+  }, [note?.sources]);
+  const viewerAsset = useMemo(() => {
+    if (note?.sourceType !== 'googleDoc') return undefined;
+    const match = noteAssets.find((asset) => asset.role === 'viewer');
+    const asset = match?.asset as any;
+    if (!asset) return undefined;
+    const isPdf = asset.type === 'pdf' || asset.mimeType === 'application/pdf';
+    return isPdf ? asset : undefined;
+  }, [note?.sourceType, noteAssets]);
+
   const chatLink = note?.chatworthyChatId
     ? `https://chat.openai.com/c/${note.chatworthyChatId}`
     : undefined;
   const pdfLink =
-    note?.sourceType === 'pdf' && note.pdfAssetId
-      ? `${API_BASE}/assets/${note.pdfAssetId}/content`
-      : undefined;
+    (viewerAsset?.id
+      ? `${API_BASE}/assets/${viewerAsset.id}/content`
+      : note?.sourceType === 'pdf' && note.pdfAssetId
+        ? `${API_BASE}/assets/${note.pdfAssetId}/content`
+        : undefined);
+  const driveStatusLabel = driveStatusError
+    ? 'Unknown'
+    : driveStatusLoading
+      ? 'Checking…'
+      : driveStatus?.isStale
+        ? 'Stale'
+        : driveStatus
+          ? 'Up to date'
+          : 'Unknown';
 
   const timeRows = [
     { label: 'Created', value: createdAt },
@@ -271,6 +313,32 @@ export default function NotePropertiesDialog({
               );
             })}
           </Section>
+
+          {note?.sourceType === 'googleDoc' ? (
+            <Section title="Google Doc">
+              <FieldRow label="Source" value="Google Doc" />
+              <FieldRow
+                label="File name"
+                value={driveStatus?.driveName || googleSource?.driveNameAtImport || '—'}
+              />
+              <FieldRow
+                label="Drive file ID"
+                value={driveStatus?.driveFileId || googleSource?.driveFileId || '—'}
+                mono
+              />
+              <FieldRow
+                label="Last imported"
+                value={formatDate(driveStatus?.importedAt || googleSource?.importedAt || note?.importedAt).label}
+                tooltip={formatDate(driveStatus?.importedAt || googleSource?.importedAt || note?.importedAt).iso}
+              />
+              <FieldRow
+                label="Last modified in Drive"
+                value={formatDate(driveStatus?.driveModifiedTimeCurrent).label}
+                tooltip={formatDate(driveStatus?.driveModifiedTimeCurrent).iso}
+              />
+              <FieldRow label="Status" value={driveStatusLabel} />
+            </Section>
+          ) : null}
 
           <Section title="Sources">
             {(note?.sources?.length ?? 0) > 0 ? (
@@ -404,10 +472,49 @@ export default function NotePropertiesDialog({
             Open PDF
           </Button>
         ) : null}
+        {note?.sourceType === 'googleDoc' && driveStatus?.isStale ? (
+          <Button
+            variant="outlined"
+            disabled={!googleSource?.driveFileId || !note?.subjectId || !note?.topicId || isReimporting}
+            onClick={async () => {
+              if (!note?.id || !googleSource?.driveFileId) return;
+              const ok = window.confirm('Re-import from Google Doc? This will overwrite the stored export.');
+              if (!ok) return;
+              setReimportError(null);
+              try {
+                const subjectId = note.subjectId;
+                const topicId = note.topicId;
+                if (!subjectId || !topicId) {
+                  setReimportError('Missing subject or topic on this note.');
+                  return;
+                }
+                await importGoogleDoc({
+                  driveFileId: googleSource.driveFileId,
+                  noteId: note.id,
+                  subjectId,
+                  topicId,
+                }).unwrap();
+                onClose();
+              } catch (err: any) {
+                const msg = err?.data?.error ?? err?.message ?? 'Re-import failed';
+                setReimportError(String(msg));
+              }
+            }}
+          >
+            {isReimporting ? 'Re-importing…' : 'Re-import from Google Doc'}
+          </Button>
+        ) : null}
         <Button onClick={onClose} variant="contained">
           Close
         </Button>
       </DialogActions>
+      {reimportError ? (
+        <DialogContent sx={{ pt: 0 }}>
+          <Typography variant="body2" color="error">
+            {reimportError}
+          </Typography>
+        </DialogContent>
+      ) : null}
     </Dialog>
   );
 }

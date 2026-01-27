@@ -1,0 +1,218 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  Typography,
+  Stack,
+} from '@mui/material';
+import { useImportGoogleDocFromDriveMutation, useGetGoogleOAuthStatusQuery } from '../notes/notesApi';
+import SubjectTopicPickerFields from './SubjectTopicPickerFields';
+import { useGetSubjectsWithTopicsQuery, useCreateSubjectMutation, useCreateTopicMutation } from '../subjects/subjectsApi';
+import type { Subject, Topic } from '@chatorama/chatalog-shared';
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  onImported?: (noteId: string) => void;
+  defaultSubjectId?: string;
+  defaultTopicId?: string;
+};
+
+function extractDriveFileId(input: string): string | undefined {
+  const trimmed = input.trim();
+  if (!trimmed) return undefined;
+
+  try {
+    const url = new URL(trimmed);
+    const fromParam = url.searchParams.get('id');
+    if (fromParam) return fromParam;
+    const m = url.pathname.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (m?.[1]) return m[1];
+  } catch {
+    // not a URL
+  }
+
+  const m = trimmed.match(/[a-zA-Z0-9_-]{10,}/);
+  return m?.[0];
+}
+
+export default function ImportGoogleDocDialog({
+  open,
+  onClose,
+  onImported,
+  defaultSubjectId,
+  defaultTopicId,
+}: Props) {
+  const [input, setInput] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [subjectLabel, setSubjectLabel] = useState('');
+  const [topicLabel, setTopicLabel] = useState('');
+  const { data: oauthStatus, isFetching: oauthLoading, refetch } =
+    useGetGoogleOAuthStatusQuery(undefined, { skip: !open });
+  const [importFromDrive, { isLoading }] = useImportGoogleDocFromDriveMutation();
+
+  const driveFileId = useMemo(() => extractDriveFileId(input), [input]);
+  const connected = Boolean(oauthStatus?.connected);
+  const canSubmit = Boolean(driveFileId && connected && subjectLabel.trim() && topicLabel.trim());
+  const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery();
+  const [createSubject] = useCreateSubjectMutation();
+  const [createTopic] = useCreateTopicMutation();
+  const appliedDefaultsRef = useRef(false);
+
+  const handleClose = () => {
+    setInput('');
+    setError(null);
+    setSubjectLabel('');
+    setTopicLabel('');
+    onClose();
+  };
+
+  useEffect(() => {
+    if (!open) {
+      appliedDefaultsRef.current = false;
+      return;
+    }
+    if (appliedDefaultsRef.current) return;
+    if ((defaultSubjectId || defaultTopicId) && subjectsWithTopics.length === 0) return;
+    if (subjectLabel.trim() || topicLabel.trim()) return;
+
+    let nextSubjectLabel = '';
+    let nextTopicLabel = '';
+
+    if (defaultTopicId) {
+      const subject = (subjectsWithTopics as (Subject & { topics?: Topic[] })[]).find((s) =>
+        (s.topics ?? []).some((t) => t.id === defaultTopicId),
+      );
+      const topic = subject?.topics?.find((t) => t.id === defaultTopicId);
+      if (subject) nextSubjectLabel = subject.name ?? '';
+      if (topic) nextTopicLabel = topic.name ?? '';
+    } else if (defaultSubjectId) {
+      const subject = (subjectsWithTopics as (Subject & { topics?: Topic[] })[])
+        .find((s) => s.id === defaultSubjectId);
+      if (subject) nextSubjectLabel = subject.name ?? '';
+    }
+
+    setSubjectLabel(nextSubjectLabel);
+    setTopicLabel(nextTopicLabel);
+    appliedDefaultsRef.current = true;
+  }, [
+    open,
+    defaultSubjectId,
+    defaultTopicId,
+    subjectsWithTopics,
+    subjectLabel,
+    topicLabel,
+  ]);
+
+  const resolveSubjectTopicIds = async () => {
+    const trimmedSubject = subjectLabel.trim();
+    const trimmedTopic = topicLabel.trim();
+    if (!trimmedSubject || !trimmedTopic) {
+      throw new Error('Subject and topic are required.');
+    }
+
+    let subjectId: string | undefined;
+    let topicId: string | undefined;
+
+    const existingSubject = (subjectsWithTopics as (Subject & { topics?: Topic[] })[])
+      .find((s) => s.name?.trim() === trimmedSubject);
+    if (existingSubject) {
+      subjectId = existingSubject.id;
+    } else {
+      const created = await createSubject({ name: trimmedSubject }).unwrap();
+      subjectId = created.id;
+    }
+
+    const subjectForTopic = (subjectsWithTopics as (Subject & { topics?: Topic[] })[])
+      .find((s) => s.id === subjectId);
+    const existingTopic = subjectForTopic?.topics?.find(
+      (t) => t.name?.trim() === trimmedTopic,
+    );
+    if (existingTopic) {
+      topicId = existingTopic.id;
+    } else {
+      const created = await createTopic({ subjectId: subjectId!, name: trimmedTopic }).unwrap();
+      topicId = created.id;
+    }
+
+    return { subjectId, topicId };
+  };
+
+  return (
+    <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
+      <DialogTitle>Import Google Doc</DialogTitle>
+      <DialogContent dividers>
+        <Stack spacing={2}>
+          <TextField
+            label="Google Doc URL or File ID"
+            placeholder="https://docs.google.com/document/d/FILE_ID/edit"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            helperText={driveFileId ? `Detected file ID: ${driveFileId}` : 'Paste a Google Doc URL or fileId.'}
+            fullWidth
+          />
+
+          <SubjectTopicPickerFields
+            subjectLabel={subjectLabel}
+            topicLabel={topicLabel}
+            onSubjectLabelChange={(val) => {
+              setSubjectLabel(val);
+              setTopicLabel('');
+            }}
+            onTopicLabelChange={setTopicLabel}
+          />
+
+          {!connected ? (
+            <Stack spacing={1}>
+              <Typography variant="body2" color="text.secondary">
+                Google Drive is not connected.
+              </Typography>
+              <Button
+                variant="outlined"
+                onClick={() => window.open('/api/v1/google/oauth/start', '_blank', 'noopener,noreferrer')}
+              >
+                Connect Google Drive
+              </Button>
+              <Button size="small" onClick={() => refetch()} disabled={oauthLoading}>
+                {oauthLoading ? 'Checking…' : 'Refresh connection status'}
+              </Button>
+            </Stack>
+          ) : null}
+
+          {error ? (
+            <Typography variant="body2" color="error">
+              {error}
+            </Typography>
+          ) : null}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleClose}>Cancel</Button>
+        <Button
+          variant="contained"
+          disabled={!canSubmit || isLoading}
+          onClick={async () => {
+            if (!driveFileId) return;
+            setError(null);
+            try {
+              const { subjectId, topicId } = await resolveSubjectTopicIds();
+              // Manual import can call upsertFromArtifacts directly (no OAuth required).
+              const res = await importFromDrive({ driveFileId, subjectId, topicId }).unwrap();
+              onImported?.(res.noteId);
+              handleClose();
+            } catch (err: any) {
+              const msg = err?.data?.error ?? err?.message ?? 'Import failed';
+              setError(String(msg));
+            }
+          }}
+        >
+          {isLoading ? 'Importing…' : 'Import'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}

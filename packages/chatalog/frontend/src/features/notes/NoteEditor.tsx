@@ -7,6 +7,7 @@ import {
   useDeleteNoteMutation,
   useGetAllNotesForRelationsQuery,
   useGetTopicNotesWithRelationsQuery, // ⬅️ NEW
+  useGetNoteAssetsQuery,
   useUploadImageMutation,
   useAttachAssetToNoteMutation,
 } from './notesApi';
@@ -305,6 +306,7 @@ export default function NoteEditor({
   } = useGetNoteQuery(resolvedNoteId ?? skipToken, {
     refetchOnMountOrArgChange: true,
   });
+  const { data: noteAssets = [] } = useGetNoteAssetsQuery(resolvedNoteId ?? skipToken);
 
   const [updateNote, { isLoading: isSaving }] = useUpdateNoteMutation();
   const [deleteNote, { isLoading: isDeleting }] = useDeleteNoteMutation();
@@ -769,6 +771,30 @@ export default function NoteEditor({
     return 'Saved';
   }, [isLoading, isSaving, dirty]);
 
+  const viewerAsset = useMemo(() => {
+    const match = noteAssets.find((asset) => asset.role === 'viewer');
+    const asset = match?.asset as any;
+    if (!asset) return undefined;
+    const isPdf = asset.type === 'pdf' || asset.mimeType === 'application/pdf';
+    return isPdf ? asset : undefined;
+  }, [noteAssets]);
+  const viewerPdfUrl =
+    note?.sourceType === 'googleDoc' && viewerAsset?.id
+      ? `${API_BASE}/assets/${viewerAsset.id}/content`
+      : undefined;
+  const pdfUrl =
+    viewerPdfUrl ??
+    (isPdfNote && note?.pdfAssetId
+      ? `${API_BASE}/assets/${note.pdfAssetId}/content`
+      : undefined);
+  const googleDocUrl = useMemo(() => {
+    const source = (note?.sources ?? []).find((s: any) => s?.type === 'googleDoc');
+    return source?.docsUrl || source?.driveUrl || null;
+  }, [note?.sources]);
+  const googleDocSource = useMemo(() => {
+    return (note?.sources ?? []).find((s: any) => s?.type === 'googleDoc');
+  }, [note?.sources]);
+
   if (isError) {
     return (
       <Box p={2}>
@@ -788,14 +814,16 @@ export default function NoteEditor({
       </Box>
     );
   }
-
-  const pdfUrl = isPdfNote && note?.pdfAssetId
-    ? `${API_BASE}/assets/${note.pdfAssetId}/content`
-    : undefined;
   const body = stripFrontMatter(markdown ?? '');
   const previewBody = normalizeTurns(
     body.replace(/^#\s*Transcript\s*\r?\n?/, ''),
   );
+  const importedText = note?.derived?.googleDoc?.textPlain?.trim() ?? '';
+  const hasImportedText = importedText.length > 0;
+  const hasMarkdown = (note?.markdown ?? '').trim().length > 0;
+  const isGoogleDocSource =
+    note?.sourceType === 'googleDoc' ||
+    (note?.sources ?? []).some((s: any) => s?.type === 'googleDoc');
 
   // --- relations UI handlers ---
 
@@ -1039,13 +1067,41 @@ export default function NoteEditor({
             </Button>
           </Stack>
         )}
-        {isRecipeNote && note ? (
-          <RecipeView
-            note={note as Note}
-            markdown={previewBody}
-            enableImageSizingUi={editing}
-            onRequestResizeImage={handleRequestResizeImage}
-          />
+        {hasMarkdown ? (
+          isRecipeNote && note ? (
+            <RecipeView
+              note={note as Note}
+              markdown={previewBody}
+              enableImageSizingUi={editing}
+              onRequestResizeImage={handleRequestResizeImage}
+            />
+          ) : (
+            <MarkdownBody
+              markdown={previewBody}
+              enableImageSizingUi={editing}
+              onRequestResizeImage={handleRequestResizeImage}
+            />
+          )
+        ) : isGoogleDocSource && hasImportedText ? (
+          <Box>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
+            >
+              Imported content (Google Doc export)
+            </Typography>
+            <Typography
+              variant="body1"
+              sx={{
+                mt: 1,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {importedText}
+            </Typography>
+          </Box>
         ) : (
           <MarkdownBody
             markdown={previewBody}
@@ -1180,14 +1236,49 @@ export default function NoteEditor({
             </Button>
           )}
           {pdfUrl && (
-            <Tooltip title="Open PDF">
+          <Tooltip title="Open PDF">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => window.open(pdfUrl, '_blank', 'noopener,noreferrer')}
+              >
+                Open PDF
+              </Button>
+            </span>
+          </Tooltip>
+        )}
+        {googleDocUrl && (
+          <Tooltip title="Insert Google Doc link into your notes">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  if (!googleDocUrl) return;
+                  if (markdown.includes(googleDocUrl)) {
+                    setSnack({ open: true, msg: 'Link already present', sev: 'success' });
+                    return;
+                  }
+                  const linkTitle =
+                    googleDocSource?.driveNameAtImport || title || 'Google Doc';
+                  insertAtCursor(`\n\nSource: [${linkTitle}](${googleDocUrl})\n\n`);
+                }}
+              >
+                Insert doc link
+              </Button>
+            </span>
+          </Tooltip>
+        )}
+          {googleDocUrl && (
+            <Tooltip title="Open Google Doc">
               <span>
                 <Button
                   size="small"
                   variant="outlined"
-                  onClick={() => window.open(pdfUrl, '_blank', 'noopener,noreferrer')}
+                  onClick={() => window.open(googleDocUrl, '_blank', 'noopener,noreferrer')}
                 >
-                  Open PDF
+                  Open Google Doc
                 </Button>
               </span>
             </Tooltip>
@@ -1634,6 +1725,11 @@ export default function NoteEditor({
           <Divider sx={{ my: 2 }} />
 
           {/* Markdown editor */}
+          {isGoogleDocSource && (
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5 }}>
+              Your notes about this Google Doc
+            </Typography>
+          )}
           <TextField
             label={isPdfNote ? 'PDF Summary (Markdown)' : 'Markdown'}
             value={markdown}

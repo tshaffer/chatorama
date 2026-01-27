@@ -9,12 +9,14 @@ export const chatalogApi = createApi({
     'Subject',
     'Topic',
     'Note',
+    'NoteAsset',
     'SubjectTopics',
     'QuickNote',
     'QuickNoteAsset',
     'TopicNotes',
     'ImportBatch',
     'SavedSearch',
+    'GoogleDocStatus',
   ],
   endpoints: () => ({}), // no queries/mutations here — use injectEndpoints elsewhere
 });
