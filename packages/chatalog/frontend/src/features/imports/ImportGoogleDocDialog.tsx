@@ -102,6 +102,7 @@ export default function ImportGoogleDocDialog({
             if (!driveFileId) return;
             setError(null);
             try {
+              // Manual import can call upsertFromArtifacts directly (no OAuth required).
               const res = await importFromDrive({ driveFileId }).unwrap();
               onImported?.(res.noteId);
               handleClose();

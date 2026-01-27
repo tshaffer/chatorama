@@ -10,6 +10,7 @@ import { NoteModel } from '../models/Note';
 const googleDocNotesRouter = Router();
 
 // POST /api/v1/googleDocNotes/upsertFromArtifacts
+// Manual import can call upsertFromArtifacts directly (no OAuth required).
 googleDocNotesRouter.post('/upsertFromArtifacts', async (req, res, next) => {
   try {
     const body = (req.body ?? {}) as Partial<UpsertGoogleDocArtifactsInput>;
