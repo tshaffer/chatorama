@@ -4,6 +4,7 @@ import { applyToJSON } from '../db/toJsonPlugin';
 import { NoteRelation, RecipeIngredient, RecipeMeta, CookedEvent } from '@chatorama/chatalog-shared';
 
 export const NOTE_STATUS_VALUES = ['completed'] as const;
+const MAX_GOOGLE_DOC_TEXT_CHARS = 250_000;
 
 export interface NoteDoc extends Document {
   _id: Types.ObjectId;
@@ -18,7 +19,15 @@ export interface NoteDoc extends Document {
   links: string[];
   backlinks: string[];
   relations?: NoteRelation[];
-  sources?: { url?: string; type?: 'chatworthy'|'clip'|'manual' }[];
+  sources?: {
+    url?: string;
+    type?: 'chatworthy' | 'clip' | 'manual' | 'googleDoc';
+    driveFileId?: string;
+    driveUrl?: string;
+    importedAt?: Date;
+    driveModifiedTimeAtImport?: Date;
+    driveNameAtImport?: string;
+  }[];
   docKind: 'note' | 'recipe';
   recipe?: RecipeMeta;
   cookedHistory?: CookedEvent[];
@@ -52,6 +61,12 @@ export interface NoteDoc extends Document {
       pageCount?: number;
       extractedAt?: Date;
     };
+    googleDoc?: {
+      textPlain?: string;
+      textHash?: string;
+      textChars?: number;
+      exportedAt?: Date;
+    };
   };
 
   importBatchId?: string;
@@ -63,12 +78,25 @@ export interface NoteDoc extends Document {
   contentUpdatedAt?: Date;
 }
 
-type Source = { url?: string; type?: 'chatworthy'|'clip'|'manual' };
+type Source = {
+  url?: string;
+  type?: 'chatworthy' | 'clip' | 'manual' | 'googleDoc';
+  driveFileId?: string;
+  driveUrl?: string;
+  importedAt?: Date;
+  driveModifiedTimeAtImport?: Date;
+  driveNameAtImport?: string;
+};
 
 const SourceSchema = new Schema<Source>(
   {
     url: String,
-    type: { type: String, enum: ['chatworthy', 'clip', 'manual'] },
+    type: { type: String, enum: ['chatworthy', 'clip', 'manual', 'googleDoc'] },
+    driveFileId: String,
+    driveUrl: String,
+    importedAt: Date,
+    driveModifiedTimeAtImport: Date,
+    driveNameAtImport: String,
   },
   { _id: false }
 );
@@ -201,6 +229,12 @@ const NoteSchema = new Schema<NoteDoc>(
         pageCount: { type: Number },
         extractedAt: { type: Date },
       },
+      googleDoc: {
+        textPlain: { type: String, default: '', maxlength: MAX_GOOGLE_DOC_TEXT_CHARS },
+        textHash: { type: String },
+        textChars: { type: Number },
+        exportedAt: { type: Date },
+      },
     },
 
     importBatchId: { type: String, index: true },
@@ -219,10 +253,10 @@ NoteSchema.index(
   { unique: true, partialFilterExpression: { slug: { $type: 'string' } } }
 );
 
-// Full-text search (v3): title highest, tags medium, markdown lowest.
+// Full-text search (v4): title highest, tags medium, markdown lowest.
 // To rebuild locally:
-// - mongosh: db.notes.dropIndex('notes_text_search_v1')
-// - mongosh: db.notes.createIndex({ title: 'text', tags: 'text', markdown: 'text' }, { name: 'notes_text_search_v3', weights: { title: 10, tags: 3, markdown: 1 }, default_language: 'english' })
+// - mongosh: db.notes.dropIndex('notes_text_search_v3')
+// - mongosh: db.notes.createIndex({ title: 'text', tags: 'text', markdown: 'text' }, { name: 'notes_text_search_v4', weights: { title: 10, tags: 3, markdown: 1 }, default_language: 'english' })
 NoteSchema.index(
   {
     title: 'text',
@@ -230,15 +264,17 @@ NoteSchema.index(
     markdown: 'text',
     pdfSummaryMarkdown: 'text',
     'derived.pdf.extractedText': 'text',
+    'derived.googleDoc.textPlain': 'text',
     'recipe.search.cookedNotesText': 'text',
   },
   {
-    name: 'notes_text_search_v3',
+    name: 'notes_text_search_v4',
     weights: {
       title: 10,
       tags: 3,
       pdfSummaryMarkdown: 2,
       'derived.pdf.extractedText': 1,
+      'derived.googleDoc.textPlain': 1,
       markdown: 1,
       'recipe.search.cookedNotesText': 2,
     },
