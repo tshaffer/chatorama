@@ -51,6 +51,24 @@ export const notesApi = baseApi.injectEndpoints({
       providesTags: (_res, _err, noteId) => [{ type: 'NoteAsset' as const, id: `LIST:${noteId}` }],
     }),
 
+    getGoogleOAuthStatus: build.query<{ connected: boolean; hasRefreshToken?: boolean }, void>({
+      query: () => ({ url: 'google/oauth/status' }),
+    }),
+
+    getGoogleDocDriveStatus: build.query<
+      {
+        driveFileId: string;
+        driveName?: string;
+        driveModifiedTimeCurrent?: string;
+        driveModifiedTimeAtImport?: string;
+        importedAt?: string;
+        isStale: boolean;
+      },
+      string
+    >({
+      query: (noteId) => ({ url: `googleDocNotes/${noteId}/driveStatus` }),
+    }),
+
     getTopicNotesWithRelations: build.query<
       TopicNotesWithRelations,
       { subjectId: string; topicId: string }
@@ -297,6 +315,8 @@ export const notesApi = baseApi.injectEndpoints({
 export const {
   useGetNoteQuery,
   useGetNoteAssetsQuery,
+  useGetGoogleOAuthStatusQuery,
+  useGetGoogleDocDriveStatusQuery,
   useUpdateNoteMutation,
   useDeleteNoteMutation,
   useUploadImageMutation,

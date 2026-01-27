@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { buildGoogleAuthUrl, completeOAuthFlow, startOAuthFlow } from '../services/googleAuth';
+import { GoogleAuthTokenModel } from '../models/GoogleAuthToken';
 
 const googleRouter = Router();
 
@@ -27,6 +28,21 @@ googleRouter.get('/oauth/callback', async (req, res, next) => {
       process.env.GOOGLE_REDIRECT_URI?.trim() || `${baseUrl}/api/v1/google/oauth/callback`;
     await completeOAuthFlow(code, state, redirectUri);
     return res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/v1/google/oauth/status
+googleRouter.get('/oauth/status', async (_req, res, next) => {
+  try {
+    const doc = await GoogleAuthTokenModel.findOne({ provider: 'google' })
+      .select({ accessTokenEnc: 1, refreshTokenEnc: 1 })
+      .lean()
+      .exec();
+    const connected = Boolean(doc?.accessTokenEnc);
+    const hasRefreshToken = Boolean(doc?.refreshTokenEnc);
+    return res.json({ connected, hasRefreshToken });
   } catch (err) {
     next(err);
   }

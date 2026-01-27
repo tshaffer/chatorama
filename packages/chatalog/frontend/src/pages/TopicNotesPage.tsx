@@ -48,6 +48,7 @@ import { selectNoteStatusVisibility } from '../features/settings/settingsSlice';
 import ConfirmIconButton from '../components/ConfirmIconButton';
 import DeleteIcon from '@mui/icons-material/Delete';
 import NotePropertiesDialog from '../features/notes/NotePropertiesDialog';
+import ImportGoogleDocButton from '../features/imports/ImportGoogleDocButton';
 
 // Extract leading ObjectId from "<id>" or "<id>-<slug>"
 const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
@@ -349,6 +350,9 @@ export default function TopicNotesPage() {
                 )}
               </Box>
               <Toolbar disableGutters sx={{ gap: 1, minHeight: 'auto' }}>
+                {!isBatchMode && (
+                  <ImportGoogleDocButton onImported={(id) => navigate(`/n/${id}`)} />
+                )}
                 <Tooltip title="Select all notes in this topic">
                   <span>
                     <Button

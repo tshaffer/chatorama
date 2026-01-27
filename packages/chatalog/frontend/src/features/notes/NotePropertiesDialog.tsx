@@ -19,7 +19,11 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import type { Note } from '@chatorama/chatalog-shared';
 import { API_BASE } from '../../lib/apiBase';
-import { useGetNoteAssetsQuery, useImportGoogleDocFromDriveMutation } from './notesApi';
+import {
+  useGetGoogleDocDriveStatusQuery,
+  useGetNoteAssetsQuery,
+  useImportGoogleDocFromDriveMutation,
+} from './notesApi';
 
 type Props = {
   open: boolean;
@@ -168,6 +172,13 @@ export default function NotePropertiesDialog({
 
   const noteId = note?.id ?? skipToken;
   const { data: noteAssets = [] } = useGetNoteAssetsQuery(noteId);
+  const {
+    data: driveStatus,
+    isError: driveStatusError,
+    isFetching: driveStatusLoading,
+  } = useGetGoogleDocDriveStatusQuery(
+    note?.sourceType === 'googleDoc' && note?.id ? note.id : skipToken
+  );
   const [importGoogleDoc, { isLoading: isReimporting }] =
     useImportGoogleDocFromDriveMutation();
   const [reimportError, setReimportError] = useState<string | null>(null);
@@ -193,6 +204,15 @@ export default function NotePropertiesDialog({
       : note?.sourceType === 'pdf' && note.pdfAssetId
         ? `${API_BASE}/assets/${note.pdfAssetId}/content`
         : undefined);
+  const driveStatusLabel = driveStatusError
+    ? 'Unknown'
+    : driveStatusLoading
+      ? 'Checking…'
+      : driveStatus?.isStale
+        ? 'Stale'
+        : driveStatus
+          ? 'Up to date'
+          : 'Unknown';
 
   const timeRows = [
     { label: 'Created', value: createdAt },
@@ -293,6 +313,32 @@ export default function NotePropertiesDialog({
               );
             })}
           </Section>
+
+          {note?.sourceType === 'googleDoc' ? (
+            <Section title="Google Doc">
+              <FieldRow label="Source" value="Google Doc" />
+              <FieldRow
+                label="File name"
+                value={driveStatus?.driveName || googleSource?.driveNameAtImport || '—'}
+              />
+              <FieldRow
+                label="Drive file ID"
+                value={driveStatus?.driveFileId || googleSource?.driveFileId || '—'}
+                mono
+              />
+              <FieldRow
+                label="Last imported"
+                value={formatDate(driveStatus?.importedAt || googleSource?.importedAt || note?.importedAt).label}
+                tooltip={formatDate(driveStatus?.importedAt || googleSource?.importedAt || note?.importedAt).iso}
+              />
+              <FieldRow
+                label="Last modified in Drive"
+                value={formatDate(driveStatus?.driveModifiedTimeCurrent).label}
+                tooltip={formatDate(driveStatus?.driveModifiedTimeCurrent).iso}
+              />
+              <FieldRow label="Status" value={driveStatusLabel} />
+            </Section>
+          ) : null}
 
           <Section title="Sources">
             {(note?.sources?.length ?? 0) > 0 ? (
@@ -426,7 +472,7 @@ export default function NotePropertiesDialog({
             Open PDF
           </Button>
         ) : null}
-        {note?.sourceType === 'googleDoc' ? (
+        {note?.sourceType === 'googleDoc' && driveStatus?.isStale ? (
           <Button
             variant="outlined"
             disabled={!googleSource?.driveFileId || isReimporting}
