@@ -5,6 +5,12 @@ const MAX_TEXT_BYTES = 2_000_000;
 const MAX_PDF_BYTES = 20_000_000;
 const REQUEST_TIMEOUT_MS = 20_000;
 
+function logDebug(message: string) {
+  if (process.env.GOOGLE_DRIVE_DEBUG?.trim()) {
+    console.log(`[google][drive] ${message}`);
+  }
+}
+
 export type DriveFileMeta = {
   id: string;
   name: string;
@@ -57,6 +63,7 @@ export async function fetchDriveFileMeta(driveFileId: string): Promise<DriveFile
     throw new Error(`Drive metadata fetch failed (${res.status}): ${text}`);
   }
   const data = (await res.json()) as DriveFileMeta;
+  logDebug(`meta ok id=${data.id} name="${data.name}" modified=${data.modifiedTime}`);
   if (data.mimeType !== GOOGLE_DOC_MIME) {
     throw new Error('Drive file is not a Google Doc');
   }
@@ -76,6 +83,7 @@ export async function exportDriveTextPlain(driveFileId: string): Promise<string>
     throw new Error(`Drive text export failed (${res.status}): ${text}`);
   }
   const buf = await readBodyWithLimit(res, MAX_TEXT_BYTES);
+  logDebug(`export text ok bytes=${buf.length}`);
   return buf.toString('utf8');
 }
 
@@ -91,5 +99,7 @@ export async function exportDrivePdf(driveFileId: string): Promise<Buffer> {
     const text = await res.text();
     throw new Error(`Drive PDF export failed (${res.status}): ${text}`);
   }
-  return await readBodyWithLimit(res, MAX_PDF_BYTES);
+  const buf = await readBodyWithLimit(res, MAX_PDF_BYTES);
+  logDebug(`export pdf ok bytes=${buf.length}`);
+  return buf;
 }

@@ -12,6 +12,12 @@ type OAuthTokenResponse = {
   token_type?: string;
 };
 
+function logDebug(message: string) {
+  if (process.env.GOOGLE_DRIVE_DEBUG?.trim()) {
+    console.log(`[google][oauth] ${message}`);
+  }
+}
+
 function requireEnv(name: string): string {
   const v = process.env[name];
   if (!v || !v.trim()) throw new Error(`Missing required environment variable: ${name}`);
@@ -128,6 +134,7 @@ export async function completeOAuthFlow(
   if (!data.access_token) throw new Error('OAuth token exchange missing access_token');
 
   const expiryDate = new Date(Date.now() + data.expires_in * 1000);
+  logDebug(`token exchange ok, expires in ${data.expires_in}s`);
 
   const setPayload: Record<string, any> = {
     accessTokenEnc: encrypt(data.access_token),
@@ -167,7 +174,9 @@ async function refreshAccessToken(refreshToken: string): Promise<OAuthTokenRespo
     const text = await res.text();
     throw new Error(`OAuth refresh failed (${res.status}): ${text}`);
   }
-  return (await res.json()) as OAuthTokenResponse;
+  const data = (await res.json()) as OAuthTokenResponse;
+  logDebug(`token refresh ok, expires in ${data.expires_in}s`);
+  return data;
 }
 
 export async function getValidAccessToken(): Promise<string> {
