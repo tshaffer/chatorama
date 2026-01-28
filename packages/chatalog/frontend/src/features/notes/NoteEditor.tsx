@@ -771,6 +771,23 @@ export default function NoteEditor({
     return 'Saved';
   }, [isLoading, isSaving, dirty]);
 
+  const viewerAsset = useMemo(() => {
+    const match = noteAssets.find((asset) => asset.role === 'viewer');
+    const asset = match?.asset as any;
+    if (!asset) return undefined;
+    const isPdf = asset.type === 'pdf' || asset.mimeType === 'application/pdf';
+    return isPdf ? asset : undefined;
+  }, [noteAssets]);
+  const viewerPdfUrl =
+    note?.sourceType === 'googleDoc' && viewerAsset?.id
+      ? `${API_BASE}/assets/${viewerAsset.id}/content`
+      : undefined;
+  const pdfUrl =
+    viewerPdfUrl ??
+    (isPdfNote && note?.pdfAssetId
+      ? `${API_BASE}/assets/${note.pdfAssetId}/content`
+      : undefined);
+
   if (isError) {
     return (
       <Box p={2}>
@@ -790,23 +807,6 @@ export default function NoteEditor({
       </Box>
     );
   }
-
-  const viewerAsset = useMemo(() => {
-    const match = noteAssets.find((asset) => asset.role === 'viewer');
-    const asset = match?.asset as any;
-    if (!asset) return undefined;
-    const isPdf = asset.type === 'pdf' || asset.mimeType === 'application/pdf';
-    return isPdf ? asset : undefined;
-  }, [noteAssets]);
-  const viewerPdfUrl =
-    note?.sourceType === 'googleDoc' && viewerAsset?.id
-      ? `${API_BASE}/assets/${viewerAsset.id}/content`
-      : undefined;
-  const pdfUrl =
-    viewerPdfUrl ??
-    (isPdfNote && note?.pdfAssetId
-      ? `${API_BASE}/assets/${note.pdfAssetId}/content`
-      : undefined);
   const body = stripFrontMatter(markdown ?? '');
   const previewBody = normalizeTurns(
     body.replace(/^#\s*Transcript\s*\r?\n?/, ''),
