@@ -475,16 +475,24 @@ export default function NotePropertiesDialog({
         {note?.sourceType === 'googleDoc' && driveStatus?.isStale ? (
           <Button
             variant="outlined"
-            disabled={!googleSource?.driveFileId || isReimporting}
+            disabled={!googleSource?.driveFileId || !note?.subjectId || !note?.topicId || isReimporting}
             onClick={async () => {
               if (!note?.id || !googleSource?.driveFileId) return;
               const ok = window.confirm('Re-import from Google Doc? This will overwrite the stored export.');
               if (!ok) return;
               setReimportError(null);
               try {
+                const subjectId = note.subjectId;
+                const topicId = note.topicId;
+                if (!subjectId || !topicId) {
+                  setReimportError('Missing subject or topic on this note.');
+                  return;
+                }
                 await importGoogleDoc({
                   driveFileId: googleSource.driveFileId,
                   noteId: note.id,
+                  subjectId,
+                  topicId,
                 }).unwrap();
                 onClose();
               } catch (err: any) {

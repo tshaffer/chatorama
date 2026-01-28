@@ -29,8 +29,19 @@ function requireAdminToken(req: any, res: any): boolean {
 googleDocNotesRouter.post('/upsertFromArtifacts', async (req, res, next) => {
   try {
     const body = (req.body ?? {}) as Partial<UpsertGoogleDocArtifactsInput>;
+    if (!body.noteId && (!body.subjectId || !body.topicId)) {
+      return res.status(400).json({ error: 'subjectId and topicId are required for googleDoc import' });
+    }
+    if (body.subjectId && !isValidObjectId(body.subjectId)) {
+      return res.status(400).json({ error: 'subjectId must be a valid ObjectId' });
+    }
+    if (body.topicId && !isValidObjectId(body.topicId)) {
+      return res.status(400).json({ error: 'topicId must be a valid ObjectId' });
+    }
     const payload: UpsertGoogleDocArtifactsInput = {
       noteId: body.noteId,
+      subjectId: body.subjectId,
+      topicId: body.topicId,
       source: body.source as UpsertGoogleDocArtifactsInput['source'],
       textPlain: String(body.textPlain ?? ''),
       viewerPdfBase64: body.viewerPdfBase64,
@@ -47,9 +58,15 @@ googleDocNotesRouter.post('/upsertFromArtifacts', async (req, res, next) => {
 // POST /api/v1/googleDocNotes/importFromDrive
 googleDocNotesRouter.post('/importFromDrive', async (req, res, next) => {
   try {
-    const { driveFileId, noteId } = req.body ?? {};
+    const { driveFileId, noteId, subjectId, topicId } = req.body ?? {};
     if (!driveFileId || typeof driveFileId !== 'string') {
       return res.status(400).json({ error: 'driveFileId is required' });
+    }
+    if (!subjectId || !topicId) {
+      return res.status(400).json({ error: 'subjectId and topicId are required for googleDoc import' });
+    }
+    if (!isValidObjectId(subjectId) || !isValidObjectId(topicId)) {
+      return res.status(400).json({ error: 'subjectId and topicId must be valid ObjectIds' });
     }
 
     const meta = await fetchDriveFileMeta(driveFileId);
@@ -64,6 +81,8 @@ googleDocNotesRouter.post('/importFromDrive', async (req, res, next) => {
 
     const result = await upsertGoogleDocFromArtifacts({
       noteId: typeof noteId === 'string' ? noteId : undefined,
+      subjectId,
+      topicId,
       source: {
         driveFileId,
         driveUrl: `https://drive.google.com/file/d/${driveFileId}/view`,
@@ -127,9 +146,12 @@ googleDocNotesRouter.post('/admin/export', async (req, res, next) => {
 googleDocNotesRouter.post('/admin/smoke', async (req, res, next) => {
   try {
     if (!requireAdminToken(req, res)) return;
-    const { driveFileId, noteId } = req.body ?? {};
+    const { driveFileId, noteId, subjectId, topicId } = req.body ?? {};
     if (!driveFileId || typeof driveFileId !== 'string') {
       return res.status(400).json({ error: 'driveFileId is required' });
+    }
+    if (!noteId && (!subjectId || !topicId)) {
+      return res.status(400).json({ error: 'subjectId and topicId are required for googleDoc import' });
     }
 
     const meta = await fetchDriveFileMeta(driveFileId);
@@ -141,6 +163,8 @@ googleDocNotesRouter.post('/admin/smoke', async (req, res, next) => {
 
     const result = await upsertGoogleDocFromArtifacts({
       noteId: typeof noteId === 'string' ? noteId : undefined,
+      subjectId: typeof subjectId === 'string' ? subjectId : undefined,
+      topicId: typeof topicId === 'string' ? topicId : undefined,
       source: {
         driveFileId,
         driveUrl: `https://drive.google.com/file/d/${driveFileId}/view`,

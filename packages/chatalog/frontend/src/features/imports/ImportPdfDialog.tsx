@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -9,10 +9,7 @@ import {
   Button,
   TextField,
 } from '@mui/material';
-import Autocomplete from '@mui/material/Autocomplete';
-import { useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
-import type { Subject, Topic } from '@chatorama/chatalog-shared';
-import { sortStringsCI } from '../../utils/sort';
+import SubjectTopicPickerFields from './SubjectTopicPickerFields';
 
 type Props = {
   open: boolean;
@@ -39,7 +36,6 @@ export default function ImportPdfDialog({
   onCancel,
   onConfirm,
 }: Props) {
-  const { data: subjects = [] } = useGetSubjectsWithTopicsQuery();
   const [subjectLabel, setSubjectLabel] = useState('');
   const [topicLabel, setTopicLabel] = useState('');
   const [pdfSummaryMarkdown, setPdfSummaryMarkdown] = useState('');
@@ -50,42 +46,6 @@ export default function ImportPdfDialog({
     setTopicLabel('');
     setPdfSummaryMarkdown(defaultSummaryFromFileName(fileName));
   }, [open, fileName]);
-
-  const subjectOptions = useMemo(() => {
-    const set = new Set<string>();
-    subjects
-      .map((s: Subject) => s.name?.trim())
-      .filter(Boolean)
-      .forEach((name) => set.add(name as string));
-    return sortStringsCI(Array.from(set));
-  }, [subjects]);
-
-  const selectedSubject = useMemo(() => {
-    const trimmed = subjectLabel.trim();
-    if (!trimmed) return undefined;
-
-    return subjects.find(
-      (s: Subject) => s.name?.trim() === trimmed
-    ) as (Subject & { topics?: Topic[] }) | undefined;
-  }, [subjects, subjectLabel]);
-
-  const topicOptions = useMemo(() => {
-    const set = new Set<string>();
-
-    if (selectedSubject) {
-      (selectedSubject.topics ?? []).forEach((t: Topic) => {
-        const name = t.name?.trim();
-        if (name) set.add(name);
-      });
-    }
-
-    const trimmedTopic = topicLabel.trim();
-    if (trimmedTopic && !set.has(trimmedTopic)) {
-      set.add(trimmedTopic);
-    }
-
-    return sortStringsCI(Array.from(set));
-  }, [selectedSubject, topicLabel]);
 
   const isConfirmDisabled =
     busy ||
@@ -102,40 +62,11 @@ export default function ImportPdfDialog({
         </Typography>
 
         <Stack spacing={2}>
-          <Autocomplete
-            freeSolo
-            options={subjectOptions}
-            value={subjectLabel}
-            onChange={(_e, newValue) => setSubjectLabel(newValue ?? '')}
-            onInputChange={(_e, newInputValue) =>
-              setSubjectLabel(newInputValue ?? '')
-            }
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Subject label"
-                placeholder="Subject label"
-                size="small"
-              />
-            )}
-          />
-
-          <Autocomplete
-            freeSolo
-            options={topicOptions}
-            value={topicLabel}
-            onChange={(_e, newValue) => setTopicLabel(newValue ?? '')}
-            onInputChange={(_e, newInputValue) =>
-              setTopicLabel(newInputValue ?? '')
-            }
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Topic label"
-                placeholder="Topic label"
-                size="small"
-              />
-            )}
+          <SubjectTopicPickerFields
+            subjectLabel={subjectLabel}
+            topicLabel={topicLabel}
+            onSubjectLabelChange={setSubjectLabel}
+            onTopicLabelChange={setTopicLabel}
           />
 
           <TextField

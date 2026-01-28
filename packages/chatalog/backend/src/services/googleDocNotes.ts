@@ -4,7 +4,7 @@ import { slugifyStandard } from '@chatorama/chatalog-shared';
 import { NoteModel } from '../models/Note';
 import { AssetModel } from '../models/Asset';
 import { NoteAssetModel } from '../models/NoteAsset';
-import { dedupeSlug } from '../utilities';
+import { dedupeSlug, ensureSubjectTopicExist } from '../utilities';
 import { embedText } from '../ai/embed';
 import { hashEmbeddingText } from '../ai/embeddingText';
 import { deleteLocalFile, savePdfToLocal } from './assetStorage';
@@ -24,6 +24,8 @@ export type UpsertGoogleDocArtifactsInput = {
   textPlain: string;
   viewerPdfBase64?: string;
   viewerPdfFilename?: string;
+  subjectId?: string;
+  topicId?: string;
 };
 
 export type UpsertGoogleDocArtifactsResult = {
@@ -141,6 +143,12 @@ export async function upsertGoogleDocFromArtifacts(
   let noteId = input.noteId;
   let titleForEmbedding: string;
   let sources: any[] = [];
+  const subjectId = input.subjectId;
+  const topicId = input.topicId;
+
+  if (subjectId || topicId) {
+    await ensureSubjectTopicExist(subjectId, topicId);
+  }
 
   const googleSource = {
     type: 'googleDoc',
@@ -159,6 +167,9 @@ export async function upsertGoogleDocFromArtifacts(
     sources = mergeGoogleDocSource(existing.sources as any, googleSource);
     titleForEmbedding = existing.title || source.driveName || 'Untitled';
   } else {
+    if (!subjectId || !topicId) {
+      throw new Error('subjectId and topicId are required for googleDoc import');
+    }
     const title = source.driveName?.trim() || 'Untitled';
     const slug = await dedupeSlug(slugifyStandard(title || 'untitled'), undefined);
     titleForEmbedding = title;
@@ -178,6 +189,8 @@ export async function upsertGoogleDocFromArtifacts(
       links: [],
       backlinks: [],
       relations: [],
+      subjectId,
+      topicId,
       sources,
       docKind: 'note',
       sourceType: 'googleDoc',
@@ -204,6 +217,10 @@ export async function upsertGoogleDocFromArtifacts(
       model: 'text-embedding-3-small',
     });
 
+    const subjectTopicUpdate: any = {};
+    if (subjectId) subjectTopicUpdate.subjectId = subjectId;
+    if (topicId) subjectTopicUpdate.topicId = topicId;
+
     await NoteModel.updateOne(
       { _id: noteId },
       {
@@ -222,6 +239,7 @@ export async function upsertGoogleDocFromArtifacts(
           embeddingModel: model,
           embeddingTextHash: hashEmbeddingText(embeddingText),
           embeddingUpdatedAt: now,
+          ...subjectTopicUpdate,
         },
       },
     ).exec();

@@ -10,6 +10,7 @@ import {
   Stack,
 } from '@mui/material';
 import { useImportGoogleDocFromDriveMutation, useGetGoogleOAuthStatusQuery } from '../notes/notesApi';
+import SubjectTopicPickerFields from './SubjectTopicPickerFields';
 
 type Props = {
   open: boolean;
@@ -42,16 +43,25 @@ export default function ImportGoogleDocDialog({
 }: Props) {
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [subjectLabel, setSubjectLabel] = useState('');
+  const [topicLabel, setTopicLabel] = useState('');
+  const [subjectId, setSubjectId] = useState<string | undefined>(undefined);
+  const [topicId, setTopicId] = useState<string | undefined>(undefined);
   const { data: oauthStatus, isFetching: oauthLoading, refetch } =
     useGetGoogleOAuthStatusQuery(undefined, { skip: !open });
   const [importFromDrive, { isLoading }] = useImportGoogleDocFromDriveMutation();
 
   const driveFileId = useMemo(() => extractDriveFileId(input), [input]);
   const connected = Boolean(oauthStatus?.connected);
+  const canSubmit = Boolean(driveFileId && connected && subjectId && topicId);
 
   const handleClose = () => {
     setInput('');
     setError(null);
+    setSubjectLabel('');
+    setTopicLabel('');
+    setSubjectId(undefined);
+    setTopicId(undefined);
     onClose();
   };
 
@@ -67,6 +77,20 @@ export default function ImportGoogleDocDialog({
             onChange={(e) => setInput(e.target.value)}
             helperText={driveFileId ? `Detected file ID: ${driveFileId}` : 'Paste a Google Doc URL or fileId.'}
             fullWidth
+          />
+
+          <SubjectTopicPickerFields
+            subjectLabel={subjectLabel}
+            topicLabel={topicLabel}
+            onSubjectLabelChange={(val) => {
+              setSubjectLabel(val);
+              setTopicLabel('');
+            }}
+            onTopicLabelChange={setTopicLabel}
+            onResolvedIds={(nextSubjectId, nextTopicId) => {
+              setSubjectId(nextSubjectId);
+              setTopicId(nextTopicId);
+            }}
           />
 
           {!connected ? (
@@ -97,13 +121,17 @@ export default function ImportGoogleDocDialog({
         <Button onClick={handleClose}>Cancel</Button>
         <Button
           variant="contained"
-          disabled={!driveFileId || !connected || isLoading}
+          disabled={!canSubmit || isLoading}
           onClick={async () => {
             if (!driveFileId) return;
             setError(null);
             try {
+              if (!subjectId || !topicId) {
+                setError('Subject and topic are required.');
+                return;
+              }
               // Manual import can call upsertFromArtifacts directly (no OAuth required).
-              const res = await importFromDrive({ driveFileId }).unwrap();
+              const res = await importFromDrive({ driveFileId, subjectId, topicId }).unwrap();
               onImported?.(res.noteId);
               handleClose();
             } catch (err: any) {

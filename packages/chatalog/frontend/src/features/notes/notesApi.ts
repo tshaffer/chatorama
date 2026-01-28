@@ -298,15 +298,21 @@ export const notesApi = baseApi.injectEndpoints({
 
     importGoogleDocFromDrive: build.mutation<
       { noteId: string; importedAt: string; driveModifiedTimeAtImport: string; stale: boolean },
-      { driveFileId: string; noteId?: string }
+      { driveFileId: string; noteId?: string; subjectId: string; topicId: string }
     >({
       query: (body) => ({
         url: 'googleDocNotes/importFromDrive',
         method: 'POST',
         body,
       }),
-      invalidatesTags: (_res, _err, { noteId }) =>
-        noteId ? [{ type: 'Note' as const, id: noteId }] : [],
+      invalidatesTags: (_res, _err, { noteId, subjectId, topicId }) => {
+        const tags = [
+          { type: 'Note' as const, id: 'LIST' },
+          { type: 'Note' as const, id: `LIST:${subjectId}:${topicId}` },
+        ];
+        if (noteId) tags.push({ type: 'Note' as const, id: noteId });
+        return tags;
+      },
     }),
   }),
   overrideExisting: true,
