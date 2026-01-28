@@ -11,6 +11,8 @@ import {
 } from '@mui/material';
 import { useImportGoogleDocFromDriveMutation, useGetGoogleOAuthStatusQuery } from '../notes/notesApi';
 import SubjectTopicPickerFields from './SubjectTopicPickerFields';
+import { useGetSubjectsWithTopicsQuery, useCreateSubjectMutation, useCreateTopicMutation } from '../subjects/subjectsApi';
+import type { Subject, Topic } from '@chatorama/chatalog-shared';
 
 type Props = {
   open: boolean;
@@ -45,24 +47,57 @@ export default function ImportGoogleDocDialog({
   const [error, setError] = useState<string | null>(null);
   const [subjectLabel, setSubjectLabel] = useState('');
   const [topicLabel, setTopicLabel] = useState('');
-  const [subjectId, setSubjectId] = useState<string | undefined>(undefined);
-  const [topicId, setTopicId] = useState<string | undefined>(undefined);
   const { data: oauthStatus, isFetching: oauthLoading, refetch } =
     useGetGoogleOAuthStatusQuery(undefined, { skip: !open });
   const [importFromDrive, { isLoading }] = useImportGoogleDocFromDriveMutation();
 
   const driveFileId = useMemo(() => extractDriveFileId(input), [input]);
   const connected = Boolean(oauthStatus?.connected);
-  const canSubmit = Boolean(driveFileId && connected && subjectId && topicId);
+  const canSubmit = Boolean(driveFileId && connected && subjectLabel.trim() && topicLabel.trim());
+  const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery();
+  const [createSubject] = useCreateSubjectMutation();
+  const [createTopic] = useCreateTopicMutation();
 
   const handleClose = () => {
     setInput('');
     setError(null);
     setSubjectLabel('');
     setTopicLabel('');
-    setSubjectId(undefined);
-    setTopicId(undefined);
     onClose();
+  };
+
+  const resolveSubjectTopicIds = async () => {
+    const trimmedSubject = subjectLabel.trim();
+    const trimmedTopic = topicLabel.trim();
+    if (!trimmedSubject || !trimmedTopic) {
+      throw new Error('Subject and topic are required.');
+    }
+
+    let subjectId: string | undefined;
+    let topicId: string | undefined;
+
+    const existingSubject = (subjectsWithTopics as (Subject & { topics?: Topic[] })[])
+      .find((s) => s.name?.trim() === trimmedSubject);
+    if (existingSubject) {
+      subjectId = existingSubject.id;
+    } else {
+      const created = await createSubject({ name: trimmedSubject }).unwrap();
+      subjectId = created.id;
+    }
+
+    const subjectForTopic = (subjectsWithTopics as (Subject & { topics?: Topic[] })[])
+      .find((s) => s.id === subjectId);
+    const existingTopic = subjectForTopic?.topics?.find(
+      (t) => t.name?.trim() === trimmedTopic,
+    );
+    if (existingTopic) {
+      topicId = existingTopic.id;
+    } else {
+      const created = await createTopic({ subjectId: subjectId!, name: trimmedTopic }).unwrap();
+      topicId = created.id;
+    }
+
+    return { subjectId, topicId };
   };
 
   return (
@@ -87,10 +122,6 @@ export default function ImportGoogleDocDialog({
               setTopicLabel('');
             }}
             onTopicLabelChange={setTopicLabel}
-            onResolvedIds={(nextSubjectId, nextTopicId) => {
-              setSubjectId(nextSubjectId);
-              setTopicId(nextTopicId);
-            }}
           />
 
           {!connected ? (
@@ -126,10 +157,7 @@ export default function ImportGoogleDocDialog({
             if (!driveFileId) return;
             setError(null);
             try {
-              if (!subjectId || !topicId) {
-                setError('Subject and topic are required.');
-                return;
-              }
+              const { subjectId, topicId } = await resolveSubjectTopicIds();
               // Manual import can call upsertFromArtifacts directly (no OAuth required).
               const res = await importFromDrive({ driveFileId, subjectId, topicId }).unwrap();
               onImported?.(res.noteId);
