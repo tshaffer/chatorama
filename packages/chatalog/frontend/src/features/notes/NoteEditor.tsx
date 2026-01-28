@@ -811,6 +811,12 @@ export default function NoteEditor({
   const previewBody = normalizeTurns(
     body.replace(/^#\s*Transcript\s*\r?\n?/, ''),
   );
+  const importedText = note?.derived?.googleDoc?.textPlain?.trim() ?? '';
+  const hasImportedText = importedText.length > 0;
+  const hasMarkdown = (note?.markdown ?? '').trim().length > 0;
+  const isGoogleDocSource =
+    note?.sourceType === 'googleDoc' ||
+    (note?.sources ?? []).some((s: any) => s?.type === 'googleDoc');
 
   // --- relations UI handlers ---
 
@@ -1054,13 +1060,41 @@ export default function NoteEditor({
             </Button>
           </Stack>
         )}
-        {isRecipeNote && note ? (
-          <RecipeView
-            note={note as Note}
-            markdown={previewBody}
-            enableImageSizingUi={editing}
-            onRequestResizeImage={handleRequestResizeImage}
-          />
+        {hasMarkdown ? (
+          isRecipeNote && note ? (
+            <RecipeView
+              note={note as Note}
+              markdown={previewBody}
+              enableImageSizingUi={editing}
+              onRequestResizeImage={handleRequestResizeImage}
+            />
+          ) : (
+            <MarkdownBody
+              markdown={previewBody}
+              enableImageSizingUi={editing}
+              onRequestResizeImage={handleRequestResizeImage}
+            />
+          )
+        ) : isGoogleDocSource && hasImportedText ? (
+          <Box>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
+            >
+              Imported content (Google Doc export)
+            </Typography>
+            <Typography
+              variant="body1"
+              sx={{
+                mt: 1,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {importedText}
+            </Typography>
+          </Box>
         ) : (
           <MarkdownBody
             markdown={previewBody}
