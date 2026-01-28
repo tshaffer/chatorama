@@ -14,6 +14,7 @@ const MAX_GOOGLE_DOC_TEXT_CHARS = 300_000;
 export type GoogleDocArtifactSource = {
   driveFileId: string;
   driveUrl?: string;
+  driveMimeType?: string;
   driveModifiedTime: string;
   driveName?: string;
 };
@@ -124,6 +125,23 @@ function mergeGoogleDocSource(existing: any[] | undefined, next: any) {
   return [...rest, next];
 }
 
+const GOOGLE_DOC_MIME = 'application/vnd.google-apps.document';
+const GOOGLE_SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
+const GOOGLE_SLIDES_MIME = 'application/vnd.google-apps.presentation';
+
+function deriveDocsUrl(driveFileId: string, mimeType?: string): string | undefined {
+  if (!mimeType || mimeType === GOOGLE_DOC_MIME) {
+    return `https://docs.google.com/document/d/${driveFileId}/edit`;
+  }
+  if (mimeType === GOOGLE_SHEET_MIME) {
+    return `https://docs.google.com/spreadsheets/d/${driveFileId}/edit`;
+  }
+  if (mimeType === GOOGLE_SLIDES_MIME) {
+    return `https://docs.google.com/presentation/d/${driveFileId}/edit`;
+  }
+  return undefined;
+}
+
 export async function upsertGoogleDocFromArtifacts(
   input: UpsertGoogleDocArtifactsInput,
 ): Promise<UpsertGoogleDocArtifactsResult> {
@@ -154,6 +172,7 @@ export async function upsertGoogleDocFromArtifacts(
     type: 'googleDoc',
     driveFileId: source.driveFileId,
     driveUrl: source.driveUrl,
+    docsUrl: deriveDocsUrl(source.driveFileId, source.driveMimeType),
     importedAt: now,
     driveModifiedTimeAtImport,
     driveNameAtImport: source.driveName,

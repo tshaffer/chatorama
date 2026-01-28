@@ -787,6 +787,10 @@ export default function NoteEditor({
     (isPdfNote && note?.pdfAssetId
       ? `${API_BASE}/assets/${note.pdfAssetId}/content`
       : undefined);
+  const googleDocUrl = useMemo(() => {
+    const source = (note?.sources ?? []).find((s: any) => s?.type === 'googleDoc');
+    return source?.docsUrl || source?.driveUrl || null;
+  }, [note?.sources]);
 
   if (isError) {
     return (
@@ -1237,6 +1241,19 @@ export default function NoteEditor({
                   onClick={() => window.open(pdfUrl, '_blank', 'noopener,noreferrer')}
                 >
                   Open PDF
+                </Button>
+              </span>
+            </Tooltip>
+          )}
+          {googleDocUrl && (
+            <Tooltip title="Open Google Doc">
+              <span>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => window.open(googleDocUrl, '_blank', 'noopener,noreferrer')}
+                >
+                  Open Google Doc
                 </Button>
               </span>
             </Tooltip>

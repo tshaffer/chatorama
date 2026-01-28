@@ -14,7 +14,8 @@
     "audit:aberrant": "tsx src/scripts/detectAberrantTurnBlocks.ts --out audit-aberrant-exports.json",
     "import:baseline": "tsx scripts/importChatRegistriesFromConversations.ts",
     "unreviewed:html": "tsx scripts/generateUnreviewedChatsHtml.ts",
-    "smoke:pdf-text": "tsx src/scripts/smokePdfText.ts"
+    "smoke:pdf-text": "tsx src/scripts/smokePdfText.ts",
+    "backfill:google-doc-urls": "tsx src/scripts/backfillGoogleDocDocsUrl.ts"
   },
   "dependencies": {
     "@chatorama/chatalog-shared": "file:../shared",

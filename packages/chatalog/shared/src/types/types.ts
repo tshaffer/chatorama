@@ -130,6 +130,7 @@ export interface Note {
     type?: 'chatworthy' | 'clip' | 'manual' | 'googleDoc';
     driveFileId?: string;
     driveUrl?: string;
+    docsUrl?: string;
     importedAt?: string;
     driveModifiedTimeAtImport?: string;
     driveNameAtImport?: string;

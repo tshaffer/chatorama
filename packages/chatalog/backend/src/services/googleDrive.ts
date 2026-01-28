@@ -1,6 +1,8 @@
 import { getValidAccessToken } from './googleAuth';
 
 const GOOGLE_DOC_MIME = 'application/vnd.google-apps.document';
+const GOOGLE_SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
+const GOOGLE_SLIDES_MIME = 'application/vnd.google-apps.presentation';
 const MAX_TEXT_BYTES = 2_000_000;
 const MAX_PDF_BYTES = 20_000_000;
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -65,8 +67,8 @@ export async function fetchDriveFileMeta(driveFileId: string): Promise<DriveFile
   }
   const data = (await res.json()) as DriveFileMeta;
   logDebug(`meta ok id=${data.id} name="${data.name}" modified=${data.modifiedTime}`);
-  if (data.mimeType !== GOOGLE_DOC_MIME) {
-    throw new Error('Drive file is not a Google Doc');
+  if (![GOOGLE_DOC_MIME, GOOGLE_SHEET_MIME, GOOGLE_SLIDES_MIME].includes(data.mimeType)) {
+    throw new Error('Drive file is not a supported Google editor type');
   }
   return data;
 }

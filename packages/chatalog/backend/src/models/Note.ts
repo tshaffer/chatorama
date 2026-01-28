@@ -24,6 +24,7 @@ export interface NoteDoc extends Document {
     type?: 'chatworthy' | 'clip' | 'manual' | 'googleDoc';
     driveFileId?: string;
     driveUrl?: string;
+    docsUrl?: string;
     importedAt?: Date;
     driveModifiedTimeAtImport?: Date;
     driveNameAtImport?: string;
@@ -83,6 +84,7 @@ type Source = {
   type?: 'chatworthy' | 'clip' | 'manual' | 'googleDoc';
   driveFileId?: string;
   driveUrl?: string;
+  docsUrl?: string;
   importedAt?: Date;
   driveModifiedTimeAtImport?: Date;
   driveNameAtImport?: string;
@@ -94,6 +96,7 @@ const SourceSchema = new Schema<Source>(
     type: { type: String, enum: ['chatworthy', 'clip', 'manual', 'googleDoc'] },
     driveFileId: String,
     driveUrl: String,
+    docsUrl: String,
     importedAt: Date,
     driveModifiedTimeAtImport: Date,
     driveNameAtImport: String,

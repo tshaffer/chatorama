@@ -86,6 +86,7 @@ googleDocNotesRouter.post('/importFromDrive', async (req, res, next) => {
       source: {
         driveFileId,
         driveUrl: `https://drive.google.com/file/d/${driveFileId}/view`,
+        driveMimeType: meta.mimeType,
         driveModifiedTime: meta.modifiedTime,
         driveName: meta.name,
       },
@@ -168,6 +169,7 @@ googleDocNotesRouter.post('/admin/smoke', async (req, res, next) => {
       source: {
         driveFileId,
         driveUrl: `https://drive.google.com/file/d/${driveFileId}/view`,
+        driveMimeType: meta.mimeType,
         driveModifiedTime: meta.modifiedTime,
         driveName: meta.name,
       },
