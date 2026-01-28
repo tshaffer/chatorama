@@ -67,6 +67,7 @@ export const notesApi = baseApi.injectEndpoints({
       string
     >({
       query: (noteId) => ({ url: `googleDocNotes/${noteId}/driveStatus` }),
+      providesTags: (_res, _err, noteId) => [{ type: 'GoogleDocStatus' as const, id: noteId }],
     }),
 
     getTopicNotesWithRelations: build.query<
@@ -306,11 +307,12 @@ export const notesApi = baseApi.injectEndpoints({
         body,
       }),
       invalidatesTags: (_res, _err, { noteId, subjectId, topicId }) => {
-        const tags = [
-          { type: 'Note' as const, id: 'LIST' },
-          { type: 'Note' as const, id: `LIST:${subjectId}:${topicId}` },
+        const tags: Array<{ type: 'Note' | 'GoogleDocStatus'; id: string }> = [
+          { type: 'Note', id: 'LIST' },
+          { type: 'Note', id: `LIST:${subjectId}:${topicId}` },
         ];
         if (noteId) tags.push({ type: 'Note' as const, id: noteId });
+        if (noteId) tags.push({ type: 'GoogleDocStatus', id: noteId });
         return tags;
       },
     }),

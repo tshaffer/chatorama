@@ -4,6 +4,7 @@ const GOOGLE_DOC_MIME = 'application/vnd.google-apps.document';
 const MAX_TEXT_BYTES = 2_000_000;
 const MAX_PDF_BYTES = 20_000_000;
 const REQUEST_TIMEOUT_MS = 20_000;
+const EXPORT_TIMEOUT_MS = Number(process.env.GOOGLE_DRIVE_EXPORT_TIMEOUT_MS || '45000');
 
 function logDebug(message: string) {
   if (process.env.GOOGLE_DRIVE_DEBUG?.trim()) {
@@ -18,9 +19,9 @@ export type DriveFileMeta = {
   mimeType: string;
 };
 
-async function fetchWithTimeout(url: string, init: RequestInit = {}) {
+async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
@@ -57,7 +58,7 @@ export async function fetchDriveFileMeta(driveFileId: string): Promise<DriveFile
 
   const res = await fetchWithTimeout(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
-  });
+  }, EXPORT_TIMEOUT_MS);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Drive metadata fetch failed (${res.status}): ${text}`);
@@ -77,7 +78,7 @@ export async function exportDriveTextPlain(driveFileId: string): Promise<string>
 
   const res = await fetchWithTimeout(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
-  });
+  }, EXPORT_TIMEOUT_MS);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Drive text export failed (${res.status}): ${text}`);
