@@ -1,21 +1,15 @@
-// backfillNoteEmbeddings.ts
+// backfillGoogleDocEmbeddings.ts
 //
 // Usage:
-//   MONGO_URI="mongodb://localhost:27017/chatalog_dev" tsx src/scripts/backfillNoteEmbeddings.ts --limit 200 --dryRun
-//   MONGO_URI="mongodb://localhost:27017/chatalog_dev" tsx src/scripts/backfillNoteEmbeddings.ts --limit 200 --concurrency 3
-//
-// Notes:
-//   - Embeds title + summary + tags + markdown.
-//   - Idempotent: skips docs with matching embeddingTextHash.
-//   - Filters to docKind="note" and missing/empty embedding.
+//   MONGO_URI="mongodb://localhost:27017/chatalog_dev" tsx src/scripts/backfillGoogleDocEmbeddings.ts --limit 200 --dryRun
+//   MONGO_URI="mongodb://localhost:27017/chatalog_dev" tsx src/scripts/backfillGoogleDocEmbeddings.ts --limit 200 --concurrency 3
 
 import path from 'path';
 import dotenv from 'dotenv';
 
 const envPath = path.resolve(__dirname, '../../.env');
-console.log(`[backfillNoteEmbeddings] Loading env from ${envPath}`);
+console.log(`[backfillGoogleDocEmbeddings] Loading env from ${envPath}`);
 
-// Force-load backend/.env no matter where the script is launched from
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 import { NoteModel } from '../models/Note';
@@ -31,7 +25,7 @@ type Options = {
 function ensureMongoUri(): string {
   const uri = process.env.MONGO_URI;
   if (!uri) {
-    console.error('MONGO_URI env var is required to run backfillNoteEmbeddings.');
+    console.error('MONGO_URI env var is required to run backfillGoogleDocEmbeddings.');
     process.exit(1);
   }
   return uri;
@@ -86,9 +80,9 @@ async function main() {
   const db = await import('../db/mongoose');
   await db.connectToDatabase();
 
-  console.log('[backfillNoteEmbeddings] NoteModel module:', require.resolve('../models/Note'));
-  console.log('[backfillNoteEmbeddings] db name:', NoteModel.db.name);
-  console.log('[backfillNoteEmbeddings] collection:', NoteModel.collection.name);
+  console.log('[backfillGoogleDocEmbeddings] NoteModel module:', require.resolve('../models/Note'));
+  console.log('[backfillGoogleDocEmbeddings] db name:', NoteModel.db.name);
+  console.log('[backfillGoogleDocEmbeddings] collection:', NoteModel.collection.name);
 
   const stats = {
     scanned: 0,
@@ -100,18 +94,15 @@ async function main() {
 
   try {
     const docs = await NoteModel.find({
-      docKind: 'note',
-      $or: [
-        { embedding: { $exists: false } },
-        { embedding: null },
-        { embedding: { $size: 0 } },
-      ],
+      sourceType: 'googleDoc',
     })
       .select({
         title: 1,
         summary: 1,
         markdown: 1,
         tags: 1,
+        derived: 1,
+        sources: 1,
         embedding: 1,
         embeddingTextHash: 1,
       })
@@ -120,7 +111,7 @@ async function main() {
       .lean()
       .exec();
 
-    console.log('[backfillNoteEmbeddings] docs to process:', docs.length);
+    console.log('[backfillGoogleDocEmbeddings] docs to process:', docs.length);
 
     const processOne = async (doc: any) => {
       stats.scanned += 1;
@@ -163,7 +154,7 @@ async function main() {
         stats.updated += 1;
       } catch (err) {
         stats.errors += 1;
-        console.error('[backfillNoteEmbeddings] failed for note', doc._id, err);
+        console.error('[backfillGoogleDocEmbeddings] failed for note', doc._id, err);
       }
     };
 
@@ -175,8 +166,7 @@ async function main() {
     await db.disconnectFromDatabase();
   }
 
-  // eslint-disable-next-line no-console
-  console.log('[backfillNoteEmbeddings] stats:', stats);
+  console.log('[backfillGoogleDocEmbeddings] stats:', stats);
 }
 
 main().catch((err) => {

@@ -791,6 +791,9 @@ export default function NoteEditor({
     const source = (note?.sources ?? []).find((s: any) => s?.type === 'googleDoc');
     return source?.docsUrl || source?.driveUrl || null;
   }, [note?.sources]);
+  const googleDocSource = useMemo(() => {
+    return (note?.sources ?? []).find((s: any) => s?.type === 'googleDoc');
+  }, [note?.sources]);
 
   if (isError) {
     return (
@@ -1233,18 +1236,40 @@ export default function NoteEditor({
             </Button>
           )}
           {pdfUrl && (
-            <Tooltip title="Open PDF">
-              <span>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={() => window.open(pdfUrl, '_blank', 'noopener,noreferrer')}
-                >
-                  Open PDF
-                </Button>
-              </span>
-            </Tooltip>
-          )}
+          <Tooltip title="Open PDF">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => window.open(pdfUrl, '_blank', 'noopener,noreferrer')}
+              >
+                Open PDF
+              </Button>
+            </span>
+          </Tooltip>
+        )}
+        {googleDocUrl && (
+          <Tooltip title="Insert Google Doc link into your notes">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  if (!googleDocUrl) return;
+                  if (markdown.includes(googleDocUrl)) {
+                    setSnack({ open: true, msg: 'Link already present', sev: 'success' });
+                    return;
+                  }
+                  const linkTitle =
+                    googleDocSource?.driveNameAtImport || title || 'Google Doc';
+                  insertAtCursor(`\n\nSource: [${linkTitle}](${googleDocUrl})\n\n`);
+                }}
+              >
+                Insert doc link
+              </Button>
+            </span>
+          </Tooltip>
+        )}
           {googleDocUrl && (
             <Tooltip title="Open Google Doc">
               <span>
@@ -1700,6 +1725,11 @@ export default function NoteEditor({
           <Divider sx={{ my: 2 }} />
 
           {/* Markdown editor */}
+          {isGoogleDocSource && (
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5 }}>
+              Your notes about this Google Doc
+            </Typography>
+          )}
           <TextField
             label={isPdfNote ? 'PDF Summary (Markdown)' : 'Markdown'}
             value={markdown}

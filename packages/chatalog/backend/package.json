@@ -15,7 +15,8 @@
     "import:baseline": "tsx scripts/importChatRegistriesFromConversations.ts",
     "unreviewed:html": "tsx scripts/generateUnreviewedChatsHtml.ts",
     "smoke:pdf-text": "tsx src/scripts/smokePdfText.ts",
-    "backfill:google-doc-urls": "tsx src/scripts/backfillGoogleDocDocsUrl.ts"
+    "backfill:google-doc-urls": "tsx src/scripts/backfillGoogleDocDocsUrl.ts",
+    "backfill:google-doc-embeddings": "tsx src/scripts/backfillGoogleDocEmbeddings.ts"
   },
   "dependencies": {
     "@chatorama/chatalog-shared": "file:../shared",

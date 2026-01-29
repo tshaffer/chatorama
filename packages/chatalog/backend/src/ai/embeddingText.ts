@@ -21,6 +21,9 @@ export type NoteEmbeddingSource = {
   summary?: string;
   markdown?: string;
   tags?: string[];
+  sourceType?: string;
+  sources?: { type?: string }[];
+  derived?: { googleDoc?: { textPlain?: string } };
   recipe?: {
     sourceUrl?: string;
     author?: string;
@@ -113,6 +116,50 @@ function buildEmbeddingText(
 
   // Join with double newlines for readability and stability.
   return parts.join('\n\n').trim();
+}
+
+const MAX_NOTE_EMBEDDING_CHARS = 12_000;
+const GOOGLE_DOC_EMBEDDING_DELIM = '\n\n---\n\n';
+
+function isGoogleDocNote(note: NoteEmbeddingSource): boolean {
+  return (
+    note.sourceType === 'googleDoc' ||
+    (note.sources ?? []).some((s) => s?.type === 'googleDoc')
+  );
+}
+
+function buildGoogleDocEmbeddingText(note: NoteEmbeddingSource): string {
+  const annotations = normalizeForEmbedding(note.markdown ?? '');
+  const imported = normalizeForEmbedding(note.derived?.googleDoc?.textPlain ?? '');
+  const hasAnnotations = annotations.length > 0;
+  const hasImported = imported.length > 0;
+
+  if (!hasAnnotations && !hasImported) return '';
+  if (!hasAnnotations) return truncate(imported, MAX_NOTE_EMBEDDING_CHARS);
+  if (!hasImported) return truncate(annotations, MAX_NOTE_EMBEDDING_CHARS);
+
+  if (annotations.length >= MAX_NOTE_EMBEDDING_CHARS) {
+    // Never truncate annotations; drop imported if budget is exhausted.
+    return annotations;
+  }
+
+  const remaining =
+    MAX_NOTE_EMBEDDING_CHARS - annotations.length - GOOGLE_DOC_EMBEDDING_DELIM.length;
+  if (remaining <= 0) return annotations;
+
+  const importedTrimmed = truncate(imported, remaining);
+  return `${annotations}${GOOGLE_DOC_EMBEDDING_DELIM}${importedTrimmed}`.trim();
+}
+
+export function buildNoteEmbeddingInput(
+  note: NoteEmbeddingSource,
+  opts: BuildEmbeddingTextOptions = {}
+): { text: string; hash: string } {
+  const text = isGoogleDocNote(note)
+    ? buildGoogleDocEmbeddingText(note)
+    : buildEmbeddingText(note, opts);
+  const hash = hashEmbeddingText(text);
+  return { text, hash };
 }
 
 /**

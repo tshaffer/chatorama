@@ -6,10 +6,11 @@ import { AssetModel } from '../models/Asset';
 import { NoteAssetModel } from '../models/NoteAsset';
 import { dedupeSlug, ensureSubjectTopicExist } from '../utilities';
 import { embedText } from '../ai/embed';
-import { hashEmbeddingText } from '../ai/embeddingText';
+import { buildNoteEmbeddingInput } from '../ai/embeddingText';
 import { deleteLocalFile, savePdfToLocal } from './assetStorage';
 
 const MAX_GOOGLE_DOC_TEXT_CHARS = 300_000;
+const MIN_EMBED_TEXT_LEN = 10;
 
 export type GoogleDocArtifactSource = {
   driveFileId: string;
@@ -159,8 +160,8 @@ export async function upsertGoogleDocFromArtifacts(
 
   let status: UpsertGoogleDocArtifactsResult['status'] = 'created';
   let noteId = input.noteId;
-  let titleForEmbedding: string;
   let sources: any[] = [];
+  let existingNote: any | undefined;
   const subjectId = input.subjectId;
   const topicId = input.topicId;
 
@@ -183,21 +184,25 @@ export async function upsertGoogleDocFromArtifacts(
     const existing = await NoteModel.findById(noteId).lean().exec();
     if (!existing) throw new Error('noteId not found');
     status = 'updated';
+    existingNote = existing;
     sources = mergeGoogleDocSource(existing.sources as any, googleSource);
-    titleForEmbedding = existing.title || source.driveName || 'Untitled';
   } else {
     if (!subjectId || !topicId) {
       throw new Error('subjectId and topicId are required for googleDoc import');
     }
     const title = source.driveName?.trim() || 'Untitled';
     const slug = await dedupeSlug(slugifyStandard(title || 'untitled'), undefined);
-    titleForEmbedding = title;
     sources = mergeGoogleDocSource(undefined, googleSource);
 
-    const embeddingText = `${titleForEmbedding}\n\n${textPlain}`.trim();
-    const { vector, model } = await embedText(embeddingText, {
-      model: 'text-embedding-3-small',
+    const { text: embeddingText, hash } = buildNoteEmbeddingInput({
+      sourceType: 'googleDoc',
+      markdown: '',
+      derived: { googleDoc: { textPlain } },
     });
+    const { vector, model } =
+      embeddingText.length >= MIN_EMBED_TEXT_LEN
+        ? await embedText(embeddingText, { model: 'text-embedding-3-small' })
+        : { vector: undefined, model: undefined };
 
     const created = await NoteModel.create({
       title,
@@ -224,17 +229,22 @@ export async function upsertGoogleDocFromArtifacts(
       },
       embedding: vector,
       embeddingModel: model,
-      embeddingTextHash: hashEmbeddingText(embeddingText),
+      embeddingTextHash: hash,
       embeddingUpdatedAt: now,
     });
     noteId = created._id.toString();
   }
 
   if (status === 'updated') {
-    const embeddingText = `${titleForEmbedding}\n\n${textPlain}`.trim();
-    const { vector, model } = await embedText(embeddingText, {
-      model: 'text-embedding-3-small',
+    const { text: embeddingText, hash } = buildNoteEmbeddingInput({
+      sourceType: 'googleDoc',
+      markdown: existingNote?.markdown ?? '',
+      derived: { googleDoc: { textPlain } },
     });
+    const { vector, model } =
+      embeddingText.length >= MIN_EMBED_TEXT_LEN
+        ? await embedText(embeddingText, { model: 'text-embedding-3-small' })
+        : { vector: undefined, model: undefined };
 
     const subjectTopicUpdate: any = {};
     if (subjectId) subjectTopicUpdate.subjectId = subjectId;
@@ -256,7 +266,7 @@ export async function upsertGoogleDocFromArtifacts(
           },
           embedding: vector,
           embeddingModel: model,
-          embeddingTextHash: hashEmbeddingText(embeddingText),
+          embeddingTextHash: hash,
           embeddingUpdatedAt: now,
           ...subjectTopicUpdate,
         },
