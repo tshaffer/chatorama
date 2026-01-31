@@ -41,6 +41,7 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Link,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DoneIcon from '@mui/icons-material/Done';
@@ -256,6 +257,18 @@ function unescapeEscapes(s: string): string {
     .replace(/\\n/g, '\n')
     .replace(/\\r/g, '\r')
     .replace(/\\t/g, '\t');
+}
+
+function PdfViewer({ src, title }: { src: string; title?: string }) {
+  return (
+    <Box sx={{ mt: 2, width: '100%', height: '75vh', minHeight: '75vh' }}>
+      <iframe
+        title={title || 'PDF preview'}
+        src={src}
+        style={{ width: '100%', height: '100%', border: 0 }}
+      />
+    </Box>
+  );
 }
 
 // Extract leading 24-hex ObjectId from "<id>" or "<id>-<slug>"
@@ -832,6 +845,10 @@ export default function NoteEditor({
   const isGoogleDocSource =
     note?.sourceType === 'googleDoc' ||
     (note?.sources ?? []).some((s: any) => s?.type === 'googleDoc');
+  const googleDocViewerMissing = isGoogleDocSource && !viewerPdfUrl;
+  const hasPdfSummary = previewBody.trim().length > 0;
+  const shouldRenderImportedTextFallback =
+    googleDocViewerMissing && hasImportedText;
 
   // --- relations UI handlers ---
 
@@ -947,6 +964,28 @@ export default function NoteEditor({
   };
 
   // --- shared preview block (used for both modes) ---
+  const renderImportedText = () => (
+    <Box>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
+      >
+        Imported content (Google Doc export)
+      </Typography>
+      <Typography
+        variant="body1"
+        sx={{
+          mt: 1,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      >
+        {importedText}
+      </Typography>
+    </Box>
+  );
+
   const renderPreviewContent = () => (
     <>
       <Typography variant="h5" sx={{ mb: 0.5 }}>
@@ -1090,33 +1129,61 @@ export default function NoteEditor({
               onRequestResizeImage={handleRequestResizeImage}
             />
           )
-        ) : isGoogleDocSource && hasImportedText ? (
-          <Box>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
-            >
-              Imported content (Google Doc export)
-            </Typography>
-            <Typography
-              variant="body1"
-              sx={{
-                mt: 1,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}
-            >
-              {importedText}
-            </Typography>
-          </Box>
-        ) : (
+        ) : isPdfNote || isGoogleDocSource ? null : (
           <MarkdownBody
             markdown={previewBody}
             enableImageSizingUi={editing}
             onRequestResizeImage={handleRequestResizeImage}
           />
         )}
+        {isPdfNote && pdfUrl ? (
+          <Box sx={{ mt: 2 }}>
+            {hasPdfSummary ? (
+              <MarkdownBody
+                markdown={previewBody}
+                enableImageSizingUi={editing}
+                onRequestResizeImage={handleRequestResizeImage}
+              />
+            ) : null}
+            <Typography variant="caption" color="text.secondary">
+              PDF preview{' '}
+              <Link
+                href={pdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                underline="hover"
+              >
+                Open in new tab
+              </Link>
+            </Typography>
+            <PdfViewer src={pdfUrl} title={title || 'PDF preview'} />
+          </Box>
+        ) : null}
+        {isGoogleDocSource ? (
+          viewerPdfUrl ? (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="caption" color="text.secondary">
+                PDF preview{' '}
+                <Link
+                  href={viewerPdfUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  underline="hover"
+                >
+                  Open in new tab
+                </Link>
+              </Typography>
+              <PdfViewer src={viewerPdfUrl} title={title || 'Google Doc PDF'} />
+            </Box>
+          ) : shouldRenderImportedTextFallback ? (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="caption" color="text.secondary">
+                PDF preview unavailable. Showing imported text instead.
+              </Typography>
+              {renderImportedText()}
+            </Box>
+          ) : null
+        ) : null}
       </Box>
     </>
   );
