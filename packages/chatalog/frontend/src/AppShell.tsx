@@ -24,7 +24,6 @@ import { selectSearchDraft, selectSearchDraftText } from './features/search/sear
 import { hydrateFromUrl, setDraftText } from './features/search/searchSlice';
 import { buildSearchUrlFromQuery } from './features/search/searchUrl';
 
-import ImportAiClassificationButton from './features/imports/ImportAiClassificationButton';
 import { useGoogleDocImportDialog } from './features/imports/useGoogleDocImportDialog';
 
 type TopNavButtonProps = {
@@ -184,9 +183,6 @@ export default function AppShell() {
             {/* Existing Chatworthy import (file/zip) */}
             <ImportChatworthyButton mode="icon" />
             <ImportPdfButton mode="icon" />
-
-            {/* NEW: AI classification import (seed + classification JSON) */}
-            <ImportAiClassificationButton mode="icon" />
 
             <Tooltip title="Import Google Doc">
               <span>

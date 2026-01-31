@@ -99,23 +99,6 @@ const importsApi = baseApi.injectEndpoints({
       ],
     }),
 
-    // NEW: PREVIEW import from AI classification (paths come from backend env vars)
-    importAiClassificationPreview: build.mutation<
-      ImportResponse,
-      void
-    >({
-      query: () => ({
-        url: 'imports/ai-classification/preview',
-        method: 'POST',
-      }),
-      transformResponse: (res: ImportResponse) => ({
-        ...res,
-        hasDuplicateTurns: res.hasDuplicateTurns ?? false,
-        duplicateTurnCount: res.duplicateTurnCount ?? 0,
-      }),
-      // Preview only, no invalidations.
-    }),
-
     // APPLY import: actually create Subjects/Topics/Notes
     applyChatworthyImport: build.mutation<ApplyImportResponse, ApplyImportRequestPayload>({
       query: (payload) => ({
@@ -177,7 +160,6 @@ const importsApi = baseApi.injectEndpoints({
 export const {
   useImportChatworthyMutation,
   useImportPdfMutation,
-  useImportAiClassificationPreviewMutation,
   useApplyChatworthyImportMutation,
   useGetImportBatchesQuery,
   useGetImportBatchNotesQuery,
