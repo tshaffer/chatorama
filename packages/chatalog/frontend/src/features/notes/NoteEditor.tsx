@@ -68,6 +68,7 @@ import EditIngredientsDialog from './EditIngredientsDialog';
 import RecipeView from './RecipeView';
 import RecipePropertiesDialog from './RecipePropertiesDialog';
 import { sortByStringKeyCI, sortStringsCI } from '../../utils/sort';
+import { downloadTextFile, sanitizeFilenameTitle } from '../../utils/files';
 
 // ---------------- helpers ----------------
 
@@ -465,6 +466,13 @@ export default function NoteEditor({
   const scrollToTop = useCallback(() => {
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
+
+  const handleExportMarkdown = useCallback(() => {
+    const safeTitle = sanitizeFilenameTitle(title);
+    const baseName = safeTitle || `note-${note?.id ?? resolvedNoteId ?? 'unknown'}`;
+    const filename = `${baseName}.md`;
+    downloadTextFile(markdown ?? '', filename, 'text/markdown;charset=utf-8');
+  }, [title, note?.id, resolvedNoteId, markdown]);
 
   const handleRequestResizeImage = useCallback((img: { src?: string; title?: string; alt?: string }) => {
     setResizeTarget(img);
@@ -1292,6 +1300,18 @@ export default function NoteEditor({
                 disabled={isLoading}
               >
                 Properties
+              </Button>
+            </span>
+          </Tooltip>
+          <Tooltip title="Export note as markdown">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={handleExportMarkdown}
+                disabled={isLoading}
+              >
+                Export .md
               </Button>
             </span>
           </Tooltip>
