@@ -15,6 +15,8 @@
     "build:chatalog": "npm run build:shared && npm run build:md-core && npm run build:chatalog-backend && npm run build:chatalog-frontend",
     "build": "npm run --workspaces --if-present build",
     "dev": "npm run --workspaces --if-present dev",
+    "start": "node packages/chatalog/backend/dist/server.js",
+    "heroku-postbuild": "npm run build:shared && npm run build:chatalog-backend && npm run build:chatalog-frontend",
     "clean": "rimraf **/dist **/node_modules || true",
     "knip": "knip"
   },
@@ -29,5 +31,8 @@
     "vfile": "6.0.3",
     "vfile-message": "4.0.3",
     "remark-slug": "8.0.0"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }
