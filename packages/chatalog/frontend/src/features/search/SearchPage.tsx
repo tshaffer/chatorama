@@ -1092,7 +1092,7 @@ export default function SearchPage() {
             <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', pr: 0.5 }}>
               <List disablePadding>
                 {/* NOTE: Do not alphabetize search results; order is relevance/ranking. */}
-                {displayRows.map((row, i) => {
+                {displayRows.map((row: DisplayRow, i) => {
                   if (row.kind === 'header') {
                     return (
                       <Box
@@ -1119,6 +1119,12 @@ export default function SearchPage() {
                   const explain = r.explain;
                   const canExplain = committed.mode === 'hybrid' && explainEnabled && !!explain;
                   const explainOpen = Boolean(explainOpenById[r.id]);
+                  const { subjectName, topicName } = resolveNamesForResult(
+                    subjectsWithTopics as any,
+                    r.subjectId,
+                    r.topicId,
+                  );
+                  const locationLabel = [subjectName, topicName].filter(Boolean).join(' / ');
 
                   return (
                     <Box key={row.id}>
@@ -1154,6 +1160,11 @@ export default function SearchPage() {
                               <Typography variant="caption" color="text.secondary">
                                 • sources: {r.sources.join(', ')}
                               </Typography>
+                              {locationLabel ? (
+                                <Typography variant="caption" color="text.secondary">
+                                  • {locationLabel}
+                                </Typography>
+                              ) : null}
                               {canExplain ? (
                                 <Button
                                   size="small"
@@ -1792,4 +1803,13 @@ function renderHighlightedSnippet(snippet: string, tokens: string[]): ReactNode 
       })}
     </>
   );
+}
+
+function resolveNamesForResult(
+  subjectsWithTopics: any[],
+  subjectId?: string,
+  topicId?: string,
+): { subjectName?: string; topicName?: string } {
+  if (!subjectId && !topicId) return {};
+  return resolveSubjectAndTopicNames(subjectsWithTopics as any, subjectId, topicId);
 }
