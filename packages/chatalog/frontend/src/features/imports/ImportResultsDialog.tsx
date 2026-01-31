@@ -1400,7 +1400,7 @@ export function ImportResultsDialog({
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
         <Button variant="contained" onClick={handleApply}>
-          Apply Changes
+          Import
         </Button>
       </DialogActions>
     </Dialog>
