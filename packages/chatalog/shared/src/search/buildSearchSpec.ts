@@ -1,5 +1,5 @@
-import type { SearchMode, SearchScope, SearchSpec } from '../types/searchTypes';
-import { SEARCH_MAX_LIMIT } from './constants';
+import type { SearchMode, SearchScope, SearchSpec } from '../types/searchTypes.js';
+import { SEARCH_MAX_LIMIT } from './constants.js';
 
 export type BuildSearchSpecInput = {
   query?: string;
