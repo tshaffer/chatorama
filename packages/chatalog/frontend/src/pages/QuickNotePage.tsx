@@ -172,10 +172,10 @@ export default function QuickNotePage() {
       setEditMarkdown(note.markdown ?? '');
 
       // default subject/topic labels derived from note's subjectId/topicId
-      const subject = subjects.find(s => s.id === note.subjectId) as
+      const subject = subjects.find((s: Subject) => s.id === note.subjectId) as
         | (Subject & { topics?: Topic[] })
         | undefined;
-      const topic = subject?.topics?.find(t => t.id === note.topicId);
+      const topic = subject?.topics?.find((t: Topic) => t.id === note.topicId);
 
       setConvertDefaults({
         subjectLabel: subject?.name ?? '',
@@ -332,10 +332,10 @@ export default function QuickNotePage() {
   const openConvertDialog = () => {
     // ensure dialog shows most recent guesses when opened
     if (note) {
-      const subject = subjects.find(s => s.id === note.subjectId) as
+      const subject = subjects.find((s: Subject) => s.id === note.subjectId) as
         | (Subject & { topics?: Topic[] })
         | undefined;
-      const topic = subject?.topics?.find(t => t.id === note.topicId);
+      const topic = subject?.topics?.find((t: Topic) => t.id === note.topicId);
 
       setConvertDefaults({
         subjectLabel: subject?.name ?? '',

@@ -9,7 +9,9 @@
     "baseUrl": ".",
     "types": ["node", "webpack-env"],
     "paths": {
-      "@shared/*": ["../shared/src/*"]
+      "@shared/*": ["../shared/src/*"],
+      "@chatorama/chatalog-shared": ["../shared/src/index.ts"],
+      "@chatorama/chatalog-shared/*": ["../shared/src/*"]
     },
     "strict": true,
     "esModuleInterop": true,

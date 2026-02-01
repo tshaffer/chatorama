@@ -20,6 +20,7 @@ import { useGetTopicsForSubjectQuery } from '../features/subjects/subjectsApi';
 import { useGetSubjectsQuery, useGetSubjectRelationsSummaryQuery } from '../features/subjects/subjectsApi';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { sortByStringKeyCI } from '../utils/sort';
+import type { NotePreview, RelatedTopicSummary } from '@chatorama/chatalog-shared';
 
 const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
 const slugify = (s: string) =>
@@ -276,7 +277,7 @@ export default function SubjectIndex() {
                         </Typography>
                         <List dense>
                           {/* NOTE: Do not alphabetize relation-derived lists; order may be meaningful. */}
-                          {relationsSummary.relatedTopics.map((rt) => {
+                          {relationsSummary.relatedTopics.map((rt: RelatedTopicSummary) => {
                             const t = rt.topic;
                             const topicHref = `/s/${subjectSlug}/t/${t.id}-${slugify(
                               t.name,
@@ -309,7 +310,7 @@ export default function SubjectIndex() {
                         </Typography>
                         <List dense>
                           {/* NOTE: Do not alphabetize relation-derived lists; order may be meaningful. */}
-                          {relationsSummary.relatedNotes.map((n) => (
+                          {relationsSummary.relatedNotes.map((n: NotePreview) => (
                             <ListItemButton
                               key={n.id}
                               onClick={() => navigate(`/n/${n.id}`)}

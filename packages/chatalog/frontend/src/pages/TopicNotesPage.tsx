@@ -48,6 +48,7 @@ import { selectNoteStatusVisibility } from '../features/settings/settingsSlice';
 import ConfirmIconButton from '../components/ConfirmIconButton';
 import DeleteIcon from '@mui/icons-material/Delete';
 import NotePropertiesDialog from '../features/notes/NotePropertiesDialog';
+import type { NotePreview, RelatedTopicSummary } from '@chatorama/chatalog-shared';
 
 // Extract leading ObjectId from "<id>" or "<id>-<slug>"
 const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
@@ -156,7 +157,7 @@ export default function TopicNotesPage() {
   );
 
   const propertiesPreviewNote = useMemo(
-    () => activeNotes.find((n) => n.id === propertiesNoteId),
+    () => activeNotes.find((n: NotePreview) => n.id === propertiesNoteId),
     [activeNotes, propertiesNoteId],
   );
 
@@ -182,11 +183,11 @@ export default function TopicNotesPage() {
   const onOpenNote = (noteId: string) => navigate(`/n/${noteId}`);
 
   const allIds = useMemo(
-    () => activeNotes.map(n => String((n as any).id ?? (n as any)._id)),
+    () => activeNotes.map((n: NotePreview) => String((n as any).id ?? (n as any)._id)),
     [activeNotes],
   );
   const selectedNotes = useMemo(
-    () => activeNotes.filter(n => selectedIds.has(n.id)),
+    () => activeNotes.filter((n: NotePreview) => selectedIds.has(n.id)),
     [activeNotes, selectedIds],
   );
 
@@ -223,7 +224,7 @@ export default function TopicNotesPage() {
         </Typography>
         {/* NOTE: Do not alphabetize relation-derived lists; order may be meaningful. */}
         <List dense>
-          {items.map(n => (
+          {items.map((n: NotePreview) => (
             <ListItemButton key={n.id} onClick={() => onOpenNote(n.id)}>
               <ListItemText
                 primary={
@@ -534,7 +535,7 @@ export default function TopicNotesPage() {
                                       </Typography>
                                       {/* NOTE: Do not alphabetize relation-derived lists; order may be meaningful. */}
                                       <List dense>
-                                        {topicRelSummary.relatedTopics.map(rt => {
+                                        {topicRelSummary.relatedTopics.map((rt: RelatedTopicSummary) => {
                                           const t = rt.topic;
                                           const sameSubject =
                                             t.subjectId &&
@@ -591,7 +592,7 @@ export default function TopicNotesPage() {
                                       </Typography>
                                       {/* NOTE: Do not alphabetize relation-derived lists; order may be meaningful. */}
                                       <List dense>
-                                        {topicRelSummary.relatedNotes.map(n => (
+                                        {topicRelSummary.relatedNotes.map((n: NotePreview) => (
                                           <ListItemButton
                                             key={n.id}
                                             onClick={() => onOpenNote(n.id)}
