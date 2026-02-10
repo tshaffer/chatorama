@@ -5,6 +5,8 @@
 # Usage:
 #   MONGO_URI='mongodb+srv://...' 
 #   ./backup-chatalog-auto.sh
+#   MONGO_URI='mongodb+srv://...' RSYNC_DRY_RUN=1
+#   ./backup-chatalog-auto.sh
 #
 # Creates snapshot directories:
 #   /Users/tedshaffer/Documents/MongoDBBackups/chatorama/backup-<month>-<day>-<n>
@@ -71,15 +73,46 @@ echo
 "$BACKUP_SCRIPT" "$TMP_DIR"
 
 echo
-echo "Step 2: Create snapshot using rsync hard-linking unchanged files"
+echo "Step 2: Create snapshot using hardlink-seeded copy + rsync overlay"
+rsync_args=(-a --checksum --delete)
+if [[ -n "${RSYNC_DRY_RUN:-}" ]]; then
+  rsync_args+=(--dry-run --itemize-changes --verbose)
+  echo "  DRY RUN: showing rsync plan, no snapshot will be written"
+fi
+
 if [[ -n "$PREV_SNAPSHOT" && -d "$PREV_SNAPSHOT" ]]; then
-  echo "  Using --link-dest=$PREV_SNAPSHOT"
-  rsync -a --delete \
-    --link-dest="$PREV_SNAPSHOT" \
-    "$TMP_DIR/" "$TARGET_DIR/"
+  echo "  Seeding snapshot with hardlinks from: $PREV_SNAPSHOT"
+  if [[ -n "${RSYNC_DRY_RUN:-}" ]]; then
+    DRY_DEST="${BASE_DIR}/.dryrun-dest-${prefix}${index}-$$"
+    mkdir -p "$DRY_DEST"
+    cp -al "$PREV_SNAPSHOT/." "$DRY_DEST/"
+    echo "  Overlaying fresh export onto snapshot (rsync --checksum --delete)"
+    rsync "${rsync_args[@]}" "$TMP_DIR/" "$DRY_DEST/"
+    rm -rf "$TMP_DIR" "$DRY_DEST"
+    echo
+    echo "✔ DRY RUN complete (no snapshot written)"
+    exit 0
+  fi
+
+  mkdir -p "$TARGET_DIR"
+  # Seed TARGET_DIR so unchanged files are already hardlinked.
+  cp -al "$PREV_SNAPSHOT/." "$TARGET_DIR/"
+  echo "  Overlaying fresh export onto snapshot (rsync --checksum --delete)"
+  rsync "${rsync_args[@]}" "$TMP_DIR/" "$TARGET_DIR/"
 else
   echo "  No previous snapshot found; first snapshot will be a full copy"
-  rsync -a --delete "$TMP_DIR/" "$TARGET_DIR/"
+  if [[ -n "${RSYNC_DRY_RUN:-}" ]]; then
+    DRY_DEST="${BASE_DIR}/.dryrun-dest-${prefix}${index}-$$"
+    mkdir -p "$DRY_DEST"
+    rsync "${rsync_args[@]}" "$TMP_DIR/" "$DRY_DEST/"
+    rm -rf "$TMP_DIR" "$DRY_DEST"
+    echo
+    echo "✔ DRY RUN complete (no snapshot written)"
+    exit 0
+  fi
+
+  mkdir -p "$TARGET_DIR"
+  rsync "${rsync_args[@]}" "$TMP_DIR/" "$TARGET_DIR/"
 fi
 
 # Remove temp dir
