@@ -1,5 +1,15 @@
 // chatworthy/domExtractors.ts
+import { getSite, getChatTitle } from './siteAdapters';
+
 export function getChatTitleAndProject(): { chatTitle?: string; projectName?: string } {
+  const site = getSite();
+  if (site === 'gemini' || site === 'claude') {
+    return { chatTitle: getChatTitle(), projectName: undefined };
+  }
+  return getChatTitleAndProjectChatGPT();
+}
+
+function getChatTitleAndProjectChatGPT(): { chatTitle?: string; projectName?: string } {
   // ---- 1) CHAT TITLE: Prefer the selected item in the left sidebar ----
   const sidebarSelected =
     document.querySelector('nav a[aria-current="page"]') ||

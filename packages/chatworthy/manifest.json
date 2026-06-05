@@ -12,6 +12,8 @@
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
+    "https://gemini.google.com/*",
+    "https://claude.ai/*",
     "https://cooking.nytimes.com/*",
     "https://www.bonappetit.com/*",
     "https://bonappetit.com/*"
@@ -24,7 +26,9 @@
     {
       "matches": [
         "https://chatgpt.com/*",
-        "https://chat.openai.com/*"
+        "https://chat.openai.com/*",
+        "https://gemini.google.com/*",
+        "https://claude.ai/*"
       ],
       "js": [
         "content.js"

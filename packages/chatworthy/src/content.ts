@@ -1,6 +1,7 @@
 // Mark as a module (good for TS/isolatedModules)
 
 import { getChatTitleAndProject } from './domExtractors';
+import { getSite, getChatTitle, getMessageTuples as getSiteMessageTuples } from './siteAdapters';
 import { buildMarkdownExport } from '@chatorama/chat-md-core';
 import type { ExportTurn, ExportNoteMetadata } from '@chatorama/chat-md-core';
 
@@ -380,8 +381,7 @@ function startRepairLoop() {
 // ---- Helpers -----------------------------------------------
 
 function getTitle(): string {
-  const h1 = document.querySelector('h1, header h1, [data-testid="conversation-title"]');
-  const title = (h1?.textContent || document.title || 'ChatGPT Conversation').trim();
+  const title = getChatTitle() || document.title || 'Conversation';
   return title.replace(/[\n\r]+/g, ' ');
 }
 
@@ -422,59 +422,15 @@ function cloneWithoutInjected(el: HTMLElement): HTMLElement {
 // ---- Message discovery -------------------------------------
 
 function getMessageTuples(): Array<{ el: HTMLElement; role: 'user' | 'assistant' }> {
-  const chosen: Array<{ el: HTMLElement; role: 'user' | 'assistant' }> = [];
-  const seen = new Set<HTMLElement>();
+  const tuples = getSiteMessageTuples();
 
-  const candidates = Array.from(document.querySelectorAll<HTMLElement>(
-    ['[data-testid="conversation-turn"]', '[data-message-id]', '[data-message-author-role]'].join(',')
-  ));
+  // Stamp data attributes used by the rest of content.ts (scroll tracking, IO observer, etc.)
+  tuples.forEach((t, idx) => {
+    t.el.setAttribute('data-cw-role', t.role);
+    t.el.setAttribute('data-cw-msgid', String(idx));
+  });
 
-  const pickRoot = (n: HTMLElement): HTMLElement =>
-    n.closest<HTMLElement>('[data-testid="conversation-turn"]') ||
-    n.closest<HTMLElement>('[data-message-id]') ||
-    n.closest<HTMLElement>('article, li, section') ||
-    n;
-
-  const roleOf = (root: HTMLElement): 'user' | 'assistant' => {
-    const attrNode = root.matches('[data-message-author-role]')
-      ? root
-      : root.querySelector<HTMLElement>('[data-message-author-role]');
-    const raw = (attrNode?.getAttribute('data-message-author-role') || '').toLowerCase();
-    if (raw === 'user' || raw === 'assistant') return raw as 'user' | 'assistant';
-    if (root.querySelector('.user-message-bubble-color')) return 'user';
-    if (root.matches('.items-end, [class*="items-end"]') || root.querySelector('.items-end, [class*="items-end"]')) {
-      return 'user';
-    }
-    return 'assistant';
-  };
-
-  for (const node of candidates) {
-    const root = pickRoot(node);
-    if (seen.has(root)) continue;
-    seen.add(root);
-
-    const role = roleOf(root);
-    root.setAttribute('data-cw-role', role);
-    root.setAttribute('data-cw-msgid', String(chosen.length));
-
-    chosen.push({ el: root, role });
-  }
-
-  if (!chosen.some(c => c.role === 'assistant')) {
-    const extras = Array.from(document.querySelectorAll<HTMLElement>('.markdown, .prose, [data-testid="markdown"]'));
-    for (const md of extras) {
-      const inUser = md.closest('[data-cw-role="user"], .items-end, [class*="items-end"]');
-      if (inUser) continue;
-      const root = pickRoot(md);
-      if (seen.has(root)) continue;
-      seen.add(root);
-      root.setAttribute('data-cw-role', 'assistant');
-      root.setAttribute('data-cw-msgid', String(chosen.length));
-      chosen.push({ el: root, role: 'assistant' });
-    }
-  }
-
-  return chosen;
+  return tuples;
 }
 
 // ---- Build selected payload --------------------------------
@@ -582,7 +538,7 @@ function createExportMeta(turnCount: number): (ExportNoteMetadata & { projectNam
 
   const meta: ExportNoteMetadata & { projectName?: string | null } = {
     noteId: generateNoteId(),
-    source: 'chatgpt',
+    source: getSite(),
     chatId: getChatIdFromUrl(location.href),
     chatTitle,
     pageUrl: location.href,
@@ -1348,7 +1304,8 @@ function scheduleEnsure() {
 
 async function init() {
   const host = location.host || '';
-  if (!/^(chatgpt\.com|chat\.openai\.com)$/i.test(host)) {
+  const allowedHosts = /^(chatgpt\.com|chat\.openai\.com|gemini\.google\.com|claude\.ai)$/i;
+  if (!allowedHosts.test(host)) {
     console.warn('[chatworthy] Host not allowed; skipping init:', host);
     return;
   }
