@@ -165,67 +165,32 @@ function getMessageTuplesClaude(): MessageTuple[] {
   const chosen: MessageTuple[] = [];
   const seen = new Set<HTMLElement>();
 
-  // Primary: testid attributes
-  const turns = Array.from(document.querySelectorAll<HTMLElement>(
-    '[data-testid="human-turn"], [data-testid="ai-turn"]'
+  // User turns: data-testid="user-message"; assistant turns: .font-claude-response
+  const all = Array.from(document.querySelectorAll<HTMLElement>(
+    '[data-testid="user-message"], .font-claude-response'
   ));
 
-  for (const el of turns) {
+  for (const el of all) {
     if (seen.has(el)) continue;
     seen.add(el);
-    const testId = el.getAttribute('data-testid') || '';
-    const role: 'user' | 'assistant' = testId === 'human-turn' ? 'user' : 'assistant';
+    const role: 'user' | 'assistant' =
+      el.getAttribute('data-testid') === 'user-message' ? 'user' : 'assistant';
     chosen.push({ el, role });
-  }
-
-  // Fallback: class-based detection
-  if (chosen.length === 0) {
-    const humanTurns = Array.from(document.querySelectorAll<HTMLElement>(
-      '[class*="human"], [class*="Human"], [class*="user-message"]'
-    ));
-    const aiTurns = Array.from(document.querySelectorAll<HTMLElement>(
-      '[class*="assistant"], [class*="Assistant"], [class*="ai-message"]'
-    ));
-
-    const all = [
-      ...humanTurns.map(el => ({ el, role: 'user' as const })),
-      ...aiTurns.map(el => ({ el, role: 'assistant' as const })),
-    ].sort((a, b) => {
-      const pos = a.el.compareDocumentPosition(b.el);
-      return pos & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
-    });
-
-    for (const { el, role } of all) {
-      if (seen.has(el)) continue;
-      seen.add(el);
-      chosen.push({ el, role });
-    }
   }
 
   return chosen;
 }
 
 function getChatTitleClaude(): string {
-  // Sidebar: selected conversation
+  // Header split-title element (confirmed present in Claude's DOM)
+  const splitTitle = document.querySelector('[data-testid="chat-title-split"]');
+  if (splitTitle?.textContent?.trim()) return splitTitle.textContent.trim();
+
+  // Sidebar selected conversation
   const sidebarSelected =
     document.querySelector('nav a[aria-current="page"]') ||
-    document.querySelector('[data-selected="true"]') ||
-    document.querySelector('[aria-current="true"]') ||
-    document.querySelector('[class*="selected"] [class*="title"]');
-
-  if (sidebarSelected?.textContent?.trim()) {
-    return sidebarSelected.textContent.trim();
-  }
-
-  // Header
-  const headerTitle =
-    document.querySelector('h1') ||
-    document.querySelector('[data-testid="conversation-title"]') ||
-    document.querySelector('header [contenteditable]');
-
-  if (headerTitle?.textContent?.trim()) {
-    return headerTitle.textContent.trim();
-  }
+    document.querySelector('[aria-current="true"]');
+  if (sidebarSelected?.textContent?.trim()) return sidebarSelected.textContent.trim();
 
   return document.title.replace(/\s+[–—-]\s+Claude.*$/i, '').trim() || 'Claude Conversation';
 }
