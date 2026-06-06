@@ -1,0 +1,152 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  background: #f0f0f0;
+  color: #111;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 32px 16px;
+}
+
+.app {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+  width: 100%;
+  max-width: 560px;
+  height: fit-content;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---- Header ---- */
+
+.header {
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.04);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  font-weight: 700;
+  font-size: 12px;
+  user-select: none;
+}
+
+/* ---- Session selector ---- */
+
+.session-selector {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.session-selector select {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 5px;
+  font-size: 12px;
+  background: white;
+  color: #111;
+  cursor: pointer;
+}
+
+.session-selector select:focus {
+  outline: none;
+  border-color: rgba(59, 130, 246, 0.6);
+}
+
+/* ---- Controls ---- */
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+button {
+  padding: 4px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  background: white;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.3;
+  transition: background 0.1s;
+}
+
+button:not(:disabled):hover {
+  background: #f0f0f0;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.export-btn {
+  margin-left: auto;
+}
+
+/* ---- Turns list ---- */
+
+.turns-list {
+  overflow-y: auto;
+  max-height: 60vh;
+  min-height: 60px;
+  padding: 4px 0;
+}
+
+.empty {
+  padding: 14px 12px;
+  color: #888;
+  font-size: 12px;
+}
+
+.turn-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.turn-item:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.turn-item input[type='checkbox'] {
+  margin-top: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.turn-preview {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #222;
+}
+
+.turn-item.selected .turn-preview {
+  color: rgba(59, 130, 246, 1);
+  font-weight: 600;
+}
+
+/* ---- Status ---- */
+
+.status {
+  padding: 7px 12px;
+  font-size: 11px;
+  color: #555;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.02);
+  min-height: 30px;
+}

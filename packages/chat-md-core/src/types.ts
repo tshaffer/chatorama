@@ -9,7 +9,7 @@ export interface ExportTurn {
 
 export interface ExportNoteMetadata {
   noteId: string;           // "ext-<uuid>"
-  source: 'chatgpt';
+  source: string;  // e.g. 'chatgpt' | 'gemini' | 'claude' | 'claude-code'
   chatId?: string;
   chatTitle?: string;
   pageUrl: string;
