@@ -127,7 +127,18 @@ function parseSession(filePath) {
     if (text.trim()) turns.push({ role, text: text.trim() });
   }
 
-  return { title, turns };
+  // Collapse consecutive assistant entries into a single turn
+  const collapsed = [];
+  for (const turn of turns) {
+    const prev = collapsed[collapsed.length - 1];
+    if (prev && prev.role === 'assistant' && turn.role === 'assistant') {
+      prev.text += '\n\n' + turn.text;
+    } else {
+      collapsed.push({ ...turn });
+    }
+  }
+
+  return { title, turns: collapsed };
 }
 
 // ---- Render to Markdown ------------------------------------
