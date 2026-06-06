@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { buildMarkdownExport } from '@chatorama/chat-md-core';
 import type { ExportNoteMetadata, ExportTurn } from '@chatorama/chat-md-core';
 
@@ -118,6 +120,7 @@ function App() {
   const [status, setStatus] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const turnRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   const fetchSessions = useCallback(async (): Promise<SessionInfo[]> => {
     const res = await fetch('/api/sessions');
@@ -189,12 +192,18 @@ function App() {
 
   const handleSelectNone = () => setChecked(new Set());
 
+  const scrollToTurn = (turnIndex: number) => {
+    const el = turnRefs.current.get(turnIndex);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   const handleToggle = (turnIndex: number) => {
     setChecked(prev => {
       const next = new Set(prev);
       if (next.has(turnIndex)) next.delete(turnIndex); else next.add(turnIndex);
       return next;
     });
+    scrollToTurn(turnIndex);
   };
 
   const handleExport = () => {
@@ -210,59 +219,82 @@ function App() {
   const hasPrompts = sessionData && sessionData.userPrompts.length > 0;
 
   return (
-    <div className="app">
-      <div className="header">Claude Code Exporter</div>
+    <>
+      <div className="panel">
+        <div className="header">Claude Code Exporter</div>
 
-      <div className="session-selector">
-        <select
-          value={selectedSessionId}
-          onChange={e => { setSelectedSessionId(e.target.value); setStatus(''); }}
-          disabled={sessions.length === 0}
-        >
-          {sessions.map(s => (
-            <option key={s.sessionId} value={s.sessionId}>
-              {s.date} — {s.title}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="controls">
-        <button onClick={handleSelectAll} disabled={!hasPrompts || checked.size === sessionData!.userPrompts.length}>
-          All
-        </button>
-        <button onClick={handleSelectNone} disabled={checked.size === 0}>
-          None
-        </button>
-        <button className="export-btn" onClick={handleExport} disabled={checked.size === 0}>
-          Export ({checked.size})
-        </button>
-      </div>
-
-      <div className="turns-list">
-        {loading && <div className="empty">Loading…</div>}
-        {!loading && sessionData && !hasPrompts && (
-          <div className="empty">No prompts found in this session.</div>
-        )}
-        {!loading && sessionData && sessionData.userPrompts.map(p => (
-          <div
-            key={p.turnIndex}
-            className={`turn-item${checked.has(p.turnIndex) ? ' selected' : ''}`}
-            onClick={() => handleToggle(p.turnIndex)}
+        <div className="session-selector">
+          <select
+            value={selectedSessionId}
+            onChange={e => { setSelectedSessionId(e.target.value); setStatus(''); }}
+            disabled={sessions.length === 0}
           >
-            <input
-              type="checkbox"
-              checked={checked.has(p.turnIndex)}
-              onChange={() => handleToggle(p.turnIndex)}
-              onClick={e => e.stopPropagation()}
-            />
-            <span className="turn-preview">{p.preview}</span>
-          </div>
-        ))}
+            {sessions.map(s => (
+              <option key={s.sessionId} value={s.sessionId}>
+                {s.date} — {s.title}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="controls">
+          <button onClick={handleSelectAll} disabled={!hasPrompts || checked.size === sessionData!.userPrompts.length}>
+            All
+          </button>
+          <button onClick={handleSelectNone} disabled={checked.size === 0}>
+            None
+          </button>
+          <button className="export-btn" onClick={handleExport} disabled={checked.size === 0}>
+            Export ({checked.size})
+          </button>
+        </div>
+
+        <div className="turns-list">
+          {loading && <div className="empty">Loading…</div>}
+          {!loading && sessionData && !hasPrompts && (
+            <div className="empty">No prompts found in this session.</div>
+          )}
+          {!loading && sessionData && sessionData.userPrompts.map(p => (
+            <div
+              key={p.turnIndex}
+              className={`turn-item${checked.has(p.turnIndex) ? ' selected' : ''}`}
+              onClick={() => handleToggle(p.turnIndex)}
+            >
+              <input
+                type="checkbox"
+                checked={checked.has(p.turnIndex)}
+                onChange={() => handleToggle(p.turnIndex)}
+                onClick={e => e.stopPropagation()}
+              />
+              <span className="turn-preview">{p.preview}</span>
+            </div>
+          ))}
+        </div>
+
+        {status && <div className="status">{status}</div>}
       </div>
 
-      {status && <div className="status">{status}</div>}
-    </div>
+      {sessionData && (
+        <div className="conversation">
+          {sessionData.turns.map((turn, i) => (
+            <div
+              key={i}
+              ref={el => { if (el) turnRefs.current.set(i, el); else turnRefs.current.delete(i); }}
+              className={`conv-turn conv-turn--${turn.role}${checked.has(i) ? ' conv-turn--selected' : ''}`}
+            >
+              <div className="conv-label">
+                {turn.role === 'user' ? 'Prompt' : 'Response'}
+              </div>
+              <div className="conv-content">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {turn.text}
+                </ReactMarkdown>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
