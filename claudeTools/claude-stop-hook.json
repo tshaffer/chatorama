@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/tedshaffer/.local/bin/claude-export --stdin",
+            "async": true,
+            "statusMessage": "Exporting session..."
+          }
+        ]
+      }
+    ]
+  }
+}
