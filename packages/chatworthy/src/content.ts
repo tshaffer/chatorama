@@ -508,8 +508,16 @@ function generateNoteId(): string {
 }
 
 function getChatIdFromUrl(href: string): string | undefined {
-  const match = href.match(/\/c\/([a-zA-Z0-9_-]+)/);
-  return match?.[1];
+  // ChatGPT: /c/<id>
+  const chatgpt = href.match(/\/c\/([a-zA-Z0-9_-]+)/);
+  if (chatgpt) return chatgpt[1];
+  // Gemini: /app/<hex-id>
+  const gemini = href.match(/\/app\/([a-fA-F0-9]+)/);
+  if (gemini) return gemini[1];
+  // Claude: /chat/<id> or similar
+  const claude = href.match(/\/chat\/([a-zA-Z0-9_-]+)/);
+  if (claude) return claude[1];
+  return undefined;
 }
 
 function escapeRegex(s: string) {
