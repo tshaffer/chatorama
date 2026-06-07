@@ -96,7 +96,10 @@ function getMessageTuplesGemini(): MessageTuple[] {
   // Use only the outermost custom elements to avoid matching nested inner
   // elements ([data-turn-role], .user-query-container, .model-response-text
   // are all children of these and would cause 4× duplicates with label injection).
-  const userEls = Array.from(document.querySelectorAll<HTMLElement>('user-query'));
+  // Filter out empty user-query elements (Gemini renders a blank draft element
+  // at the bottom of the conversation with no p.query-text-line content).
+  const userEls = Array.from(document.querySelectorAll<HTMLElement>('user-query'))
+    .filter(el => !!el.querySelector('p.query-text-line'));
   const assistantEls = Array.from(document.querySelectorAll<HTMLElement>('model-response'));
 
   // Interleave in DOM order
