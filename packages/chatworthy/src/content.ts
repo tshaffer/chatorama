@@ -415,7 +415,8 @@ function getSelectedPromptIndexes(): number[] {
 
 function cloneWithoutInjected(el: HTMLElement): HTMLElement {
   const clone = el.cloneNode(true) as HTMLElement;
-  clone.querySelectorAll('.cw-role-label, [data-cw-hidden="1"]').forEach(n => n.remove());
+  // Also strip .cdk-visually-hidden (Gemini screen-reader "You said" labels)
+  clone.querySelectorAll('.cw-role-label, [data-cw-hidden="1"], .cdk-visually-hidden').forEach(n => n.remove());
   return clone;
 }
 
@@ -1123,7 +1124,8 @@ function ensureFloatingUI() {
         const span = d.createElement('span');
         span.className = 'chatworthy-item-text';
         const clone = node.cloneNode(true) as HTMLElement;
-        clone.querySelectorAll('.cw-role-label,[data-cw-hidden="1"]').forEach(n => n.remove());
+        // Also strip .cdk-visually-hidden (Gemini screen-reader "You said" labels)
+        clone.querySelectorAll('.cw-role-label,[data-cw-hidden="1"],.cdk-visually-hidden').forEach(n => n.remove());
         span.textContent = (clone.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
         span.style.lineHeight = '1.2';
 

@@ -93,13 +93,11 @@ function getMessageTuplesGemini(): MessageTuple[] {
   const chosen: MessageTuple[] = [];
   const seen = new Set<HTMLElement>();
 
-  // Primary: custom elements used by Gemini
-  const userEls = Array.from(document.querySelectorAll<HTMLElement>(
-    'user-query, [data-turn-role="user"], .user-query-container'
-  ));
-  const assistantEls = Array.from(document.querySelectorAll<HTMLElement>(
-    'model-response, [data-turn-role="model"], .model-response-text'
-  ));
+  // Use only the outermost custom elements to avoid matching nested inner
+  // elements ([data-turn-role], .user-query-container, .model-response-text
+  // are all children of these and would cause 4× duplicates with label injection).
+  const userEls = Array.from(document.querySelectorAll<HTMLElement>('user-query'));
+  const assistantEls = Array.from(document.querySelectorAll<HTMLElement>('model-response'));
 
   // Interleave in DOM order
   const all: Array<{ el: HTMLElement; role: 'user' | 'assistant' }> = [
