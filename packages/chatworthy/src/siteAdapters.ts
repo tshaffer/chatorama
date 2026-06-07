@@ -114,6 +114,13 @@ function getMessageTuplesGemini(): MessageTuple[] {
   for (const { el, role } of all) {
     if (seen.has(el)) continue;
     seen.add(el);
+    // Collapse consecutive assistant turns (Gemini sometimes splits a single
+    // response across multiple model-response containers)
+    const prev = chosen[chosen.length - 1];
+    if (prev && prev.role === 'assistant' && role === 'assistant') {
+      // Skip — the previous assistant element already represents this response group
+      continue;
+    }
     chosen.push({ el, role });
   }
 
