@@ -18,19 +18,29 @@ function extractText(content: unknown): string {
 }
 
 function titleFromFile(filePath: string): string {
+  let aiTitle: string | undefined;
+  let customTitle: string | undefined;
+  let firstUserMessage: string | undefined;
+
   try {
     const lines = readFileSync(filePath, 'utf8').split('\n');
     for (const line of lines) {
       if (!line.trim()) continue;
       let entry: any;
       try { entry = JSON.parse(line); } catch { continue; }
-      if (entry.type === 'user' && entry.message) {
+
+      if (entry.type === 'ai-title' && entry.aiTitle) {
+        aiTitle = entry.aiTitle;
+      } else if (entry.type === 'custom-title' && entry.customTitle) {
+        customTitle = entry.customTitle;
+      } else if (!firstUserMessage && entry.type === 'user' && entry.message) {
         const text = extractText(entry.message.content).trim();
-        if (text) return text.replace(/[\n\r]+/g, ' ').slice(0, 80);
+        if (text) firstUserMessage = text.replace(/[\n\r]+/g, ' ').slice(0, 80);
       }
     }
   } catch { /* ignore */ }
-  return 'Untitled Session';
+
+  return customTitle ?? aiTitle ?? firstUserMessage ?? 'Untitled Session';
 }
 
 export function listSessions(): SessionInfo[] {
