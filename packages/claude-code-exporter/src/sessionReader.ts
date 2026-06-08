@@ -4,7 +4,41 @@ import { homedir } from 'os';
 import type { SessionInfo, Turn, UserPrompt, SessionData } from './types.js';
 
 const PROJECTS_DIR = join(homedir(), '.claude', 'projects');
+const APP_SESSIONS_DIR = join(homedir(), 'Library', 'Application Support', 'Claude', 'claude-code-sessions');
 const MAX_SESSIONS = 100;
+
+/**
+ * Build a map of cliSessionId -> title from the Claude desktop app's session
+ * store at ~/Library/Application Support/Claude/claude-code-sessions/.
+ * These titles match what Claude Code displays in the Recents panel.
+ */
+function loadAppSessionTitles(): Map<string, string> {
+  const map = new Map<string, string>();
+  try {
+    for (const level1 of readdirSync(APP_SESSIONS_DIR)) {
+      const level1Path = join(APP_SESSIONS_DIR, level1);
+      try {
+        if (!statSync(level1Path).isDirectory()) continue;
+        for (const level2 of readdirSync(level1Path)) {
+          const level2Path = join(level1Path, level2);
+          try {
+            if (!statSync(level2Path).isDirectory()) continue;
+            for (const file of readdirSync(level2Path)) {
+              if (!file.endsWith('.json')) continue;
+              try {
+                const data = JSON.parse(readFileSync(join(level2Path, file), 'utf8'));
+                if (data.cliSessionId && data.title) {
+                  map.set(data.cliSessionId, data.title);
+                }
+              } catch { /* skip unreadable files */ }
+            }
+          } catch { /* skip unreadable dirs */ }
+        }
+      } catch { /* skip unreadable dirs */ }
+    }
+  } catch { /* APP_SESSIONS_DIR not present (non-macOS or not installed) */ }
+  return map;
+}
 
 function extractText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -17,7 +51,7 @@ function extractText(content: unknown): string {
   return '';
 }
 
-function titleFromFile(filePath: string): string {
+function titleFromFile(filePath: string, appTitle?: string): string {
   let aiTitle: string | undefined;
   let customTitle: string | undefined;
   let firstUserMessage: string | undefined;
@@ -40,11 +74,13 @@ function titleFromFile(filePath: string): string {
     }
   } catch { /* ignore */ }
 
-  return customTitle ?? aiTitle ?? firstUserMessage ?? 'Untitled Session';
+  // Priority: app store title (matches Recents panel) > custom-title > ai-title > first user message
+  return appTitle ?? customTitle ?? aiTitle ?? firstUserMessage ?? 'Untitled Session';
 }
 
 export function listSessions(): SessionInfo[] {
   const sessions: SessionInfo[] = [];
+  const appTitles = loadAppSessionTitles();
 
   let projectDirs: string[];
   try {
@@ -79,7 +115,7 @@ export function listSessions(): SessionInfo[] {
 
       sessions.push({
         sessionId,
-        title: titleFromFile(filePath),
+        title: titleFromFile(filePath, appTitles.get(sessionId)),
         date: mtime.toISOString().slice(0, 10),
         projectSlug: slug,
         filePath,
