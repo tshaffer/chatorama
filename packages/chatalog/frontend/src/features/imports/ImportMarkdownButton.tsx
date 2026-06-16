@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react';
+import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -84,17 +84,22 @@ function parseSections(text: string, docTitle: string): SectionPreview[] {
   return sections;
 }
 
+export type ImportMarkdownRef = {
+  processFile: (file: File) => Promise<void>;
+};
+
 type Props = {
-  mode?: 'icon' | 'button';
+  mode?: 'icon' | 'button' | 'controlled';
   tooltip?: string;
   onDone?: () => void;
 };
 
-export default function ImportMarkdownButton({
+const ImportMarkdownButton = forwardRef<ImportMarkdownRef, Props>(
+function ImportMarkdownButton({
   mode = 'button',
   tooltip = 'Import Markdown',
   onDone,
-}: Props) {
+}: Props, ref) {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [applyMarkdown, { isLoading }] = useApplyMarkdownImportMutation();
@@ -110,17 +115,12 @@ export default function ImportMarkdownButton({
 
   const pickFile = () => inputRef.current?.click();
 
-  const onFileChosen: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
-    const file = e.target.files?.[0];
-    e.currentTarget.value = '';
-    if (!file) return;
-
+  const processFile = useCallback(async (file: File) => {
     const lower = file.name.toLowerCase();
     if (!lower.endsWith('.md') && !lower.endsWith('.markdown')) {
       setSnack({ open: true, msg: 'Only .md and .markdown files are supported.', severity: 'error' });
       return;
     }
-
     const text = await file.text();
     const h1Match = text.match(/^#\s+(.+)$/m);
     const docTitle = h1Match?.[1]?.trim() || file.name.replace(/\.(md|markdown)$/i, '');
@@ -128,15 +128,15 @@ export default function ImportMarkdownButton({
     const fileCharCount = text.length;
     const defaultMode: ImportMode =
       fileCharCount > EMBEDDING_CHAR_LIMIT ? 'per-section' : 'single';
+    setDialogState({ file, fileCharCount, sections, mode: defaultMode, subjectLabel: '', topicLabel: '' });
+  }, []);
 
-    setDialogState({
-      file,
-      fileCharCount,
-      sections,
-      mode: defaultMode,
-      subjectLabel: '',
-      topicLabel: '',
-    });
+  useImperativeHandle(ref, () => ({ processFile }), [processFile]);
+
+  const onFileChosen: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const file = e.target.files?.[0];
+    e.currentTarget.value = '';
+    if (file) processFile(file);
   };
 
   const handleImport = useCallback(async () => {
@@ -351,6 +351,16 @@ export default function ImportMarkdownButton({
     </Snackbar>
   );
 
+  // Controlled mode: no file picker or trigger — dialog only.
+  if (mode === 'controlled') {
+    return (
+      <>
+        {dialog}
+        {snackbar}
+      </>
+    );
+  }
+
   if (mode === 'icon') {
     return (
       <>
@@ -399,4 +409,6 @@ export default function ImportMarkdownButton({
       {snackbar}
     </>
   );
-}
+});
+
+export default ImportMarkdownButton;

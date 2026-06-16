@@ -2,9 +2,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Outlet, Link, useLocation, useMatch, useNavigate, matchPath } from 'react-router-dom';
 import { AppBar, Toolbar, Typography, Button, Stack, Box, alpha, IconButton, Tooltip } from '@mui/material';
-import ImportChatworthyButton from './features/imports/ImportChatworthyButton';
 import ImportPdfButton from './features/imports/ImportPdfButton';
-import ImportMarkdownButton from './features/imports/ImportMarkdownButton';
+import ImportFileButton from './features/imports/ImportFileButton';
 import { fetchJSON } from './lib/api';
 import NoteAddIcon from '@mui/icons-material/NoteAdd';
 import CloudDownloadOutlinedIcon from '@mui/icons-material/CloudDownloadOutlined';
@@ -181,10 +180,8 @@ export default function AppShell() {
 
           {/* Actions */}
           <Stack direction="row" spacing={1} alignItems="center">
-            {/* Existing Chatworthy import (file/zip) */}
-            <ImportChatworthyButton mode="icon" />
+            <ImportFileButton mode="icon" />
             <ImportPdfButton mode="icon" />
-            <ImportMarkdownButton mode="icon" />
 
             <Tooltip title="Import Google Doc">
               <span>

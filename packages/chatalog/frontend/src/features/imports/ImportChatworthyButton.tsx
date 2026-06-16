@@ -1,5 +1,5 @@
 // frontend/src/features/imports/ImportChatworthyButton.tsx
-import { useRef, useState } from 'react';
+import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Button,
@@ -33,23 +33,27 @@ import { useAppDispatch } from '../../store';
 const slugify = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
+export type ImportChatworthyRef = {
+  processFile: (file: File) => Promise<void>;
+};
+
 type Props = {
   onDone?: () => void;
-  /** 'icon' for AppBar actions, 'button' for inline usage */
-  mode?: 'icon' | 'button';
+  /** 'icon' for AppBar actions, 'button' for inline usage, 'controlled' for external triggering */
+  mode?: 'icon' | 'button' | 'controlled';
   /** Optional: tweak tooltip text */
   tooltip?: string;
   /** Optional: override accept attribute */
   accept?: string;
 };
 
-export default function ImportChatworthyButton({
+const ImportChatworthyButton = forwardRef<ImportChatworthyRef, Props>(
+function ImportChatworthyButton({
   onDone,
   mode = 'button',
   tooltip = 'Import Chatworthy export (ZIP or Markdown)',
   accept = '.zip,.cbz,.tar,.tgz,.gz,.md,.markdown',
-}: Props) {
-  // const dispatch = useDispatch();
+}: Props, ref) {
   const dispatch = useAppDispatch();
 
   const navigate = useNavigate();
@@ -73,22 +77,16 @@ export default function ImportChatworthyButton({
 
   const pickFile = () => inputRef.current?.click();
 
-  const onFileChosen: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
-    const file = e.target.files?.[0];
-    e.currentTarget.value = ''; // allow re-picking same file later
-    if (!file) return;
-
+  const processFile = useCallback(async (file: File) => {
     if (file.size > 100 * 1024 * 1024) {
       setSnack({ open: true, msg: 'File is too large (>100MB).', severity: 'error' });
       return;
     }
-
     try {
       const res = await importChatworthy(file).unwrap();
       setLastImport(res);
       setReviewOpen(true);
       setCleanupNeeded([]);
-
       setSnack({
         open: true,
         msg:
@@ -97,7 +95,6 @@ export default function ImportChatworthyButton({
             : `Imported ${res.imported} notes for review`,
         severity: 'success',
       });
-      // We'll call onDone() after the user finishes the review dialog + apply.
     } catch (err: any) {
       const msg =
         err?.data?.message ||
@@ -106,6 +103,14 @@ export default function ImportChatworthyButton({
         'Import failed';
       setSnack({ open: true, msg, severity: 'error' });
     }
+  }, [importChatworthy]);
+
+  useImperativeHandle(ref, () => ({ processFile }), [processFile]);
+
+  const onFileChosen: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const file = e.target.files?.[0];
+    e.currentTarget.value = '';
+    if (file) processFile(file);
   };
 
   const handleCloseReview = () => {
@@ -316,6 +321,32 @@ export default function ImportChatworthyButton({
     </Portal>
   );
 
+  // Controlled mode: no file picker or trigger — just dialogs and overlay.
+  if (mode === 'controlled') {
+    return (
+      <>
+        {cleanupBanner}
+        {dialog}
+        {overlay}
+        <Snackbar
+          open={snack.open}
+          autoHideDuration={4000}
+          onClose={() => setSnack((s) => ({ ...s, open: false }))}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
+          <Alert
+            onClose={() => setSnack((s) => ({ ...s, open: false }))}
+            severity={snack.severity}
+            variant="filled"
+            sx={{ width: '100%' }}
+          >
+            {snack.msg}
+          </Alert>
+        </Snackbar>
+      </>
+    );
+  }
+
   if (mode === 'icon') {
     // Action icon for AppBar
     return (
@@ -400,4 +431,6 @@ export default function ImportChatworthyButton({
       </Snackbar>
     </>
   );
-}
+});
+
+export default ImportChatworthyButton;
