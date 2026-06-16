@@ -44,6 +44,8 @@ import type {
   ApplyNoteImportCommand,
 } from '@chatorama/chatalog-shared';
 
+const EMBEDDING_CHAR_LIMIT = 8_000;
+
 export type EditableImportedNoteRow = ImportedNoteSummary & {
   editedTitle: string;
   subjectLabel: string;
@@ -476,6 +478,15 @@ export function ImportResultsDialog({
           </Box>
         )}
 
+        {!isSingleTurnImport && importMode === 'single' && combinedNote && (combinedNote.body?.length ?? 0) > EMBEDDING_CHAR_LIMIT && (
+          <Alert severity="warning" icon={<WarningAmberIcon />} sx={{ mb: 2 }}>
+            This conversation is {(combinedNote.body?.length ?? 0).toLocaleString()} characters.
+            Importing as a single note will limit semantic search to the first
+            ~{EMBEDDING_CHAR_LIMIT.toLocaleString()} characters.{' '}
+            Consider importing as <strong>one note per turn</strong> instead.
+          </Alert>
+        )}
+
         <Typography variant="body2" sx={{ mb: 2 }}>
           Set default Subject/Topic labels below, then tweak each note as needed.
           You can either pick from the list or type new labels. Changing a
@@ -597,17 +608,24 @@ export function ImportResultsDialog({
                     minWidth: 260,
                   }}
                 >
-                  <TextField
-                    fullWidth
-                    size="small"
-                    value={row.editedTitle}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) =>
-                      handleRowChange(row.importKey, {
-                        editedTitle: e.target.value,
-                      })
-                    }
-                  />
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      value={row.editedTitle}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) =>
+                        handleRowChange(row.importKey, {
+                          editedTitle: e.target.value,
+                        })
+                      }
+                    />
+                    {(row.body?.length ?? 0) > EMBEDDING_CHAR_LIMIT && (
+                      <Tooltip title={`${(row.body?.length ?? 0).toLocaleString()} chars — exceeds embedding limit`}>
+                        <WarningAmberIcon fontSize="small" color="warning" sx={{ flexShrink: 0 }} />
+                      </Tooltip>
+                    )}
+                  </Box>
                 </TableCell>
                 <TableCell
                   align="center"
