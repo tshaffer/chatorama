@@ -5,6 +5,7 @@ import subjectsRouter from './subjects';
 import importsChatworthyRouter from './imports.chatworthy';
 import importsBaselineRouter from './imports.baseline';
 import importsPdfRouter from './imports.pdf';
+import importsMarkdownRouter from './imports.markdown';
 import googleDocNotesRouter from './googleDocNotes';
 import googleRouter from './google';
 import quicknotesRouter from './quicknotes';
@@ -41,6 +42,7 @@ export function createRoutes(app: Express) {
   api.use('/imports', importsChatworthyRouter);
   api.use('/imports/baseline', importsBaselineRouter);
   api.use('/imports', importsPdfRouter);
+  api.use('/imports', importsMarkdownRouter);
   api.use('/googleDocNotes', googleDocNotesRouter);
   api.use('/google', googleRouter);
   api.use('/import-batches', importBatchesRouter);

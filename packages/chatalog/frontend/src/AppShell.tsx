@@ -4,6 +4,7 @@ import { Outlet, Link, useLocation, useMatch, useNavigate, matchPath } from 'rea
 import { AppBar, Toolbar, Typography, Button, Stack, Box, alpha, IconButton, Tooltip } from '@mui/material';
 import ImportChatworthyButton from './features/imports/ImportChatworthyButton';
 import ImportPdfButton from './features/imports/ImportPdfButton';
+import ImportMarkdownButton from './features/imports/ImportMarkdownButton';
 import { fetchJSON } from './lib/api';
 import NoteAddIcon from '@mui/icons-material/NoteAdd';
 import CloudDownloadOutlinedIcon from '@mui/icons-material/CloudDownloadOutlined';
@@ -183,6 +184,7 @@ export default function AppShell() {
             {/* Existing Chatworthy import (file/zip) */}
             <ImportChatworthyButton mode="icon" />
             <ImportPdfButton mode="icon" />
+            <ImportMarkdownButton mode="icon" />
 
             <Tooltip title="Import Google Doc">
               <span>

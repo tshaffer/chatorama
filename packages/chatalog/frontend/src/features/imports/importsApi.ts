@@ -153,6 +153,32 @@ const importsApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: [{ type: 'ImportBatch' as const, id: 'LIST' }],
     }),
+
+    applyMarkdownImport: build.mutation<
+      {
+        created: number;
+        noteIds: string[];
+        importBatchId: string;
+        subjectId?: string;
+        topicId?: string;
+      },
+      { file: File; mode: 'per-section' | 'single'; subjectLabel: string; topicLabel: string }
+    >({
+      query: ({ file, mode, subjectLabel, topicLabel }) => {
+        const body = new FormData();
+        body.append('file', file);
+        body.append('mode', mode);
+        body.append('subjectLabel', subjectLabel);
+        body.append('topicLabel', topicLabel);
+        return { url: 'imports/markdown/apply', method: 'POST', body };
+      },
+      invalidatesTags: [
+        { type: 'Subject' as const, id: 'LIST' },
+        { type: 'Topic' as const, id: 'LIST' },
+        { type: 'Note' as const, id: 'LIST' },
+        { type: 'ImportBatch' as const, id: 'LIST' },
+      ],
+    }),
   }),
   overrideExisting: true,
 });
@@ -165,4 +191,5 @@ export const {
   useGetImportBatchNotesQuery,
   useDeleteImportBatchMutation,
   useDeleteAllImportBatchesMutation,
+  useApplyMarkdownImportMutation,
 } = importsApi;
