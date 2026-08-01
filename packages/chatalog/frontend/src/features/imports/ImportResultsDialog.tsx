@@ -178,15 +178,11 @@ export function ImportResultsDialog({
     if (!importedNotes.length) return;
 
     const firstSubject =
-      importedNotes.find((n) => n.subjectName)?.subjectName ??
-      combinedNote?.subjectName ??
-      propDefaultSubjectLabel ??
-      '';
+      propDefaultSubjectLabel ||
+      (importedNotes.find((n) => n.subjectName)?.subjectName ?? combinedNote?.subjectName ?? '');
     const firstTopic =
-      importedNotes.find((n) => n.topicName)?.topicName ??
-      combinedNote?.topicName ??
-      propDefaultTopicLabel ??
-      '';
+      propDefaultTopicLabel ||
+      (importedNotes.find((n) => n.topicName)?.topicName ?? combinedNote?.topicName ?? '');
 
     setDefaultSubjectLabel(firstSubject);
     setDefaultTopicLabel(firstTopic);
@@ -195,9 +191,8 @@ export function ImportResultsDialog({
       importedNotes.map((n) => ({
         ...n,
         editedTitle: n.title,
-        // keep the importer’s initial guess, but mark as not touched
-        subjectLabel: n.subjectName ?? firstSubject ?? '',
-        topicLabel: n.topicName ?? firstTopic ?? '',
+        subjectLabel: propDefaultSubjectLabel || n.subjectName || firstSubject || '',
+        topicLabel: propDefaultTopicLabel || n.topicName || firstTopic || '',
         showBody: false,
         subjectTouched: false,
         topicTouched: false,
@@ -211,8 +206,8 @@ export function ImportResultsDialog({
           {
             ...combinedNote,
             editedTitle: combinedNote.title,
-            subjectLabel: combinedNote.subjectName ?? firstSubject ?? '',
-            topicLabel: combinedNote.topicName ?? firstTopic ?? '',
+            subjectLabel: propDefaultSubjectLabel || combinedNote.subjectName || firstSubject || '',
+            topicLabel: propDefaultTopicLabel || combinedNote.topicName || firstTopic || '',
             showBody: false,
             subjectTouched: false,
             topicTouched: false,
