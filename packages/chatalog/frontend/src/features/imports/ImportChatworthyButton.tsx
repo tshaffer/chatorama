@@ -45,6 +45,8 @@ type Props = {
   tooltip?: string;
   /** Optional: override accept attribute */
   accept?: string;
+  defaultSubjectLabel?: string;
+  defaultTopicLabel?: string;
 };
 
 const ImportChatworthyButton = forwardRef<ImportChatworthyRef, Props>(
@@ -53,6 +55,8 @@ function ImportChatworthyButton({
   mode = 'button',
   tooltip = 'Import Chatworthy export (ZIP or Markdown)',
   accept = '.zip,.cbz,.tar,.tgz,.gz,.md,.markdown',
+  defaultSubjectLabel = '',
+  defaultTopicLabel = '',
 }: Props, ref) {
   const dispatch = useAppDispatch();
 
@@ -271,6 +275,8 @@ function ImportChatworthyButton({
         onApply={handleApplyEdits}
         hasDuplicateTurns={lastImport.hasDuplicateTurns}
         duplicateTurnCount={lastImport.duplicateTurnCount}
+        defaultSubjectLabel={defaultSubjectLabel}
+        defaultTopicLabel={defaultTopicLabel}
       />
     ) : null;
 

@@ -92,6 +92,8 @@ type Props = {
   mode?: 'icon' | 'button' | 'controlled';
   tooltip?: string;
   onDone?: () => void;
+  defaultSubjectLabel?: string;
+  defaultTopicLabel?: string;
 };
 
 const ImportMarkdownButton = forwardRef<ImportMarkdownRef, Props>(
@@ -99,6 +101,8 @@ function ImportMarkdownButton({
   mode = 'button',
   tooltip = 'Import Markdown',
   onDone,
+  defaultSubjectLabel = '',
+  defaultTopicLabel = '',
 }: Props, ref) {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -128,8 +132,8 @@ function ImportMarkdownButton({
     const fileCharCount = text.length;
     const defaultMode: ImportMode =
       fileCharCount > EMBEDDING_CHAR_LIMIT ? 'per-section' : 'single';
-    setDialogState({ file, fileCharCount, sections, mode: defaultMode, subjectLabel: '', topicLabel: '' });
-  }, []);
+    setDialogState({ file, fileCharCount, sections, mode: defaultMode, subjectLabel: defaultSubjectLabel, topicLabel: defaultTopicLabel });
+  }, [defaultSubjectLabel, defaultTopicLabel]);
 
   useImperativeHandle(ref, () => ({ processFile }), [processFile]);
 

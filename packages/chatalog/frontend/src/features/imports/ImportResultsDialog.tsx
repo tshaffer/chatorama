@@ -77,6 +77,8 @@ type Props = {
   onApply: (rows: EditableImportedNoteRow[], commands: ApplyNoteImportCommand[]) => void;
   hasDuplicateTurns?: boolean;
   duplicateTurnCount?: number;
+  defaultSubjectLabel?: string;
+  defaultTopicLabel?: string;
 };
 
 export function ImportResultsDialog({
@@ -88,6 +90,8 @@ export function ImportResultsDialog({
   onApply,
   hasDuplicateTurns = false,
   duplicateTurnCount = 0,
+  defaultSubjectLabel: propDefaultSubjectLabel = '',
+  defaultTopicLabel: propDefaultTopicLabel = '',
 }: Props) {
   type ViewMode = 'simple' | 'markdown' | 'full';
   const VIEW_MODE_STORAGE_KEY = 'chatalog.importResults.viewMode';
@@ -176,10 +180,12 @@ export function ImportResultsDialog({
     const firstSubject =
       importedNotes.find((n) => n.subjectName)?.subjectName ??
       combinedNote?.subjectName ??
+      propDefaultSubjectLabel ??
       '';
     const firstTopic =
       importedNotes.find((n) => n.topicName)?.topicName ??
       combinedNote?.topicName ??
+      propDefaultTopicLabel ??
       '';
 
     setDefaultSubjectLabel(firstSubject);

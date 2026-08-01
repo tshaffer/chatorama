@@ -36,12 +36,16 @@ type Props = {
   mode?: 'icon' | 'button';
   tooltip?: string;
   onDone?: () => void;
+  defaultSubjectLabel?: string;
+  defaultTopicLabel?: string;
 };
 
 export default function ImportFileButton({
   mode = 'button',
   tooltip = 'Import file (.md or .zip)',
   onDone,
+  defaultSubjectLabel = '',
+  defaultTopicLabel = '',
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const chatworthyRef = useRef<ImportChatworthyRef>(null);
@@ -106,8 +110,8 @@ export default function ImportFileButton({
         onChange={onFileChosen}
       />
       {/* Both components always mounted; only the detected one receives processFile calls. */}
-      <ImportChatworthyButton ref={chatworthyRef} mode="controlled" onDone={onDone} />
-      <ImportMarkdownButton ref={markdownRef} mode="controlled" onDone={onDone} />
+      <ImportChatworthyButton ref={chatworthyRef} mode="controlled" onDone={onDone} defaultSubjectLabel={defaultSubjectLabel} defaultTopicLabel={defaultTopicLabel} />
+      <ImportMarkdownButton ref={markdownRef} mode="controlled" onDone={onDone} defaultSubjectLabel={defaultSubjectLabel} defaultTopicLabel={defaultTopicLabel} />
       {triggerIcon}
     </>
   );

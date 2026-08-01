@@ -48,6 +48,7 @@ import { selectNoteStatusVisibility } from '../features/settings/settingsSlice';
 import ConfirmIconButton from '../components/ConfirmIconButton';
 import DeleteIcon from '@mui/icons-material/Delete';
 import NotePropertiesDialog from '../features/notes/NotePropertiesDialog';
+import ImportFileButton from '../features/imports/ImportFileButton';
 
 // Extract leading ObjectId from "<id>" or "<id>-<slug>"
 const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
@@ -168,6 +169,17 @@ export default function TopicNotesPage() {
           id: propertiesNoteId,
         } as any)
       : undefined);
+
+  const currentSubject = useMemo(
+    () => subjectsWithTopics.find((s) => s.id === subjectId),
+    [subjectsWithTopics, subjectId],
+  );
+  const currentTopic = useMemo(
+    () => currentSubject?.topics?.find((t) => t.id === topicId),
+    [currentSubject, topicId],
+  );
+  const currentSubjectName = currentSubject?.name ?? '';
+  const currentTopicName = currentTopic?.name ?? '';
 
   const { subjectName: propertiesSubjectName, topicName: propertiesTopicName } = useMemo(
     () =>
@@ -349,6 +361,14 @@ export default function TopicNotesPage() {
                 )}
               </Box>
               <Toolbar disableGutters sx={{ gap: 1, minHeight: 'auto' }}>
+                {subjectId && topicId && !isBatchMode && (
+                  <ImportFileButton
+                    mode="button"
+                    tooltip={`Import into ${currentSubjectName} / ${currentTopicName}`}
+                    defaultSubjectLabel={currentSubjectName}
+                    defaultTopicLabel={currentTopicName}
+                  />
+                )}
                 <Tooltip title="Select all notes in this topic">
                   <span>
                     <Button
