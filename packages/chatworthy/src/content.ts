@@ -503,6 +503,16 @@ function getSelectedPromptIndexes(): number[] {
     .sort((a, b) => a - b);
 }
 
+function getSelectedStaleTurnNums(): number[] {
+  const root = document.getElementById(ROOT_ID);
+  if (!root) return [];
+  return Array.from(root.querySelectorAll<HTMLInputElement>('input.cw-cb[data-cw-turnnum]'))
+    .filter(cb => cb.checked)
+    .map(cb => Number(cb.dataset.cwTurnnum))
+    .filter(n => Number.isFinite(n))
+    .sort((a, b) => a - b);
+}
+
 function cloneWithoutInjected(el: HTMLElement): HTMLElement {
   const clone = el.cloneNode(true) as HTMLElement;
   // Also strip .cdk-visually-hidden (Gemini screen-reader "You said" labels)
@@ -542,7 +552,6 @@ function buildSelectedPayload(): { turns: ExportTurn[]; htmlBodies: string[] } {
     .sort((a, b) => a - b);
 
   selected = selected.filter(idx => idx >= 0 && idx < allTurns.length && allTurns[idx].role === 'user');
-  if (selected.length === 0) return { turns: [], htmlBodies: [] };
 
   const turns: ExportTurn[] = [];
   const htmlBodies: string[] = [];
@@ -564,13 +573,25 @@ function buildSelectedPayload(): { turns: ExportTurn[]; htmlBodies: string[] } {
     }
   }
 
+  // Also include stale ChatGPT items (virtual-scrolled out of the DOM).
+  // Their user-prompt elements are still available via the prompt cache.
+  const staleTurns = getSelectedStaleTurnNums();
+  for (const tn of staleTurns) {
+    const cached = chatgptPromptCache.get(tn);
+    if (!cached) continue;
+    const cleanEl = cloneWithoutInjected(cached.el);
+    turns.push({ role: 'user', text: (cleanEl.textContent ?? '').trim() });
+    htmlBodies.push(cleanEl.outerHTML);
+  }
+
+  if (turns.length === 0) return { turns: [], htmlBodies: [] };
   return { turns, htmlBodies };
 }
 
 function getSelectionStats(): { total: number; selected: number } {
   const root = document.getElementById(ROOT_ID);
   if (!root) return { total: 0, selected: 0 };
-  const boxes = Array.from(root.querySelectorAll<HTMLInputElement>('input[type="checkbox"][data-uindex]'));
+  const boxes = Array.from(root.querySelectorAll<HTMLInputElement>('input.cw-cb'));
   const selected = boxes.filter(cb => cb.checked).length;
   return { total: boxes.length, selected };
 }
@@ -1112,7 +1133,7 @@ function ensureFloatingUI() {
       btnAll.type = 'button';
       btnAll.textContent = 'All';
       btnAll.onclick = () => {
-        root!.querySelectorAll<HTMLInputElement>('input[type="checkbox"][data-uindex]').forEach(cb => (cb.checked = true));
+        root!.querySelectorAll<HTMLInputElement>('input.cw-cb').forEach(cb => (cb.checked = true));
         updateControlsState();
       };
 
@@ -1121,7 +1142,7 @@ function ensureFloatingUI() {
       btnNone.type = 'button';
       btnNone.textContent = 'None';
       btnNone.onclick = () => {
-        root!.querySelectorAll<HTMLInputElement>('input[type="checkbox"][data-uindex]').forEach(cb => (cb.checked = false));
+        root!.querySelectorAll<HTMLInputElement>('input.cw-cb').forEach(cb => (cb.checked = false));
         updateControlsState();
       };
 
@@ -1328,9 +1349,12 @@ function ensureFloatingUI() {
 
         const cb = d.createElement('input');
         cb.type = 'checkbox';
+        cb.classList.add('cw-cb');
+        cb.addEventListener('change', updateControlsState);
         if (live && idx >= 0) {
           cb.dataset.uindex = String(idx);
-          cb.addEventListener('change', updateControlsState);
+        } else if (turnNum !== null) {
+          cb.dataset.cwTurnnum = String(turnNum);
         }
         cb.addEventListener('click', (e) => e.stopPropagation());
         cb.addEventListener('keydown', (e) => e.stopPropagation());
