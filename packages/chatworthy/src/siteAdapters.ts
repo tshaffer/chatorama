@@ -27,6 +27,7 @@ function getMessageTuplesChatGPT(): MessageTuple[] {
   const pickRoot = (n: HTMLElement): HTMLElement =>
     n.closest<HTMLElement>('[data-testid="conversation-turn"]') ||
     n.closest<HTMLElement>('[data-message-id]') ||
+    n.closest<HTMLElement>('[data-testid^="conversation-turn-"]') ||
     n.closest<HTMLElement>('article, li, section') ||
     n;
 

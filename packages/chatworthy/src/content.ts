@@ -45,10 +45,64 @@ let listItemByTupleIndex = new Map<number, HTMLDivElement>();
 
 let io: IntersectionObserver | null = null;
 let ioIntersecting = new Map<number, HTMLElement>(); // tupleIndex -> prompt element
+let ioTrackedEls: Array<{ idx: number; el: HTMLElement }> = []; // all observed elements (fallback)
 let ioUpdateScheduled = false;
+let ioScrollCleanup: (() => void) | null = null; // removes the scroller scroll listener
 
 let lastManualSelectAt = 0;
 const MANUAL_GRACE_MS = 800;
+
+// ChatGPT virtual-scroll state: tracks whether we ever warned about hidden turns
+// so we can show a brief "all loaded" confirmation once they appear.
+let chatgptScrollWarnActive = false;
+let chatgptAllLoadedAt = 0;
+
+// The ChatGPT DOM element the user last manually selected in the sidebar.
+// Persists across list rebuilds so the same item can be re-selected even after
+// new lazy-loaded turns shift all indices.
+let manuallySelectedChatEl: HTMLElement | null = null;
+// The conversation-turn number of the last manually selected ChatGPT item.
+// Used for post-rebuild restoration because ChatGPT recreates DOM nodes on reload,
+// making element-reference matching unreliable.
+let manuallySelectedTurnNum: number | null = null;
+
+// Persistent cache of ChatGPT user prompts, keyed by conversation-turn number.
+// Keeps sidebar entries stable after ChatGPT's virtual scrolling removes DOM elements.
+const chatgptPromptCache = new Map<number, { text: string; el: HTMLElement }>();
+let chatgptCachedChatId: string | null = null;
+// Accumulates every conversation-turn-N number ever seen in the DOM across rebuilds.
+// Once this set forms a contiguous sequence from 1 to max, all turns have been loaded.
+const chatgptAllSeenTurns = new Set<number>();
+// True once chatgptAllSeenTurns is verified contiguous from 1. Suppresses the notice.
+let chatgptSeenAllTurns = false;
+
+// Returns true when the numbered conversation-turn-N elements in the DOM have
+// any gap (e.g. [1,2,15,16] is missing 3-14) or don't start at 1.
+// ChatGPT lazy-renders middle turns as the user scrolls, creating these gaps.
+function chatgptHasMissingTurns(): boolean {
+  const els = Array.from(document.querySelectorAll<HTMLElement>('[data-testid^="conversation-turn-"]'));
+  if (els.length < 2) return false;
+  const nums = els
+    .map(el => {
+      const m = el.getAttribute('data-testid')?.match(/conversation-turn-(\d+)$/);
+      return m ? parseInt(m[1], 10) : null;
+    })
+    .filter((n): n is number => n !== null)
+    .sort((a, b) => a - b);
+  if (nums.length < 2) return false;
+  if (nums[0] > 1) return true;
+  for (let i = 1; i < nums.length; i++) {
+    if (nums[i] > nums[i - 1] + 1) return true;
+  }
+  return false;
+}
+
+function getChatgptTurnNumber(el: HTMLElement): number | null {
+  const ancestor = el.closest<HTMLElement>('[data-testid^="conversation-turn-"]');
+  if (!ancestor) return null;
+  const m = ancestor.getAttribute('data-testid')?.match(/conversation-turn-(\d+)$/);
+  return m ? parseInt(m[1], 10) : null;
+}
 
 type RegistryStatusState = {
   backendOk: boolean | null;
@@ -77,6 +131,16 @@ function setSelectedListItem(next: HTMLDivElement | null) {
 
   if (selectedListItem) {
     selectedListItem.classList.add('chatworthy-item--selected');
+    const listEl = document.getElementById(LIST_ID);
+    if (listEl) {
+      const listRect = listEl.getBoundingClientRect();
+      const itemRect = selectedListItem.getBoundingClientRect();
+      if (itemRect.bottom > listRect.bottom) {
+        listEl.scrollTop += itemRect.bottom - listRect.bottom;
+      } else if (itemRect.top < listRect.top) {
+        listEl.scrollTop -= listRect.top - itemRect.top;
+      }
+    }
   }
 }
 
@@ -95,7 +159,9 @@ function disconnectPromptVisibilityTracking() {
   }
   io = null;
   ioIntersecting = new Map();
+  ioTrackedEls = [];
   ioUpdateScheduled = false;
+  if (ioScrollCleanup) { ioScrollCleanup(); ioScrollCleanup = null; }
 }
 
 function scheduleIoPick(scroller: HTMLElement, offset: number) {
@@ -106,15 +172,21 @@ function scheduleIoPick(scroller: HTMLElement, offset: number) {
     ioUpdateScheduled = false;
 
     if (Date.now() - lastManualSelectAt < MANUAL_GRACE_MS) return;
-    if (ioIntersecting.size === 0) return;
 
     const scRect = scroller.getBoundingClientRect();
     const rootTop = scRect.top + offset;
 
+    // Prefer intersecting elements; fall back to all tracked elements when the
+    // user has scrolled into the middle of a long response (no prompt visible).
+    const candidates: Iterable<[number, HTMLElement]> =
+      ioIntersecting.size > 0
+        ? ioIntersecting.entries()
+        : ioTrackedEls.map(({ idx, el }) => [idx, el] as [number, HTMLElement]);
+
     let bestIdx: number | null = null;
     let bestDist = Number.POSITIVE_INFINITY;
 
-    for (const [idx, el] of ioIntersecting.entries()) {
+    for (const [idx, el] of candidates) {
       const r = el.getBoundingClientRect();
       const dist = Math.abs(r.top - rootTop);
       if (dist < bestDist) {
@@ -123,7 +195,17 @@ function scheduleIoPick(scroller: HTMLElement, offset: number) {
       }
     }
 
-    if (bestIdx != null) setSelectedByTupleIndex(bestIdx);
+    if (bestIdx != null) {
+      // If the IO is navigating to a different item than what was manually
+      // selected, clear the manual state so future buildUI restorations don't
+      // keep fighting the IO auto-picker.
+      const newItem = listItemByTupleIndex.get(bestIdx);
+      if (newItem && newItem !== selectedListItem) {
+        manuallySelectedChatEl = null;
+        manuallySelectedTurnNum = null;
+      }
+      setSelectedByTupleIndex(bestIdx);
+    }
   });
 }
 
@@ -160,7 +242,15 @@ function setupPromptVisibilityTracking() {
     }
   );
 
+  ioTrackedEls = userTuples.map(({ idx, t }) => ({ idx, el: t.el }));
   for (const { t } of userTuples) io.observe(t.el);
+
+  // Fallback: fire a pick on scroll so drag-jumps (which may not trigger IO
+  // threshold crossings) still update the sidebar selection.
+  const onScroll = () => scheduleIoPick(scroller, offset);
+  const scrollTarget = rootForIO ?? window;
+  scrollTarget.addEventListener('scroll', onScroll, { passive: true });
+  ioScrollCleanup = () => scrollTarget.removeEventListener('scroll', onScroll);
 }
 
 // ---- Drag + persisted position -----------------------------
@@ -890,23 +980,36 @@ function highlightPrompt(el: HTMLElement) {
   setTimeout(() => el.classList.remove('cw-jump-highlight'), 1200);
 }
 
+// Scrolls ChatGPT to approximately the right spot for a stale turn (not in DOM).
+// Uses the turn number fraction of the total conversation to estimate position.
+// Once the turn loads via MutationObserver, it becomes precisely clickable.
+function approximateScrollToChatGPTTurn(turnNum: number) {
+  if (chatgptAllSeenTurns.size === 0) return;
+  const maxTurn = Math.max(...chatgptAllSeenTurns);
+  if (maxTurn === 0) return;
+  const anyLiveEl = document.querySelector<HTMLElement>('[data-testid^="conversation-turn-"]');
+  if (!anyLiveEl) return;
+  const scroller = findScrollContainer(anyLiveEl);
+  const fraction = (turnNum - 1) / Math.max(maxTurn - 1, 1);
+  scroller.scrollTo({ top: fraction * scroller.scrollHeight, behavior: 'smooth' });
+}
+
+function scrollPromptEl(el: HTMLElement) {
+  const scroller = findScrollContainer(el);
+  const elRect = el.getBoundingClientRect();
+  const scRect = scroller.getBoundingClientRect();
+  const offset = getLocalHeaderOffset(scroller);
+  const current = scroller.scrollTop;
+  const targetY = current + (elRect.top - scRect.top) - offset;
+  scroller.scrollTo({ top: Math.max(targetY, 0), behavior: 'smooth' });
+  highlightPrompt(el);
+}
+
 function scrollPromptIntoViewByIndex(tupleIndex: number) {
   const tuples = getMessageTuples();
   const t = tuples[tupleIndex];
   if (!t || t.role !== 'user') return;
-
-  const el = t.el as HTMLElement;
-  const scroller = findScrollContainer(el);
-
-  const elRect = el.getBoundingClientRect();
-  const scRect = scroller.getBoundingClientRect();
-
-  const offset = getLocalHeaderOffset(scroller);
-  const current = scroller.scrollTop;
-  const targetY = current + (elRect.top - scRect.top) - offset;
-
-  scroller.scrollTo({ top: Math.max(targetY, 0), behavior: 'smooth' });
-  highlightPrompt(el);
+  scrollPromptEl(t.el);
 }
 
 // ---- Floating UI -------------------------------------------
@@ -1104,14 +1207,115 @@ function ensureFloatingUI() {
       if (t.role === 'user') userTuples.push({ idx, el: t.el });
     });
 
-    if (userTuples.length === 0) {
+    // For ChatGPT: maintain a cross-rebuild cache of user prompts keyed by conversation
+    // turn number. Keeps the sidebar stable when virtual scrolling removes DOM elements.
+    if (getSite() === 'chatgpt') {
+      if (chatId !== chatgptCachedChatId) {
+        chatgptPromptCache.clear();
+        chatgptAllSeenTurns.clear();
+        chatgptCachedChatId = chatId;
+        chatgptSeenAllTurns = false;
+        chatgptScrollWarnActive = false;
+        chatgptAllLoadedAt = 0;
+        manuallySelectedChatEl = null;
+        manuallySelectedTurnNum = null;
+      }
+      for (const { el } of userTuples) {
+        const tn = getChatgptTurnNumber(el);
+        if (tn !== null) {
+          const clone = el.cloneNode(true) as HTMLElement;
+          clone.querySelectorAll('.cw-role-label,[data-cw-hidden="1"],.cdk-visually-hidden').forEach(n => n.remove());
+          chatgptPromptCache.set(tn, { text: (clone.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60), el });
+        }
+      }
+    }
+
+    // ChatGPT lazy-renders turns: middle turns may be absent even when the first
+    // and last turns are visible. Detect gaps in the turn-number sequence and
+    // warn the user to scroll through the chat so all turns load.
+    // We accumulate ALL turn numbers ever seen across rebuilds; once they form a
+    // contiguous sequence starting at 1, suppress the notice permanently.
+    if (getSite() === 'chatgpt' && (userTuples.length > 0 || chatgptPromptCache.size > 0) &&
+        !!document.querySelector('[data-testid^="conversation-turn-"]')) {
+      // Accumulate current DOM turn numbers into the all-time set
+      if (!chatgptSeenAllTurns) {
+        document.querySelectorAll<HTMLElement>('[data-testid^="conversation-turn-"]').forEach(el => {
+          const m = el.getAttribute('data-testid')?.match(/conversation-turn-(\d+)$/);
+          if (m) chatgptAllSeenTurns.add(parseInt(m[1], 10));
+        });
+        // Check if accumulated turns are contiguous from 1 to max
+        if (chatgptAllSeenTurns.has(1)) {
+          const maxSeen = Math.max(...chatgptAllSeenTurns);
+          let contiguous = true;
+          for (let i = 2; i <= maxSeen; i++) {
+            if (!chatgptAllSeenTurns.has(i)) { contiguous = false; break; }
+          }
+          if (contiguous) chatgptSeenAllTurns = true;
+        }
+      }
+
+      const hasMissing = !chatgptSeenAllTurns && chatgptHasMissingTurns();
+
+      if (!chatgptSeenAllTurns && hasMissing) {
+        chatgptScrollWarnActive = true;
+        chatgptAllLoadedAt = 0;
+        const notice = d.createElement('div');
+        notice.style.cssText =
+          'font-size:11px;padding:0 0 6px 0;color:#b35c00;line-height:1.4;';
+        notice.textContent = '⚠ Scroll through the chat to load all prompts';
+        list.appendChild(notice);
+      } else if (chatgptScrollWarnActive) {
+        if (chatgptAllLoadedAt === 0) chatgptAllLoadedAt = Date.now();
+        if (Date.now() - chatgptAllLoadedAt < 2500) {
+          const notice = d.createElement('div');
+          notice.style.cssText =
+            'font-size:11px;padding:0 0 6px 0;color:#2e7d32;line-height:1.4;';
+          notice.textContent = `✓ All ${chatgptPromptCache.size || userTuples.length} prompts loaded`;
+          list.appendChild(notice);
+        } else {
+          chatgptScrollWarnActive = false;
+          chatgptAllLoadedAt = 0;
+        }
+      }
+    }
+
+    // Build the flat list of items to render. For ChatGPT, merge the persistent cache
+    // (sorted by turn number) with any live turns that lack turn numbers (old format).
+    // For other sites, use the live DOM tuples directly.
+    type ListEntry = { idx: number; el: HTMLElement; text: string; live: boolean; turnNum: number | null };
+    const listEntries: ListEntry[] = [];
+
+    if (getSite() === 'chatgpt' && chatgptPromptCache.size > 0) {
+      const liveIdxByEl = new Map(userTuples.map(({ idx, el }) => [el, idx]));
+      for (const [tn, { text, el }] of Array.from(chatgptPromptCache.entries()).sort(([a], [b]) => a - b)) {
+        const idx = liveIdxByEl.get(el) ?? -1;
+        listEntries.push({ idx, el, text, live: document.contains(el), turnNum: tn });
+      }
+      // Also include live turns without a turn number (old ChatGPT DOM format)
+      for (const { idx, el } of userTuples) {
+        if (getChatgptTurnNumber(el) === null) {
+          const clone = el.cloneNode(true) as HTMLElement;
+          clone.querySelectorAll('.cw-role-label,[data-cw-hidden="1"],.cdk-visually-hidden').forEach(n => n.remove());
+          listEntries.push({ idx, el, text: (clone.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60), live: true, turnNum: null });
+        }
+      }
+    } else {
+      for (const { idx, el } of userTuples) {
+        const clone = el.cloneNode(true) as HTMLElement;
+        // Also strip .cdk-visually-hidden (Gemini screen-reader "You said" labels)
+        clone.querySelectorAll('.cw-role-label,[data-cw-hidden="1"],.cdk-visually-hidden').forEach(n => n.remove());
+        listEntries.push({ idx, el, text: (clone.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60), live: true, turnNum: null });
+      }
+    }
+
+    if (listEntries.length === 0) {
       const empty = d.createElement('div');
       empty.textContent = 'No prompts detected yet.';
       empty.style.opacity = '0.7';
       empty.style.fontSize = '12px';
       list.appendChild(empty);
     } else {
-      for (const { idx, el: node } of userTuples) {
+      for (const { idx, el: node, text, live, turnNum } of listEntries) {
         const item = d.createElement('div');
         item.className = 'chatworthy-item';
         item.style.display = 'flex';
@@ -1124,41 +1328,105 @@ function ensureFloatingUI() {
 
         const cb = d.createElement('input');
         cb.type = 'checkbox';
-        cb.dataset.uindex = String(idx);
-        cb.addEventListener('change', updateControlsState);
+        if (live && idx >= 0) {
+          cb.dataset.uindex = String(idx);
+          cb.addEventListener('change', updateControlsState);
+        }
         cb.addEventListener('click', (e) => e.stopPropagation());
         cb.addEventListener('keydown', (e) => e.stopPropagation());
+        item.appendChild(cb);
 
         const span = d.createElement('span');
         span.className = 'chatworthy-item-text';
-        const clone = node.cloneNode(true) as HTMLElement;
-        // Also strip .cdk-visually-hidden (Gemini screen-reader "You said" labels)
-        clone.querySelectorAll('.cw-role-label,[data-cw-hidden="1"],.cdk-visually-hidden').forEach(n => n.remove());
-        span.textContent = (clone.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+        span.textContent = text;
         span.style.lineHeight = '1.2';
-
-        listItemByTupleIndex.set(idx, item);
-
-        item.addEventListener('click', (e) => {
-          const target = e.target as HTMLElement;
-          if (target.tagName.toLowerCase() === 'input') return;
-          lastManualSelectAt = Date.now();
-          setSelectedListItem(item);
-          scrollPromptIntoViewByIndex(idx);
-        });
-
-        item.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            lastManualSelectAt = Date.now();
-            setSelectedListItem(item);
-            scrollPromptIntoViewByIndex(idx);
-          }
-        });
-
-        item.appendChild(cb);
         item.appendChild(span);
+
+        if (live && idx >= 0) {
+          // Fully interactive: IO selection, precise click-to-scroll
+          listItemByTupleIndex.set(idx, item);
+
+          item.addEventListener('click', (e) => {
+            const target = e.target as HTMLElement;
+            if (target.tagName.toLowerCase() === 'input') return;
+            lastManualSelectAt = Date.now();
+            manuallySelectedChatEl = node;
+            manuallySelectedTurnNum = getChatgptTurnNumber(node);
+            setSelectedListItem(item);
+            scrollPromptEl(node);
+          });
+
+          item.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              lastManualSelectAt = Date.now();
+              manuallySelectedChatEl = node;
+              manuallySelectedTurnNum = getChatgptTurnNumber(node);
+              setSelectedListItem(item);
+              scrollPromptEl(node);
+            }
+          });
+        } else if (turnNum !== null) {
+          // Stale cached item: clicking scrolls ChatGPT to the approximate position so
+          // the turn loads and the item becomes precisely interactive.
+          item.addEventListener('click', (e) => {
+            const target = e.target as HTMLElement;
+            if (target.tagName.toLowerCase() === 'input') return;
+            lastManualSelectAt = Date.now();
+            manuallySelectedTurnNum = turnNum;
+            manuallySelectedChatEl = null;
+            setSelectedListItem(item);
+            approximateScrollToChatGPTTurn(turnNum);
+          });
+        }
+
         list.appendChild(item);
+      }
+
+      // After rebuild, re-select the item the user last clicked (if still live).
+      // Prefer turn-number matching (stable across ChatGPT element re-creation)
+      // and fall back to element-reference matching for non-ChatGPT sites.
+      //
+      // The grace period (MANUAL_GRACE_MS) is set by the original user CLICK and
+      // must NOT be renewed here — doing so would let repeated rebuilds
+      // continuously suppress the IO auto-picker even when the user has scrolled
+      // away.  When the grace has already expired we also clear the manual state
+      // so future rebuilds stop fighting the IO.
+      {
+        const graceActive = Date.now() - lastManualSelectAt < MANUAL_GRACE_MS;
+        if (!graceActive) {
+          // Grace expired: clear manual state so we stop restoring a stale pick.
+          manuallySelectedTurnNum = null;
+          manuallySelectedChatEl = null;
+        }
+
+        let restoredItem: HTMLDivElement | null = null;
+
+        if (manuallySelectedTurnNum !== null) {
+          const matchEntry = listEntries.find(
+            ({ turnNum: tn, live }) => live && tn === manuallySelectedTurnNum
+          );
+          if (matchEntry && matchEntry.idx >= 0) {
+            restoredItem = listItemByTupleIndex.get(matchEntry.idx) ?? null;
+            // Keep element ref in sync if ChatGPT gave the turn a new DOM node
+            if (restoredItem && matchEntry.el !== manuallySelectedChatEl) {
+              manuallySelectedChatEl = matchEntry.el;
+            }
+          }
+        }
+
+        if (!restoredItem && manuallySelectedChatEl !== null) {
+          const matchEntry = listEntries.find(({ el, live }) => live && el === manuallySelectedChatEl);
+          if (matchEntry && matchEntry.idx >= 0) {
+            restoredItem = listItemByTupleIndex.get(matchEntry.idx) ?? null;
+          }
+        }
+
+        if (restoredItem) {
+          // Restore the visual selection but do NOT update lastManualSelectAt.
+          // The grace period belongs to the original click, not to this internal op.
+          setSelectedListItem(restoredItem);
+        }
       }
     }
 
