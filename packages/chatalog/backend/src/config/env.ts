@@ -9,7 +9,7 @@ const required = (name: string): string => {
 
 export const ENV = {
   NODE_ENV: process.env.NODE_ENV ?? 'development',
-  PORT: parseInt(process.env.PORT ?? '8080', 10),
+  PORT: parseInt(process.env.PORT ?? '8008', 10),
   MONGO_URI: required('MONGO_URI'),
   // Optional: if you want to override db name explicitly:
   MONGO_DB_NAME: process.env.MONGO_DB_NAME, // e.g., "chatalog_dev"

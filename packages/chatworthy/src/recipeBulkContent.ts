@@ -2,8 +2,8 @@
 // NYT Cooking Recipe Box bulk importer (dev command).
 
 import { extractRecipeJsonLdFromDocument } from './recipeExtractor';
+import { API_BASE } from './config';
 
-const API_BASE = 'http://localhost:8080/api/v1';
 const STORAGE_KEY = 'chatworthy:nytRecipeBoxImport';
 const RESULTS_FILE = 'nyt-import-results.json';
 const URLS_FILE = 'nyt-recipe-urls.json';

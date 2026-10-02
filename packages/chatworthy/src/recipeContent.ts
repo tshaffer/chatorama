@@ -2,8 +2,8 @@
 // NYT Cooking recipe capture (Schema.org Recipe JSON-LD)
 
 import { extractRecipeJsonLdFromDocument } from './recipeExtractor';
+import { API_BASE } from './config';
 
-const API_BASE = 'http://localhost:8080/api/v1';
 const ROOT_ID = 'chatworthy-recipe-root';
 const BTN_ID = 'chatworthy-recipe-capture-btn';
 const STATUS_ID = 'chatworthy-recipe-status';

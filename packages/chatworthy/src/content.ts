@@ -4,6 +4,7 @@ import { getChatTitleAndProject } from './domExtractors';
 import { getSite, getChatTitle, getMessageTuples as getSiteMessageTuples } from './siteAdapters';
 import { buildMarkdownExport } from '@chatorama/chat-md-core';
 import type { ExportTurn, ExportNoteMetadata } from '@chatorama/chat-md-core';
+import { API_BASE } from './config';
 
 /**
  * ------------------------------------------------------------
@@ -36,7 +37,6 @@ const OBSERVER_THROTTLE_MS = 200;
 const COLLAPSE_LS_KEY = 'chatworthy:collapsed';
 const POS_LS_KEY = 'chatworthy:position';
 const STATUS_LS_KEY = 'chatworthy:statusRow';
-const API_BASE = 'http://localhost:8080/api/v1';
 
 // ---- List selection / scroll-follow state ------------------
 
