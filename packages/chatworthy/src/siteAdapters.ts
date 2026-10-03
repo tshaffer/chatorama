@@ -16,7 +16,34 @@ export interface MessageTuple {
 
 // ---- ChatGPT -----------------------------------------------
 
+// False when el or an ancestor is display:none. Off-screen (content-visibility:auto)
+// turns still count as rendered.
+function isRendered(el: HTMLElement): boolean {
+  if (typeof el.checkVisibility === 'function') return el.checkVisibility();
+  return el.getClientRects().length > 0;
+}
+
+// Current ChatGPT DOM (2026-10): each exchange is a [data-turn-key] element holding one
+// message unit per role, tagged data-chatgpt-search-unit-key="<turn>:<n>:<role>"
+// (e.g. "fallback-turn-0:0:user", "<uuid>:2:assistant").
+function getMessageTuplesChatGPTUnits(): MessageTuple[] {
+  const chosen: MessageTuple[] = [];
+  const units = document.querySelectorAll<HTMLElement>('[data-chatgpt-search-unit-key]');
+  for (const el of Array.from(units)) {
+    // After switching chats, ChatGPT keeps the previous chat mounted in a hidden
+    // (display:none) workspace — skip its units so they don't leak into this chat.
+    if (!isRendered(el)) continue;
+    const role = (el.getAttribute('data-chatgpt-search-unit-key') || '').split(':').pop()?.toLowerCase();
+    if (role === 'user' || role === 'assistant') chosen.push({ el, role });
+  }
+  return chosen;
+}
+
 function getMessageTuplesChatGPT(): MessageTuple[] {
+  const units = getMessageTuplesChatGPTUnits();
+  if (units.length) return units;
+
+  // Older ChatGPT DOM: data-message-author-role / conversation-turn markers.
   const chosen: MessageTuple[] = [];
   const seen = new Set<HTMLElement>();
 

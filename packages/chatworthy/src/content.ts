@@ -61,47 +61,170 @@ let chatgptAllLoadedAt = 0;
 // Persists across list rebuilds so the same item can be re-selected even after
 // new lazy-loaded turns shift all indices.
 let manuallySelectedChatEl: HTMLElement | null = null;
-// The conversation-turn number of the last manually selected ChatGPT item.
+// Stable key (see getChatgptTurnKey) of the last manually selected ChatGPT item.
 // Used for post-rebuild restoration because ChatGPT recreates DOM nodes on reload,
 // making element-reference matching unreliable.
-let manuallySelectedTurnNum: number | null = null;
+let manuallySelectedTurnKey: string | null = null;
 
-// Persistent cache of ChatGPT user prompts, keyed by conversation-turn number.
-// Keeps sidebar entries stable after ChatGPT's virtual scrolling removes DOM elements.
-const chatgptPromptCache = new Map<number, { text: string; el: HTMLElement }>();
+// ---- ChatGPT virtual-scroll prompt tracking ----------------
+// ChatGPT keeps only a sliding window of ~5 exchanges in the DOM and removes the
+// rest as you scroll. To keep the sidebar complete we cache every prompt seen,
+// keyed by a stable per-exchange key, and reconstruct their order from the
+// windows we observe: each window is a contiguous run, overlapping runs merge,
+// and a run with no overlap (after a scrollbar jump) becomes its own segment.
+// More than one segment means there is a gap of not-yet-seen prompts.
+
+type CachedChatgptPrompt = { text: string; el: HTMLElement; responseEls: HTMLElement[] };
+const chatgptPromptCache = new Map<string, CachedChatgptPrompt>();
 let chatgptCachedChatId: string | null = null;
-// Accumulates every conversation-turn-N number ever seen in the DOM across rebuilds.
-// Once this set forms a contiguous sequence from 1 to max, all turns have been loaded.
-const chatgptAllSeenTurns = new Set<number>();
-// True once chatgptAllSeenTurns is verified contiguous from 1. Suppresses the notice.
-let chatgptSeenAllTurns = false;
+// Known prompt order as contiguous segments, oldest first.
+let chatgptSegments: string[][] = [];
+// Key of the conversation's first exchange, once it has been seen.
+let chatgptFirstTurnKey: string | null = null;
+// Previous observed window, for placing a non-overlapping window by scroll direction.
+let chatgptPrevRun: string[] = [];
+let chatgptPrevScrollTop: number | null = null;
+// Incremented on each stale-item click so an older walk-to-turn loop stops.
+let chatgptWalkToken = 0;
 
-// Returns true when the numbered conversation-turn-N elements in the DOM have
-// any gap (e.g. [1,2,15,16] is missing 3-14) or don't start at 1.
-// ChatGPT lazy-renders middle turns as the user scrolls, creating these gaps.
-function chatgptHasMissingTurns(): boolean {
-  const els = Array.from(document.querySelectorAll<HTMLElement>('[data-testid^="conversation-turn-"]'));
-  if (els.length < 2) return false;
-  const nums = els
-    .map(el => {
-      const m = el.getAttribute('data-testid')?.match(/conversation-turn-(\d+)$/);
-      return m ? parseInt(m[1], 10) : null;
-    })
-    .filter((n): n is number => n !== null)
-    .sort((a, b) => a - b);
-  if (nums.length < 2) return false;
-  if (nums[0] > 1) return true;
-  for (let i = 1; i < nums.length; i++) {
-    if (nums[i] > nums[i - 1] + 1) return true;
-  }
-  return false;
+// Current DOM: [data-turn-key] wraps one exchange. Older DOM: one
+// [data-testid="conversation-turn-N"] per message.
+function getChatgptTurnKey(el: HTMLElement): string | null {
+  const turn = el.closest<HTMLElement>('[data-turn-key]');
+  if (turn) return turn.getAttribute('data-turn-key');
+  const legacy = el.closest<HTMLElement>('[data-testid^="conversation-turn-"]');
+  return legacy ? legacy.getAttribute('data-testid') : null;
 }
 
-function getChatgptTurnNumber(el: HTMLElement): number | null {
-  const ancestor = el.closest<HTMLElement>('[data-testid^="conversation-turn-"]');
-  if (!ancestor) return null;
-  const m = ancestor.getAttribute('data-testid')?.match(/conversation-turn-(\d+)$/);
-  return m ? parseInt(m[1], 10) : null;
+// Older DOM numbers turns, so the first one is known directly. The current DOM has
+// no reliable marker (its "fallback-turn-N" keys restart with each loaded batch), so
+// there the first exchange is confirmed by confirmChatgptTopWhenSettled instead.
+function isChatgptFirstTurn(el: HTMLElement): boolean {
+  return el.closest('[data-testid="conversation-turn-1"]') !== null;
+}
+
+function isScrolledToTop(sc: HTMLElement): boolean {
+  const maxScroll = Math.max(sc.scrollHeight - sc.clientHeight, 0);
+  const reversed = getComputedStyle(sc).flexDirection === 'column-reverse';
+  return reversed ? sc.scrollTop <= -maxScroll + 2 : sc.scrollTop <= 2;
+}
+
+// When the thread is scrolled to the top and nothing older loads within 2s, the
+// topmost exchange is the conversation's first.
+let chatgptTopCheckTimer: number | null = null;
+function topmostChatgptTurnKey(sc: HTMLElement): string | null {
+  const top = Array.from(sc.querySelectorAll<HTMLElement>('[data-turn-key]')).find(t => t.checkVisibility());
+  return top?.getAttribute('data-turn-key') ?? null;
+}
+
+function confirmChatgptTopWhenSettled(sc: HTMLElement) {
+  if (chatgptFirstTurnKey || chatgptTopCheckTimer !== null || !isScrolledToTop(sc)) return;
+  const topKey = topmostChatgptTurnKey(sc);
+  if (!topKey) return;
+  const chatId = chatgptCachedChatId;
+  const height = sc.scrollHeight;
+  chatgptTopCheckTimer = window.setTimeout(() => {
+    chatgptTopCheckTimer = null;
+    if (
+      chatId === chatgptCachedChatId && sc.isConnected && isScrolledToTop(sc) &&
+      sc.scrollHeight === height && topmostChatgptTurnKey(sc) === topKey &&
+      chatgptPromptCache.has(topKey)
+    ) {
+      chatgptFirstTurnKey = topKey;
+      moveFirstTurnSegmentToFront();
+      scheduleEnsure();
+    }
+  }, 2000);
+}
+
+function moveFirstTurnSegmentToFront() {
+  if (!chatgptFirstTurnKey) return;
+  const firstIdx = chatgptSegments.findIndex(seg => seg.includes(chatgptFirstTurnKey!));
+  if (firstIdx > 0) chatgptSegments.unshift(...chatgptSegments.splice(firstIdx, 1));
+}
+
+function findLiveChatgptPrompt(key: string): HTMLElement | null {
+  const esc = CSS.escape(key);
+  const turn =
+    document.querySelector<HTMLElement>(`[data-turn-key="${esc}"]`) ||
+    document.querySelector<HTMLElement>(`[data-testid="${esc}"]`);
+  if (!turn || !turn.checkVisibility()) return null;
+  return turn.querySelector<HTMLElement>('[data-chatgpt-search-unit-key$=":user"]') ?? turn;
+}
+
+// Union of two contiguous runs that share at least one key, or null if disjoint.
+// On disagreement, `b` (the fresher observation) wins.
+function mergeChatgptRuns(a: string[], b: string[]): string[] | null {
+  const common = b.find(k => a.includes(k));
+  if (common === undefined) return null;
+  const ia = a.indexOf(common);
+  const ib = b.indexOf(common);
+  const byPos = new Map<number, string>();
+  a.forEach((k, i) => byPos.set(i - ia, k));
+  b.forEach((k, i) => byPos.set(i - ib, k));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const pos of Array.from(byPos.keys()).sort((x, y) => x - y)) {
+    const k = byPos.get(pos)!;
+    if (!seen.has(k)) {
+      seen.add(k);
+      out.push(k);
+    }
+  }
+  return out;
+}
+
+function recordChatgptRun(run: string[], scrollTop: number | null) {
+  if (run.length === 0) return;
+
+  let merged = run;
+  let insertAt = -1;
+  const rest: string[][] = [];
+  for (const seg of chatgptSegments) {
+    const m = mergeChatgptRuns(seg, merged);
+    if (m) {
+      merged = m;
+      if (insertAt === -1) insertAt = rest.length;
+    } else {
+      rest.push(seg);
+    }
+  }
+
+  if (insertAt === -1) {
+    // Disjoint window: place it next to the previous window, older if we scrolled up.
+    const scrolledUp =
+      scrollTop !== null && chatgptPrevScrollTop !== null && scrollTop < chatgptPrevScrollTop;
+    const prevIdx = chatgptPrevRun.length ? rest.findIndex(seg => seg.includes(chatgptPrevRun[0])) : -1;
+    if (prevIdx === -1) insertAt = scrolledUp ? 0 : rest.length;
+    else insertAt = scrolledUp ? prevIdx : prevIdx + 1;
+  }
+  rest.splice(insertAt, 0, merged);
+
+  chatgptSegments = rest;
+  // The segment holding the first exchange is always the oldest.
+  moveFirstTurnSegmentToFront();
+  chatgptPrevRun = run;
+  chatgptPrevScrollTop = scrollTop;
+}
+
+// True when every prompt from the first exchange onward has been seen with no gaps.
+function chatgptAllPromptsSeen(): boolean {
+  return chatgptSegments.length === 1 && chatgptFirstTurnKey !== null &&
+    chatgptSegments[0].includes(chatgptFirstTurnKey);
+}
+
+function resetChatgptTracking(chatId: string | null) {
+  chatgptPromptCache.clear();
+  chatgptSegments = [];
+  chatgptFirstTurnKey = null;
+  chatgptPrevRun = [];
+  chatgptPrevScrollTop = null;
+  chatgptCachedChatId = chatId;
+  chatgptScrollWarnActive = false;
+  chatgptAllLoadedAt = 0;
+  manuallySelectedChatEl = null;
+  manuallySelectedTurnKey = null;
+  chatgptWalkToken++;
 }
 
 type RegistryStatusState = {
@@ -202,7 +325,7 @@ function scheduleIoPick(scroller: HTMLElement, offset: number) {
       const newItem = listItemByTupleIndex.get(bestIdx);
       if (newItem && newItem !== selectedListItem) {
         manuallySelectedChatEl = null;
-        manuallySelectedTurnNum = null;
+        manuallySelectedTurnKey = null;
       }
       setSelectedByTupleIndex(bestIdx);
     }
@@ -247,7 +370,12 @@ function setupPromptVisibilityTracking() {
 
   // Fallback: fire a pick on scroll so drag-jumps (which may not trigger IO
   // threshold crossings) still update the sidebar selection.
-  const onScroll = () => scheduleIoPick(scroller, offset);
+  const onScroll = () => {
+    scheduleIoPick(scroller, offset);
+    // Reaching the top loads nothing once the whole chat is cached, so no DOM
+    // mutation (and no rebuild) follows — check for the conversation start here too.
+    if (getSite() === 'chatgpt') confirmChatgptTopWhenSettled(scroller);
+  };
   const scrollTarget = rootForIO ?? window;
   scrollTarget.addEventListener('scroll', onScroll, { passive: true });
   ioScrollCleanup = () => scrollTarget.removeEventListener('scroll', onScroll);
@@ -503,14 +631,17 @@ function getSelectedPromptIndexes(): number[] {
     .sort((a, b) => a - b);
 }
 
-function getSelectedStaleTurnNums(): number[] {
+// Selected ChatGPT items tracked by turn key (live or virtual-scrolled out),
+// returned in conversation order.
+function getSelectedChatgptTurnKeys(): string[] {
   const root = document.getElementById(ROOT_ID);
   if (!root) return [];
-  return Array.from(root.querySelectorAll<HTMLInputElement>('input.cw-cb[data-cw-turnnum]'))
-    .filter(cb => cb.checked)
-    .map(cb => Number(cb.dataset.cwTurnnum))
-    .filter(n => Number.isFinite(n))
-    .sort((a, b) => a - b);
+  const selected = new Set(
+    Array.from(root.querySelectorAll<HTMLInputElement>('input.cw-cb[data-cw-turnkey]'))
+      .filter(cb => cb.checked)
+      .map(cb => cb.dataset.cwTurnkey!)
+  );
+  return chatgptSegments.flat().filter(k => selected.has(k));
 }
 
 function cloneWithoutInjected(el: HTMLElement): HTMLElement {
@@ -573,15 +704,20 @@ function buildSelectedPayload(): { turns: ExportTurn[]; htmlBodies: string[] } {
     }
   }
 
-  // Also include stale ChatGPT items (virtual-scrolled out of the DOM).
-  // Their user-prompt elements are still available via the prompt cache.
-  const staleTurns = getSelectedStaleTurnNums();
-  for (const tn of staleTurns) {
-    const cached = chatgptPromptCache.get(tn);
+  // ChatGPT items tracked by turn key, live or virtual-scrolled out of the DOM:
+  // export each prompt and its responses from the cache, in conversation order.
+  for (const key of getSelectedChatgptTurnKeys()) {
+    const cached = chatgptPromptCache.get(key);
     if (!cached) continue;
-    const cleanEl = cloneWithoutInjected(cached.el);
-    turns.push({ role: 'user', text: (cleanEl.textContent ?? '').trim() });
-    htmlBodies.push(cleanEl.outerHTML);
+    const parts: Array<{ role: 'user' | 'assistant'; el: HTMLElement }> = [
+      { role: 'user', el: cached.el },
+      ...cached.responseEls.map(el => ({ role: 'assistant' as const, el })),
+    ];
+    for (const { role, el } of parts) {
+      const cleanEl = cloneWithoutInjected(el);
+      turns.push({ role, text: (cleanEl.textContent ?? '').trim() });
+      htmlBodies.push(cleanEl.outerHTML);
+    }
   }
 
   if (turns.length === 0) return { turns: [], htmlBodies: [] };
@@ -1001,18 +1137,40 @@ function highlightPrompt(el: HTMLElement) {
   setTimeout(() => el.classList.remove('cw-jump-highlight'), 1200);
 }
 
-// Scrolls ChatGPT to approximately the right spot for a stale turn (not in DOM).
-// Uses the turn number fraction of the total conversation to estimate position.
-// Once the turn loads via MutationObserver, it becomes precisely clickable.
-function approximateScrollToChatGPTTurn(turnNum: number) {
-  if (chatgptAllSeenTurns.size === 0) return;
-  const maxTurn = Math.max(...chatgptAllSeenTurns);
-  if (maxTurn === 0) return;
-  const anyLiveEl = document.querySelector<HTMLElement>('[data-testid^="conversation-turn-"]');
-  if (!anyLiveEl) return;
-  const scroller = findScrollContainer(anyLiveEl);
-  const fraction = (turnNum - 1) / Math.max(maxTurn - 1, 1);
-  scroller.scrollTo({ top: fraction * scroller.scrollHeight, behavior: 'smooth' });
+// Scrolls ChatGPT toward a prompt that has been virtual-scrolled out of the DOM,
+// a step at a time so ChatGPT loads the windows in between, then jumps to it.
+async function walkToChatgptTurn(key: string) {
+  const token = ++chatgptWalkToken;
+  const order = chatgptSegments.flat();
+  const targetIdx = order.indexOf(key);
+  const liveIdxs = order.map((k, i) => (findLiveChatgptPrompt(k) ? i : -1)).filter(i => i >= 0);
+  const anyLive = liveIdxs.length ? findLiveChatgptPrompt(order[liveIdxs[0]]) : null;
+  if (targetIdx < 0 || !anyLive) return;
+
+  const scroller = findScrollContainer(anyLive);
+  const reversed = getComputedStyle(scroller).flexDirection === 'column-reverse';
+  // Older prompts are further up; scrolling up decreases scrollTop in both layouts.
+  const up = targetIdx < Math.min(...liveIdxs);
+  let lastTop = NaN;
+  let stuck = 0;
+
+  for (let i = 0; i < 300 && token === chatgptWalkToken; i++) {
+    const el = findLiveChatgptPrompt(key);
+    if (el) {
+      lastManualSelectAt = Date.now();
+      manuallySelectedTurnKey = key;
+      scrollPromptEl(el);
+      return;
+    }
+    const maxScroll = Math.max(scroller.scrollHeight - scroller.clientHeight, 0);
+    const [minTop, maxTop] = reversed ? [-maxScroll, 0] : [0, maxScroll];
+    const step = scroller.clientHeight * 1.5 * (up ? -1 : 1);
+    scroller.scrollTop = Math.min(Math.max(scroller.scrollTop + step, minTop), maxTop);
+    stuck = scroller.scrollTop === lastTop ? stuck + 1 : 0;
+    if (stuck >= 8) return; // reached the end without finding it
+    lastTop = scroller.scrollTop;
+    await new Promise(r => setTimeout(r, 350));
+  }
 }
 
 function scrollPromptEl(el: HTMLElement) {
@@ -1022,7 +1180,12 @@ function scrollPromptEl(el: HTMLElement) {
   const offset = getLocalHeaderOffset(scroller);
   const current = scroller.scrollTop;
   const targetY = current + (elRect.top - scRect.top) - offset;
-  scroller.scrollTo({ top: Math.max(targetY, 0), behavior: 'smooth' });
+  // ChatGPT's thread scroller is flex-direction: column-reverse, where scrollTop is 0
+  // at the bottom and negative above it — so clamp to whichever range applies.
+  const maxScroll = Math.max(scroller.scrollHeight - scroller.clientHeight, 0);
+  const reversed = getComputedStyle(scroller).flexDirection === 'column-reverse';
+  const [minTop, maxTop] = reversed ? [-maxScroll, 0] : [0, maxScroll];
+  scroller.scrollTo({ top: Math.min(Math.max(targetY, minTop), maxTop), behavior: 'smooth' });
   highlightPrompt(el);
 }
 
@@ -1217,6 +1380,12 @@ function ensureFloatingUI() {
     void refreshRegistryStatus(chatId);
 
     // 4) Populate list from tuples
+    // Keep ChatGPT selections across rebuilds (the list is rebuilt on every DOM change).
+    const prevCheckedKeys = new Set(
+      Array.from(list.querySelectorAll<HTMLInputElement>('input.cw-cb[data-cw-turnkey]'))
+        .filter(cb => cb.checked)
+        .map(cb => cb.dataset.cwTurnkey!)
+    );
     list.innerHTML = '';
 
     listItemByTupleIndex = new Map();
@@ -1228,104 +1397,92 @@ function ensureFloatingUI() {
       if (t.role === 'user') userTuples.push({ idx, el: t.el });
     });
 
-    // For ChatGPT: maintain a cross-rebuild cache of user prompts keyed by conversation
-    // turn number. Keeps the sidebar stable when virtual scrolling removes DOM elements.
+    const promptText = (el: HTMLElement) => {
+      const clone = el.cloneNode(true) as HTMLElement;
+      // Also strip .cdk-visually-hidden (Gemini screen-reader "You said" labels)
+      clone.querySelectorAll('.cw-role-label,[data-cw-hidden="1"],.cdk-visually-hidden').forEach(n => n.remove());
+      return (clone.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+    };
+
+    // For ChatGPT: cache every prompt (and its responses) seen, keyed by turn key, and
+    // record the current window's order. Keeps the sidebar complete when ChatGPT's
+    // virtual scrolling removes exchanges from the DOM.
     if (getSite() === 'chatgpt') {
-      if (chatId !== chatgptCachedChatId) {
-        chatgptPromptCache.clear();
-        chatgptAllSeenTurns.clear();
-        chatgptCachedChatId = chatId;
-        chatgptSeenAllTurns = false;
-        chatgptScrollWarnActive = false;
-        chatgptAllLoadedAt = 0;
-        manuallySelectedChatEl = null;
-        manuallySelectedTurnNum = null;
-      }
-      for (const { el } of userTuples) {
-        const tn = getChatgptTurnNumber(el);
-        if (tn !== null) {
-          const clone = el.cloneNode(true) as HTMLElement;
-          clone.querySelectorAll('.cw-role-label,[data-cw-hidden="1"],.cdk-visually-hidden').forEach(n => n.remove());
-          chatgptPromptCache.set(tn, { text: (clone.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60), el });
+      if (chatId !== chatgptCachedChatId) resetChatgptTracking(chatId ?? null);
+
+      const run: string[] = [];
+      for (const { idx, el } of userTuples) {
+        const key = getChatgptTurnKey(el);
+        if (!key) continue;
+        run.push(key);
+        if (isChatgptFirstTurn(el)) chatgptFirstTurnKey = key;
+        const responseEls: HTMLElement[] = [];
+        for (let j = idx + 1; j < tuples.length && tuples[j].role === 'assistant'; j++) {
+          responseEls.push(tuples[j].el);
         }
+        chatgptPromptCache.set(key, { text: promptText(el), el, responseEls });
       }
-    }
+      const scroller = userTuples.length ? findScrollContainer(userTuples[0].el) : null;
+      recordChatgptRun(run, scroller ? scroller.scrollTop : null);
+      if (scroller) confirmChatgptTopWhenSettled(scroller);
 
-    // ChatGPT lazy-renders turns: middle turns may be absent even when the first
-    // and last turns are visible. Detect gaps in the turn-number sequence and
-    // warn the user to scroll through the chat so all turns load.
-    // We accumulate ALL turn numbers ever seen across rebuilds; once they form a
-    // contiguous sequence starting at 1, suppress the notice permanently.
-    if (getSite() === 'chatgpt' && (userTuples.length > 0 || chatgptPromptCache.size > 0) &&
-        !!document.querySelector('[data-testid^="conversation-turn-"]')) {
-      // Accumulate current DOM turn numbers into the all-time set
-      if (!chatgptSeenAllTurns) {
-        document.querySelectorAll<HTMLElement>('[data-testid^="conversation-turn-"]').forEach(el => {
-          const m = el.getAttribute('data-testid')?.match(/conversation-turn-(\d+)$/);
-          if (m) chatgptAllSeenTurns.add(parseInt(m[1], 10));
-        });
-        // Check if accumulated turns are contiguous from 1 to max
-        if (chatgptAllSeenTurns.has(1)) {
-          const maxSeen = Math.max(...chatgptAllSeenTurns);
-          let contiguous = true;
-          for (let i = 2; i <= maxSeen; i++) {
-            if (!chatgptAllSeenTurns.has(i)) { contiguous = false; break; }
-          }
-          if (contiguous) chatgptSeenAllTurns = true;
-        }
-      }
-
-      const hasMissing = !chatgptSeenAllTurns && chatgptHasMissingTurns();
-
-      if (!chatgptSeenAllTurns && hasMissing) {
-        chatgptScrollWarnActive = true;
-        chatgptAllLoadedAt = 0;
-        const notice = d.createElement('div');
-        notice.style.cssText =
-          'font-size:11px;padding:0 0 6px 0;color:#b35c00;line-height:1.4;';
-        notice.textContent = '⚠ Scroll through the chat to load all prompts';
-        list.appendChild(notice);
-      } else if (chatgptScrollWarnActive) {
-        if (chatgptAllLoadedAt === 0) chatgptAllLoadedAt = Date.now();
-        if (Date.now() - chatgptAllLoadedAt < 2500) {
+      // Warn until every prompt from the first exchange on has been seen without gaps,
+      // then briefly confirm.
+      if (chatgptPromptCache.size > 0) {
+        if (!chatgptAllPromptsSeen()) {
+          chatgptScrollWarnActive = true;
+          chatgptAllLoadedAt = 0;
           const notice = d.createElement('div');
           notice.style.cssText =
-            'font-size:11px;padding:0 0 6px 0;color:#2e7d32;line-height:1.4;';
-          notice.textContent = `✓ All ${chatgptPromptCache.size || userTuples.length} prompts loaded`;
+            'font-size:11px;padding:0 0 6px 0;color:#b35c00;line-height:1.4;';
+          notice.textContent = '⚠ Scroll through the chat to load all prompts';
           list.appendChild(notice);
-        } else {
-          chatgptScrollWarnActive = false;
-          chatgptAllLoadedAt = 0;
+        } else if (chatgptScrollWarnActive) {
+          if (chatgptAllLoadedAt === 0) chatgptAllLoadedAt = Date.now();
+          if (Date.now() - chatgptAllLoadedAt < 2500) {
+            const notice = d.createElement('div');
+            notice.style.cssText =
+              'font-size:11px;padding:0 0 6px 0;color:#2e7d32;line-height:1.4;';
+            notice.textContent = `✓ All ${chatgptPromptCache.size} prompts loaded`;
+            list.appendChild(notice);
+          } else {
+            chatgptScrollWarnActive = false;
+            chatgptAllLoadedAt = 0;
+          }
         }
       }
     }
 
-    // Build the flat list of items to render. For ChatGPT, merge the persistent cache
-    // (sorted by turn number) with any live turns that lack turn numbers (old format).
-    // For other sites, use the live DOM tuples directly.
-    type ListEntry = { idx: number; el: HTMLElement; text: string; live: boolean; turnNum: number | null };
+    // Build the flat list of items to render. For ChatGPT, list cached prompts in
+    // reconstructed order (marking gaps between segments), plus any live prompt that
+    // has no turn key. For other sites, use the live DOM tuples directly.
+    type ListEntry = {
+      idx: number; el: HTMLElement; text: string; live: boolean;
+      turnKey: string | null; gapBefore: boolean;
+    };
     const listEntries: ListEntry[] = [];
 
     if (getSite() === 'chatgpt' && chatgptPromptCache.size > 0) {
       const liveIdxByEl = new Map(userTuples.map(({ idx, el }) => [el, idx]));
-      for (const [tn, { text, el }] of Array.from(chatgptPromptCache.entries()).sort(([a], [b]) => a - b)) {
-        const idx = liveIdxByEl.get(el) ?? -1;
-        listEntries.push({ idx, el, text, live: document.contains(el), turnNum: tn });
-      }
-      // Also include live turns without a turn number (old ChatGPT DOM format)
+      chatgptSegments.forEach((seg, segIdx) => {
+        seg.forEach((key, i) => {
+          const cached = chatgptPromptCache.get(key);
+          if (!cached) return;
+          const idx = liveIdxByEl.get(cached.el) ?? -1;
+          listEntries.push({
+            idx, el: cached.el, text: cached.text, live: idx >= 0 && document.contains(cached.el),
+            turnKey: key, gapBefore: segIdx > 0 && i === 0,
+          });
+        });
+      });
       for (const { idx, el } of userTuples) {
-        if (getChatgptTurnNumber(el) === null) {
-          const clone = el.cloneNode(true) as HTMLElement;
-          clone.querySelectorAll('.cw-role-label,[data-cw-hidden="1"],.cdk-visually-hidden').forEach(n => n.remove());
-          listEntries.push({ idx, el, text: (clone.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60), live: true, turnNum: null });
+        if (getChatgptTurnKey(el) === null) {
+          listEntries.push({ idx, el, text: promptText(el), live: true, turnKey: null, gapBefore: false });
         }
       }
     } else {
       for (const { idx, el } of userTuples) {
-        const clone = el.cloneNode(true) as HTMLElement;
-        // Also strip .cdk-visually-hidden (Gemini screen-reader "You said" labels)
-        clone.querySelectorAll('.cw-role-label,[data-cw-hidden="1"],.cdk-visually-hidden').forEach(n => n.remove());
-        listEntries.push({ idx, el, text: (clone.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60), live: true, turnNum: null });
+        listEntries.push({ idx, el, text: promptText(el), live: true, turnKey: null, gapBefore: false });
       }
     }
 
@@ -1336,7 +1493,14 @@ function ensureFloatingUI() {
       empty.style.fontSize = '12px';
       list.appendChild(empty);
     } else {
-      for (const { idx, el: node, text, live, turnNum } of listEntries) {
+      for (const { idx, el: node, text, live, turnKey, gapBefore } of listEntries) {
+        if (gapBefore) {
+          const gap = d.createElement('div');
+          gap.textContent = '··· not loaded yet — scroll to load ···';
+          gap.style.cssText = 'font-size:11px;color:#b35c00;opacity:0.85;margin:4px 0;';
+          list.appendChild(gap);
+        }
+
         const item = d.createElement('div');
         item.className = 'chatworthy-item';
         item.style.display = 'flex';
@@ -1351,10 +1515,11 @@ function ensureFloatingUI() {
         cb.type = 'checkbox';
         cb.classList.add('cw-cb');
         cb.addEventListener('change', updateControlsState);
-        if (live && idx >= 0) {
+        if (turnKey !== null) {
+          cb.dataset.cwTurnkey = turnKey;
+          cb.checked = prevCheckedKeys.has(turnKey);
+        } else if (live && idx >= 0) {
           cb.dataset.uindex = String(idx);
-        } else if (turnNum !== null) {
-          cb.dataset.cwTurnnum = String(turnNum);
         }
         cb.addEventListener('click', (e) => e.stopPropagation());
         cb.addEventListener('keydown', (e) => e.stopPropagation());
@@ -1370,37 +1535,38 @@ function ensureFloatingUI() {
           // Fully interactive: IO selection, precise click-to-scroll
           listItemByTupleIndex.set(idx, item);
 
+          const select = () => {
+            chatgptWalkToken++; // cancel any walk in progress
+            lastManualSelectAt = Date.now();
+            manuallySelectedChatEl = node;
+            manuallySelectedTurnKey = turnKey;
+            setSelectedListItem(item);
+            scrollPromptEl(node);
+          };
+
           item.addEventListener('click', (e) => {
             const target = e.target as HTMLElement;
             if (target.tagName.toLowerCase() === 'input') return;
-            lastManualSelectAt = Date.now();
-            manuallySelectedChatEl = node;
-            manuallySelectedTurnNum = getChatgptTurnNumber(node);
-            setSelectedListItem(item);
-            scrollPromptEl(node);
+            select();
           });
 
           item.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              lastManualSelectAt = Date.now();
-              manuallySelectedChatEl = node;
-              manuallySelectedTurnNum = getChatgptTurnNumber(node);
-              setSelectedListItem(item);
-              scrollPromptEl(node);
+              select();
             }
           });
-        } else if (turnNum !== null) {
-          // Stale cached item: clicking scrolls ChatGPT to the approximate position so
-          // the turn loads and the item becomes precisely interactive.
+        } else if (turnKey !== null) {
+          // Cached item no longer in the DOM: walk ChatGPT's scroll toward it until it
+          // loads, then jump to it.
           item.addEventListener('click', (e) => {
             const target = e.target as HTMLElement;
             if (target.tagName.toLowerCase() === 'input') return;
             lastManualSelectAt = Date.now();
-            manuallySelectedTurnNum = turnNum;
+            manuallySelectedTurnKey = turnKey;
             manuallySelectedChatEl = null;
             setSelectedListItem(item);
-            approximateScrollToChatGPTTurn(turnNum);
+            void walkToChatgptTurn(turnKey);
           });
         }
 
@@ -1408,7 +1574,7 @@ function ensureFloatingUI() {
       }
 
       // After rebuild, re-select the item the user last clicked (if still live).
-      // Prefer turn-number matching (stable across ChatGPT element re-creation)
+      // Prefer turn-key matching (stable across ChatGPT element re-creation)
       // and fall back to element-reference matching for non-ChatGPT sites.
       //
       // The grace period (MANUAL_GRACE_MS) is set by the original user CLICK and
@@ -1420,15 +1586,15 @@ function ensureFloatingUI() {
         const graceActive = Date.now() - lastManualSelectAt < MANUAL_GRACE_MS;
         if (!graceActive) {
           // Grace expired: clear manual state so we stop restoring a stale pick.
-          manuallySelectedTurnNum = null;
+          manuallySelectedTurnKey = null;
           manuallySelectedChatEl = null;
         }
 
         let restoredItem: HTMLDivElement | null = null;
 
-        if (manuallySelectedTurnNum !== null) {
+        if (manuallySelectedTurnKey !== null) {
           const matchEntry = listEntries.find(
-            ({ turnNum: tn, live }) => live && tn === manuallySelectedTurnNum
+            ({ turnKey, live }) => live && turnKey === manuallySelectedTurnKey
           );
           if (matchEntry && matchEntry.idx >= 0) {
             restoredItem = listItemByTupleIndex.get(matchEntry.idx) ?? null;
@@ -1504,6 +1670,18 @@ function ensureStyles() {
   /* Row + checkbox cursors */
   #${ROOT_ID} .chatworthy-item { cursor: pointer; }
   #${ROOT_ID} .chatworthy-item input[type="checkbox"] { cursor: pointer; margin-left: 2px; }
+  /* ChatGPT's page CSS sets appearance:none and 0x0 on checkboxes; restore native ones */
+  #${ROOT_ID} input[type="checkbox"] {
+    appearance: auto !important;
+    -webkit-appearance: checkbox !important;
+    display: inline-block !important;
+    width: 13px !important;
+    height: 13px !important;
+    min-width: 13px !important;
+    flex: 0 0 auto !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
 
   /* Selected list item */
   #${ROOT_ID} .chatworthy-item--selected .chatworthy-item-text {
