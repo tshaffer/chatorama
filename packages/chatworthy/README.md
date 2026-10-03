@@ -15,7 +15,7 @@ Full user documentation: see the **Chatworthy** section of [`USER_MANUAL.md`](..
 ## Use
 - Open a chat on a supported site. A draggable **Chatworthy** panel lists every prompt; position and collapsed state are remembered.
 - Click a list item to scroll to that prompt. Check prompts (or use **All** / **None**), then click **Export** to download `<chat-title>-<YYYYMMDDHHmm>.md`.
-- On ChatGPT, if the panel says **⚠ Scroll through the chat to load all prompts**, scroll the conversation until it reports all prompts loaded.
+- On ChatGPT, the page keeps only a few exchanges loaded at a time; Chatworthy remembers every prompt it has seen. If the panel says **⚠ Scroll through the chat to load all prompts**, scroll up to the very top until it reports all prompts loaded. A `··· not loaded yet ···` line marks a skipped section. Clicking a prompt the page has dropped scrolls back to it.
 - **Show Status** / **Mark Reviewed** use the Chatalog backend (`http://localhost:8008`) to show and set the chat's review status.
 - Kill switch: `localStorage['chatworthy:disable'] = '1'` or `?chatworthy-disable` in the URL.
 

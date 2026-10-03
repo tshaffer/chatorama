@@ -302,7 +302,15 @@ Chatworthy works on **ChatGPT** (`chatgpt.com`, `chat.openai.com`), **Gemini** (
 - **Checkboxes** select prompts. **All** and **None** select or clear every prompt, including ones the chat has unloaded while scrolling.
 - **Export** downloads the selected prompt/response pairs as Markdown with YAML front matter: `<chat-title>-<YYYYMMDDHHmm>.md`. Import that file into Chatalog with **Import file**.
 - **Hide List / Show List** collapses the panel; this is remembered.
-- On ChatGPT, long chats load lazily. If you see **"⚠ Scroll through the chat to load all prompts"**, scroll through the conversation until **"✓ All N prompts loaded"** appears. Prompts the page has dropped can still be exported, but their responses cannot.
+
+#### Long ChatGPT chats
+ChatGPT keeps only a few exchanges on the page at a time, loading older ones as you scroll up and dropping ones you've scrolled away from. Chatworthy remembers every prompt it has seen, so the list keeps growing as you scroll and prompts don't disappear.
+
+- **"⚠ Scroll through the chat to load all prompts"** shows until Chatworthy has seen the whole conversation. Scroll slowly up to the very top. Once nothing older loads for about two seconds, the message changes to **"✓ All N prompts loaded"**. In any chat long enough to scroll, the warning shows until you've reached the top once, even if every prompt is already listed.
+- **"··· not loaded yet — scroll to load ···"** marks a gap in the list. Gaps happen when you jump with the scrollbar and skip part of the chat. Scroll through that part to fill the gap in.
+- **Clicking a prompt the page has dropped** scrolls the chat toward it, step by step, until ChatGPT loads it, then jumps to it. In a long chat this can take several seconds.
+- **Checked prompts stay checked** while you scroll, even after the page drops them.
+- **Export** writes the selected prompts in conversation order, each with its response, including prompts the page has dropped.
 
 ### Review status (needs Chatalog running)
 - **Show Status / Hide Status** toggles a status row: chat ID, registry status (UNREGISTERED / UNREVIEWED / REVIEWED), and backend health.
