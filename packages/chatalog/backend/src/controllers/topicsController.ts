@@ -153,6 +153,34 @@ export async function reorderNotesForTopic(req: Request, res: Response) {
  * Body: { name: string }
  * Query: preserveSlug=1 to keep existing slug (default: regenerate to match name)
  */
+export async function moveTopic(req: Request, res: Response) {
+  try {
+    const { subjectId, topicId } = req.params;
+    const { destSubjectId } = req.body as { destSubjectId?: string };
+
+    if (!destSubjectId?.trim()) {
+      return res.status(400).json({ message: 'destSubjectId is required.' });
+    }
+    if (destSubjectId === subjectId) {
+      return res.status(400).json({ message: 'Source and destination subjects are the same.' });
+    }
+
+    const topic = await TopicModel.findOne({ _id: topicId, subjectId }).orFail();
+    topic.subjectId = destSubjectId;
+    await topic.save();
+
+    await NoteModel.updateMany({ topicId }, { $set: { subjectId: destSubjectId } });
+
+    return res.json(topic.toJSON());
+  } catch (err: any) {
+    if (err?.name === 'DocumentNotFoundError') {
+      return res.status(404).json({ message: 'Topic not found.' });
+    }
+    console.error('moveTopic error', err);
+    return res.status(500).json({ message: 'Internal error.' });
+  }
+}
+
 export async function renameTopic(req: Request, res: Response) {
   try {
     const { subjectId, topicId } = req.params;

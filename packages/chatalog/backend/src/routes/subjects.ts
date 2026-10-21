@@ -10,6 +10,7 @@ import {
   listTopicsForSubjectId,
   listNotesForSubjectTopicIds,
   renameTopic,
+  moveTopic,
   reorderNotesForTopic,
   reorderTopicsForSubject,
 } from '../controllers/topicsController';
@@ -57,6 +58,9 @@ subjectsRouter.patch(
   '/:subjectId/topics/:topicId/notes/reorder',
   reorderNotesForTopic,
 );
+
+// PATCH /api/v1/subjects/:subjectId/topics/:topicId/move
+subjectsRouter.patch('/:subjectId/topics/:topicId/move', moveTopic);
 
 // /api/v1/subjects/:subjectId/topics/:topicId
 subjectsRouter.patch('/:subjectId/topics/:topicId', renameTopic);

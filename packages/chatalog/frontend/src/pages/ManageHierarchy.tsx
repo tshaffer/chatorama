@@ -21,6 +21,8 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
+import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove';
+import { IconButton } from '@mui/material';
 import { skipToken } from '@reduxjs/toolkit/query';
 import {
   useGetSubjectsQuery,
@@ -44,6 +46,7 @@ import ReorderSubjectsDialog, {
   type ReorderItem as ReorderSubjectItem,
 } from '../features/subjects/ReorderSubjectsDialog';
 import ReorderTopicsDialog from '../features/subjects/ReorderTopicsDialog';
+import MoveTopicDialog from '../features/subjects/MoveTopicDialog';
 
 
 const slugify = (s: string) =>
@@ -202,6 +205,7 @@ const SubjectCard = memo(function SubjectCard(props: {
   const [deleteTopic] = useDeleteTopicMutation();
   const [renameTopic] = useRenameTopicMutation();
   const [topicPendingDeletion, setTopicPendingDeletion] = useState<{ id: string; name: string } | null>(null);
+  const [moveTopicTarget, setMoveTopicTarget] = useState<{ id: string; name: string } | null>(null);
 
   const {
     data: topicNoteCountData,
@@ -382,48 +386,57 @@ const SubjectCard = memo(function SubjectCard(props: {
             }
 
             return (
-              <Tooltip
-                key={tid || t.name}
-                title="Click to open; double-click to rename"
-              >
-                <Chip
-                  size="small"
-                  label={t.name}
-                  clickable
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // arm a per-chip nav timer
-                    const prev = chipTimersRef.current[tid];
-                    if (prev) clearTimeout(prev);
-                    chipTimersRef.current[tid] = window.setTimeout(() => {
-                      chipTimersRef.current[tid] = null;
-                      navigate(topicHref);
-                    }, 250);
-                  }}
-                  onDoubleClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    // cancel the armed single-click nav for this chip
-                    const timer = chipTimersRef.current[tid];
-                    if (timer) {
-                      clearTimeout(timer);
-                      chipTimersRef.current[tid] = null;
-                    }
-                    beginEditTopic(t);
-                  }}
-                  onDelete={async (e) => {
-                    (e as any)?.stopPropagation?.();
-                    (e as any)?.preventDefault?.();
-                    const timer = chipTimersRef.current[tid];
-                    if (timer) {
-                      clearTimeout(timer);
-                      chipTimersRef.current[tid] = null;
-                    }
-                    setTopicPendingDeletion({ id: tid, name: t.name });
-                  }}
-                  sx={{ mr: 0.5, mb: 0.5 }}
-                />
-              </Tooltip>
+              <Box key={tid || t.name} sx={{ display: 'inline-flex', alignItems: 'center', mr: 0.5, mb: 0.5 }}>
+                <Tooltip title="Click to open; double-click to rename">
+                  <Chip
+                    size="small"
+                    label={t.name}
+                    clickable
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // arm a per-chip nav timer
+                      const prev = chipTimersRef.current[tid];
+                      if (prev) clearTimeout(prev);
+                      chipTimersRef.current[tid] = window.setTimeout(() => {
+                        chipTimersRef.current[tid] = null;
+                        navigate(topicHref);
+                      }, 250);
+                    }}
+                    onDoubleClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      // cancel the armed single-click nav for this chip
+                      const timer = chipTimersRef.current[tid];
+                      if (timer) {
+                        clearTimeout(timer);
+                        chipTimersRef.current[tid] = null;
+                      }
+                      beginEditTopic(t);
+                    }}
+                    onDelete={async (e) => {
+                      (e as any)?.stopPropagation?.();
+                      (e as any)?.preventDefault?.();
+                      const timer = chipTimersRef.current[tid];
+                      if (timer) {
+                        clearTimeout(timer);
+                        chipTimersRef.current[tid] = null;
+                      }
+                      setTopicPendingDeletion({ id: tid, name: t.name });
+                    }}
+                  />
+                </Tooltip>
+                <Tooltip title="Move to another subject">
+                  <IconButton
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMoveTopicTarget({ id: tid, name: t.name });
+                    }}
+                  >
+                    <DriveFileMoveIcon fontSize="inherit" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
             );
           })}
         </Stack>
@@ -462,6 +475,16 @@ const SubjectCard = memo(function SubjectCard(props: {
           onSave={handleSaveReorderTopics}
           loading={reorderingTopics}
         />
+
+        {moveTopicTarget && (
+          <MoveTopicDialog
+            open={Boolean(moveTopicTarget)}
+            onClose={() => setMoveTopicTarget(null)}
+            topicId={moveTopicTarget.id}
+            topicName={moveTopicTarget.name}
+            sourceSubjectId={props.subjectId}
+          />
+        )}
 
       </CardContent>
 

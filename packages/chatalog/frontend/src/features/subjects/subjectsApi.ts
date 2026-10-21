@@ -211,6 +211,22 @@ export const subjectsApi = baseApi.injectEndpoints({
       ],
     }),
 
+    moveTopic: build.mutation<
+      Topic,
+      { subjectId: string; topicId: string; destSubjectId: string }
+    >({
+      query: ({ subjectId, topicId, destSubjectId }) => ({
+        url: `subjects/${subjectId}/topics/${topicId}/move`,
+        method: 'PATCH',
+        body: { destSubjectId },
+      }),
+      invalidatesTags: (_r, _e, { subjectId, topicId, destSubjectId }) => [
+        { type: 'Topic', id: `LIST:${subjectId}` },
+        { type: 'Topic', id: `LIST:${destSubjectId}` },
+        { type: 'Topic', id: topicId },
+      ],
+    }),
+
     /** NEW: reorder topics within a subject */
     reorderTopics: build.mutation<
       void,
@@ -268,4 +284,5 @@ export const {
   useGetTopicNoteCountQuery,
   useReorderSubjectsMutation,
   useReorderTopicsMutation,
+  useMoveTopicMutation,
 } = subjectsApi;
