@@ -14,9 +14,11 @@ import FlashOnOutlinedIcon from '@mui/icons-material/FlashOnOutlined';
 import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import SettingsIcon from '@mui/icons-material/Settings';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 
 import QuickCaptureDialog from './features/quickNotes/QuickCaptureDialog';
 import SettingsDialog from './features/settings/SettingsDialog';
+import HelpDialog from './features/help/HelpDialog';
 import SearchBox from './components/SearchBox';
 import { parseSearchInput } from './features/search/queryParser';
 import { useAppDispatch, useAppSelector } from './store';
@@ -72,6 +74,7 @@ export default function AppShell() {
   const searchDraftText = useAppSelector(selectSearchDraftText);
   const [qcOpen, setQcOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const { openImport: openGoogleDocImport, dialog: googleDocImportDialog } =
     useGoogleDocImportDialog({
       onImported: (noteId) => navigate(`/n/${noteId}`),
@@ -216,6 +219,12 @@ export default function AppShell() {
               </IconButton>
             </Tooltip>
 
+            <Tooltip title="Help">
+              <IconButton color="inherit" onClick={() => setHelpOpen(true)}>
+                <HelpOutlineIcon />
+              </IconButton>
+            </Tooltip>
+
             <Tooltip title="Settings">
               <IconButton color="inherit" onClick={() => setSettingsOpen(true)}>
                 <SettingsIcon />
@@ -232,6 +241,8 @@ export default function AppShell() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
       />
+
+      <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
 
       {googleDocImportDialog}
 

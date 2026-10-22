@@ -19,6 +19,7 @@
     "backfill:google-doc-embeddings": "tsx src/scripts/backfillGoogleDocEmbeddings.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0",
     "@chatorama/chatalog-shared": "file:../shared",
     "@types/unzipper": "^0.10.11",
     "cors": "^2.8.5",
