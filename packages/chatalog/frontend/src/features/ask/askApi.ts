@@ -2,6 +2,9 @@ export interface AskSource {
   id: string;
   title: string;
   docKind: 'note' | 'recipe';
+  noteSlug?: string;
+  subjectSlug?: string;
+  topicSlug?: string;
 }
 
 export interface AskConversationTurn {

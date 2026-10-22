@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -19,12 +20,26 @@ interface ConversationEntry extends AskConversationTurn {
   sources: AskSource[];
 }
 
+function sourceUrl(src: AskSource): string | null {
+  const { id, noteSlug, subjectSlug, topicSlug } = src;
+  if (!subjectSlug || !topicSlug || !noteSlug) return null;
+  return `/s/${subjectSlug}/t/${topicSlug}/n/${id}-${noteSlug}`;
+}
+
 export default function AskDialog({ open, onClose }: AskDialogProps) {
+  const navigate = useNavigate();
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversation, setConversation] = useState<ConversationEntry[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const handleSourceClick = useCallback((src: AskSource) => {
+    const url = sourceUrl(src);
+    if (!url) return;
+    onClose();
+    navigate(url);
+  }, [navigate, onClose]);
 
   useEffect(() => {
     if (bottomRef.current) {
@@ -134,20 +149,25 @@ export default function AskDialog({ open, onClose }: AskDialogProps) {
                     <Typography variant="caption" color="text.secondary" sx={{ mr: 0.75 }}>
                       Sources consulted:
                     </Typography>
-                    {entry.sources.map((src) => (
-                      <Chip
-                        key={src.id}
-                        size="small"
-                        variant="outlined"
-                        icon={
-                          src.docKind === 'recipe'
-                            ? <RestaurantMenuIcon sx={{ fontSize: 13 }} />
-                            : <DescriptionOutlinedIcon sx={{ fontSize: 13 }} />
-                        }
-                        label={src.title}
-                        sx={{ mr: 0.5, mt: 0.5, fontSize: 11 }}
-                      />
-                    ))}
+                    {entry.sources.map((src) => {
+                      const url = sourceUrl(src);
+                      return (
+                        <Chip
+                          key={src.id}
+                          size="small"
+                          variant="outlined"
+                          icon={
+                            src.docKind === 'recipe'
+                              ? <RestaurantMenuIcon sx={{ fontSize: 13 }} />
+                              : <DescriptionOutlinedIcon sx={{ fontSize: 13 }} />
+                          }
+                          label={src.title}
+                          clickable={!!url}
+                          onClick={url ? () => handleSourceClick(src) : undefined}
+                          sx={{ mr: 0.5, mt: 0.5, fontSize: 11, cursor: url ? 'pointer' : 'default' }}
+                        />
+                      );
+                    })}
                   </Box>
                 )}
               </Box>

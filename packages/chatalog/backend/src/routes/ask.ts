@@ -2,6 +2,8 @@ import { Router } from 'express';
 import type Anthropic from '@anthropic-ai/sdk';
 import { getClaudeClient } from '../ai/claudeClient';
 import { NoteModel } from '../models/Note';
+import { SubjectModel } from '../models/Subject';
+import { TopicModel } from '../models/Topic';
 
 const askRouter = Router();
 
@@ -30,7 +32,7 @@ async function toolSearchNotes(query: string) {
   )
     .sort({ score: { $meta: 'textScore' } })
     .limit(SEARCH_LIMIT)
-    .select({ title: 1, markdown: 1, tags: 1, updatedAt: 1 })
+    .select({ title: 1, markdown: 1, tags: 1, updatedAt: 1, slug: 1, subjectId: 1, topicId: 1 })
     .lean();
 
   return docs.map((doc: any) => ({
@@ -40,6 +42,9 @@ async function toolSearchNotes(query: string) {
     tags: doc.tags || [],
     wordCount: (doc.markdown || '').split(/\s+/).filter(Boolean).length,
     updatedAt: doc.updatedAt,
+    _slug: doc.slug,
+    _subjectId: doc.subjectId,
+    _topicId: doc.topicId,
   }));
 }
 
@@ -61,6 +66,9 @@ async function toolSearchRecipes(query: string) {
       'recipe.category': 1,
       'recipe.ingredientsRaw': 1,
       'recipe.stepsRaw': 1,
+      slug: 1,
+      subjectId: 1,
+      topicId: 1,
     })
     .lean();
 
@@ -78,6 +86,9 @@ async function toolSearchRecipes(query: string) {
       category: r.category ?? [],
       ingredients: (r.ingredientsRaw ?? []).slice(0, 30),
       instructions: (r.stepsRaw ?? []).slice(0, 10),
+      _slug: doc.slug,
+      _subjectId: doc.subjectId,
+      _topicId: doc.topicId,
     };
   });
 }
@@ -167,6 +178,34 @@ interface Source {
   id: string;
   title: string;
   docKind: 'note' | 'recipe';
+  noteSlug?: string;
+  subjectId?: string;
+  topicId?: string;
+  subjectSlug?: string;
+  topicSlug?: string;
+}
+
+async function enrichSourcesWithSlugs(sources: Map<string, Source>): Promise<void> {
+  const subjectIds = new Set<string>();
+  const topicIds = new Set<string>();
+  for (const src of sources.values()) {
+    if (src.subjectId) subjectIds.add(src.subjectId);
+    if (src.topicId) topicIds.add(src.topicId);
+  }
+  const [subjects, topics] = await Promise.all([
+    subjectIds.size
+      ? SubjectModel.find({ _id: { $in: Array.from(subjectIds) } }).select({ _id: 1, slug: 1 }).lean()
+      : [],
+    topicIds.size
+      ? TopicModel.find({ _id: { $in: Array.from(topicIds) } }).select({ _id: 1, slug: 1 }).lean()
+      : [],
+  ]);
+  const subjectSlugMap = new Map((subjects as any[]).map((s) => [String(s._id), s.slug as string]));
+  const topicSlugMap = new Map((topics as any[]).map((t) => [String(t._id), t.slug as string]));
+  for (const src of sources.values()) {
+    if (src.subjectId) src.subjectSlug = subjectSlugMap.get(src.subjectId);
+    if (src.topicId) src.topicSlug = topicSlugMap.get(src.topicId);
+  }
 }
 
 askRouter.post('/', async (req, res) => {
@@ -211,6 +250,7 @@ askRouter.post('/', async (req, res) => {
       if (response.stop_reason === 'end_turn') {
         const textBlock = response.content.find((b) => b.type === 'text');
         const answer = textBlock?.type === 'text' ? textBlock.text : '';
+        await enrichSourcesWithSlugs(accessedSources);
         res.json({ answer, sources: Array.from(accessedSources.values()) });
         return;
       }
@@ -227,13 +267,19 @@ askRouter.post('/', async (req, res) => {
             const input = block.input as { query: string };
             result = await toolSearchNotes(input.query);
             for (const item of result as any[]) {
-              accessedSources.set(item.id, { id: item.id, title: item.title, docKind: 'note' });
+              accessedSources.set(item.id, {
+                id: item.id, title: item.title, docKind: 'note',
+                noteSlug: item._slug, subjectId: item._subjectId, topicId: item._topicId,
+              });
             }
           } else if (block.name === 'search_recipes') {
             const input = block.input as { query: string };
             result = await toolSearchRecipes(input.query);
             for (const item of result as any[]) {
-              accessedSources.set(item.id, { id: item.id, title: item.title, docKind: 'recipe' });
+              accessedSources.set(item.id, {
+                id: item.id, title: item.title, docKind: 'recipe',
+                noteSlug: item._slug, subjectId: item._subjectId, topicId: item._topicId,
+              });
             }
           } else if (block.name === 'get_note') {
             const input = block.input as { id: string };
@@ -242,9 +288,10 @@ askRouter.post('/', async (req, res) => {
               const r = result as any;
               const existing = accessedSources.get(r.id);
               accessedSources.set(r.id, {
-                id: r.id,
-                title: r.title,
-                docKind: existing?.docKind ?? 'note',
+                id: r.id, title: r.title, docKind: existing?.docKind ?? 'note',
+                noteSlug: existing?.noteSlug,
+                subjectId: existing?.subjectId,
+                topicId: existing?.topicId,
               });
             }
           }
