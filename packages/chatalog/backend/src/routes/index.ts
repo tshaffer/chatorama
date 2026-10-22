@@ -20,6 +20,7 @@ import recipesRouter from './recipes';
 import { searchRouter } from './search';
 import savedSearchesRouter from './savedSearches';
 import helpRouter from './help';
+import askRouter from './ask';
 
 export function createRoutes(app: Express) {
   const api = Router();
@@ -55,6 +56,7 @@ export function createRoutes(app: Express) {
   api.use('/saved-searches', savedSearchesRouter);
   api.use('/chat-registry', chatRegistryRouter);
   api.use('/help', helpRouter);
+  api.use('/ask', askRouter);
 
   app.use('/api/v1', notesMoveRouter);
 

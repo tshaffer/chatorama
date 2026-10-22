@@ -15,10 +15,12 @@ import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import SettingsIcon from '@mui/icons-material/Settings';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 
 import QuickCaptureDialog from './features/quickNotes/QuickCaptureDialog';
 import SettingsDialog from './features/settings/SettingsDialog';
 import HelpDialog from './features/help/HelpDialog';
+import AskDialog from './features/ask/AskDialog';
 import SearchBox from './components/SearchBox';
 import { parseSearchInput } from './features/search/queryParser';
 import { useAppDispatch, useAppSelector } from './store';
@@ -75,6 +77,7 @@ export default function AppShell() {
   const [qcOpen, setQcOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
   const { openImport: openGoogleDocImport, dialog: googleDocImportDialog } =
     useGoogleDocImportDialog({
       onImported: (noteId) => navigate(`/n/${noteId}`),
@@ -219,6 +222,12 @@ export default function AppShell() {
               </IconButton>
             </Tooltip>
 
+            <Tooltip title="Ask (search with AI)">
+              <IconButton color="inherit" onClick={() => setAskOpen(true)}>
+                <AutoAwesomeIcon />
+              </IconButton>
+            </Tooltip>
+
             <Tooltip title="Help">
               <IconButton color="inherit" onClick={() => setHelpOpen(true)}>
                 <HelpOutlineIcon />
@@ -242,6 +251,7 @@ export default function AppShell() {
         onClose={() => setSettingsOpen(false)}
       />
 
+      <AskDialog open={askOpen} onClose={() => setAskOpen(false)} />
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
 
       {googleDocImportDialog}

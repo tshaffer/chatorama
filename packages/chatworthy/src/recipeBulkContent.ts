@@ -1,5 +1,5 @@
 // packages/chatworthy/src/recipeBulkContent.ts
-// NYT Cooking Recipe Box bulk importer (dev command).
+// NYT Cooking Recipe Box bulk importer — visible UI + console API.
 
 import { extractRecipeJsonLdFromDocument } from './recipeExtractor';
 import { API_BASE } from './config';
@@ -14,6 +14,17 @@ const DEFAULTS = {
   delayMsMax: 700,
   maxPages: 40,
 };
+
+// UI element IDs
+const BULK_ROOT_ID = 'chatworthy-bulk-root';
+const BULK_STATUS_ID = 'chatworthy-bulk-status';
+const BULK_COUNTERS_ID = 'chatworthy-bulk-counters';
+const BULK_BTN_IMPORT_ID = 'chatworthy-bulk-btn-import';
+const BULK_BTN_RETRY_ID = 'chatworthy-bulk-btn-retry';
+const BULK_BTN_CANCEL_ID = 'chatworthy-bulk-btn-cancel';
+
+// Set to true to stop an in-progress import
+let abortImport = false;
 
 type FailedEntry = { url: string; error: string };
 
@@ -33,6 +44,17 @@ type BulkOptions = {
   retryFailed?: boolean;
   maxPages?: number;
   maxScrolls?: number;
+  onProgress?: (counts: { discovered: number; imported: number; skipped: number; failed: number }) => void;
+};
+
+type UiState = {
+  status: string;
+  isError?: boolean;
+  running: boolean;
+  discovered: number;
+  imported: number;
+  skipped: number;
+  failed: number;
 };
 
 function isTopWindow() {
@@ -126,7 +148,7 @@ type ResultsCounts = {
 };
 
 function parseResultsCountText(text: string): ResultsCounts | null {
-  const match = text.match(/([\d,]+)\s*[\u2013-]\s*([\d,]+)\s*of\s*([\d,]+)/i);
+  const match = text.match(/([\d,]+)\s*[–-]\s*([\d,]+)\s*of\s*([\d,]+)/i);
   if (!match) return null;
   const start = Number(match[1].replace(/,/g, ''));
   const end = Number(match[2].replace(/,/g, ''));
@@ -143,7 +165,7 @@ function findResultsCounts(): ResultsCounts | null {
     .map((el) => el.textContent?.trim())
     .filter((t): t is string => Boolean(t));
   const matches = candidates
-    .filter((text) => /[\d,]+\s*[\u2013-]\s*[\d,]+\s*of\s*[\d,]+/i.test(text))
+    .filter((text) => /[\d,]+\s*[–-]\s*[\d,]+\s*of\s*[\d,]+/i.test(text))
     .sort((a, b) => a.length - b.length);
   const preferred = matches.find((text) => text.length <= 120) ?? matches[0];
   if (preferred) {
@@ -262,6 +284,7 @@ async function runBulkImport(options: BulkOptions = {}) {
   const maxPages = options.maxPages ?? options.maxScrolls ?? DEFAULTS.maxPages;
   const dryRun = Boolean(options.dryRun);
   const retryFailed = Boolean(options.retryFailed);
+  const onProgress = options.onProgress;
 
   const discovery = await discoverRecipeUrls(maxPages);
   const discovered = discovery.urls;
@@ -299,6 +322,7 @@ async function runBulkImport(options: BulkOptions = {}) {
 
   async function worker() {
     while (queue.length) {
+      if (abortImport) break;
       const url = queue.shift();
       if (!url) break;
 
@@ -329,7 +353,16 @@ async function runBulkImport(options: BulkOptions = {}) {
         failedUrls: Array.from(failed.entries()).map(([u, error]) => ({ url: u, error })),
       });
 
-      await sleep(jitter(delayMsMin, delayMsMax));
+      onProgress?.({
+        discovered: discovered.length,
+        imported: imported.length,
+        skipped: skippedNow.length,
+        failed: failedNow.length,
+      });
+
+      if (!abortImport) {
+        await sleep(jitter(delayMsMin, delayMsMax));
+      }
     }
   }
 
@@ -361,11 +394,201 @@ async function runBulkImport(options: BulkOptions = {}) {
   };
 }
 
+// ─── Overlay UI ──────────────────────────────────────────────────────────────
+
+function updateUi(state: UiState) {
+  const statusEl = document.getElementById(BULK_STATUS_ID);
+  if (statusEl) {
+    statusEl.textContent = state.status;
+    statusEl.style.color = state.isError ? '#b91c1c' : '#444';
+  }
+
+  const countersEl = document.getElementById(BULK_COUNTERS_ID);
+  if (countersEl) {
+    if (state.discovered > 0) {
+      countersEl.textContent =
+        `Found: ${state.discovered} | Done: ${state.imported} | Skip: ${state.skipped} | Fail: ${state.failed}`;
+      countersEl.style.display = '';
+    } else {
+      countersEl.style.display = 'none';
+    }
+  }
+
+  const importBtn = document.getElementById(BULK_BTN_IMPORT_ID) as HTMLButtonElement | null;
+  if (importBtn) importBtn.disabled = state.running;
+
+  const retryBtn = document.getElementById(BULK_BTN_RETRY_ID) as HTMLButtonElement | null;
+  if (retryBtn) {
+    retryBtn.disabled = state.running;
+    retryBtn.style.display = state.failed > 0 && !state.running ? '' : 'none';
+  }
+
+  const cancelBtn = document.getElementById(BULK_BTN_CANCEL_ID) as HTMLButtonElement | null;
+  if (cancelBtn) {
+    cancelBtn.style.display = state.running ? '' : 'none';
+  }
+}
+
+function ensureBulkUi() {
+  if (document.getElementById(BULK_ROOT_ID)) return;
+
+  const root = document.createElement('div');
+  root.id = BULK_ROOT_ID;
+  Object.assign(root.style, {
+    position: 'fixed',
+    zIndex: '2147483647',
+    right: '16px',
+    top: '16px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    padding: '10px 12px',
+    borderRadius: '10px',
+    border: '1px solid rgba(0,0,0,0.15)',
+    background: 'rgba(255,255,255,0.97)',
+    boxShadow: '0 6px 16px rgba(0,0,0,0.12)',
+    fontSize: '12px',
+    minWidth: '210px',
+    maxWidth: '260px',
+    fontFamily: 'system-ui,-apple-system,sans-serif',
+  });
+
+  const titleEl = document.createElement('div');
+  titleEl.textContent = 'Chatworthy';
+  Object.assign(titleEl.style, { fontWeight: '700', fontSize: '13px', color: '#111' });
+
+  const statusEl = document.createElement('div');
+  statusEl.id = BULK_STATUS_ID;
+  statusEl.textContent = 'Ready to import';
+  Object.assign(statusEl.style, { color: '#444', fontSize: '11px' });
+
+  const countersEl = document.createElement('div');
+  countersEl.id = BULK_COUNTERS_ID;
+  countersEl.style.display = 'none';
+  Object.assign(countersEl.style, { color: '#666', fontSize: '11px' });
+
+  const btnRow = document.createElement('div');
+  Object.assign(btnRow.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '2px' });
+
+  function makeBtn(id: string, label: string, primary: boolean) {
+    const btn = document.createElement('button');
+    btn.id = id;
+    btn.type = 'button';
+    btn.textContent = label;
+    Object.assign(btn.style, {
+      fontSize: '11px',
+      padding: '5px 9px',
+      borderRadius: '6px',
+      border: '1px solid rgba(0,0,0,0.2)',
+      background: primary ? '#1a1a1a' : 'white',
+      color: primary ? 'white' : '#111',
+      cursor: 'pointer',
+      fontWeight: '600',
+    });
+    btn.onmouseenter = () => { btn.style.opacity = '0.85'; };
+    btn.onmouseleave = () => { btn.style.opacity = '1'; };
+    return btn;
+  }
+
+  const importBtn = makeBtn(BULK_BTN_IMPORT_ID, 'Import All', true);
+  const retryBtn = makeBtn(BULK_BTN_RETRY_ID, 'Retry Failed', false);
+  const cancelBtn = makeBtn(BULK_BTN_CANCEL_ID, 'Cancel', false);
+
+  retryBtn.style.display = 'none';
+  cancelBtn.style.display = 'none';
+
+  async function startImport(retryFailed: boolean) {
+    abortImport = false;
+    let discovered = 0;
+    let imported = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    updateUi({ status: 'Discovering recipes on this page…', running: true, discovered, imported, skipped, failed });
+
+    try {
+      const result = await runBulkImport({
+        retryFailed,
+        onProgress: (counts) => {
+          discovered = counts.discovered;
+          imported = counts.imported;
+          skipped = counts.skipped;
+          failed = counts.failed;
+          const done = imported + skipped + failed;
+          updateUi({
+            status: `Importing… (${done} / ${discovered})`,
+            running: true,
+            discovered,
+            imported,
+            skipped,
+            failed,
+          });
+        },
+      });
+
+      const finalDiscovered = result?.totalDiscovered ?? discovered;
+      const finalImported = result?.imported ?? imported;
+      const finalSkipped = result?.skipped ?? skipped;
+      const finalFailed = result?.failed ?? failed;
+
+      updateUi({
+        status: abortImport ? 'Cancelled' : 'Done ✅',
+        running: false,
+        discovered: finalDiscovered,
+        imported: finalImported,
+        skipped: finalSkipped,
+        failed: finalFailed,
+      });
+    } catch (err: any) {
+      updateUi({
+        status: err?.message ?? 'Import error',
+        isError: true,
+        running: false,
+        discovered,
+        imported,
+        skipped,
+        failed,
+      });
+    }
+  }
+
+  importBtn.onclick = () => void startImport(false);
+  retryBtn.onclick = () => void startImport(true);
+  cancelBtn.onclick = () => { abortImport = true; };
+
+  btnRow.appendChild(importBtn);
+  btnRow.appendChild(retryBtn);
+  btnRow.appendChild(cancelBtn);
+
+  root.appendChild(titleEl);
+  root.appendChild(statusEl);
+  root.appendChild(countersEl);
+  root.appendChild(btnRow);
+
+  (document.body || document.documentElement).appendChild(root);
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+
 function init() {
   if (!isTopWindow()) return;
+
   const host = (location.host || '').toLowerCase();
   if (host !== 'cooking.nytimes.com') return;
+
+  // Keep console API for backward compatibility
   (window as any).__chatworthyBulkImportRecipes = runBulkImport;
+
+  // Show visible UI on recipe-box page
+  const path = location.pathname || '';
+  if (path === '/recipe-box' || path.startsWith('/recipe-box/')) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', ensureBulkUi, { once: true });
+    } else {
+      ensureBulkUi();
+    }
+  }
+
   console.log('[chatworthy][recipe] bulk importer ready.');
 }
 
