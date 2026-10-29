@@ -5,12 +5,14 @@ export const quickNotes: HelpTopic = {
   title: 'Quick Notes',
   category: 'Content',
   order: 2,
-  keywords: ['quick note', 'capture', 'fast', 'inbox', 'draft', 'temporary'],
+  keywords: ['quick note', 'capture', 'fast', 'inbox', 'draft', 'temporary', 'image', 'png', 'insert image'],
   body: `Quick Notes are a fast-capture area for ideas and snippets that don't yet have a home in the subject/topic hierarchy.
 
 ## Creating a quick note
 
 Click the **Quick Capture** icon (notepad icon) in the top-right toolbar from any page. A dialog opens where you can type or paste content immediately — no subject or topic required.
+
+Click **Insert Image...** in the dialog to upload an image file (PNG, JPG, etc.) and insert it into the quick note. You can optionally choose a subject and topic before saving.
 
 You can also navigate to the **Quick Notes** page for a full view of all your quick notes.
 

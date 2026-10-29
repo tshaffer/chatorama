@@ -5,7 +5,7 @@ export const importing: HelpTopic = {
   title: 'Importing',
   category: 'Getting Content In',
   order: 1,
-  keywords: ['import', 'chatworthy', 'pdf', 'markdown', 'google docs', 'upload', 'chatgpt', 'conversation'],
+  keywords: ['import', 'chatworthy', 'pdf', 'markdown', 'google docs', 'upload', 'chatgpt', 'conversation', 'image', 'png', 'jpg', 'picture'],
   body: `Chatalog can import content from several sources. Import buttons are in the top toolbar.
 
 ## From Chatworthy (ChatGPT conversations)
@@ -23,6 +23,10 @@ Click the **Import file** icon in the toolbar and select a \`.md\` file. The Mar
 ## From Google Docs
 
 Click the **Import Google Doc** icon (cloud download) in the toolbar. Paste a Google Doc URL or select a file. The document content is fetched and created as a note.
+
+## Images (PNG, JPG, etc.)
+
+Image files can't be imported on their own with **Import file**. To add an image to a subject/topic, open or create a note in that topic, click **Edit**, then **Insert Image...** (see the Notes help topic). Quick Capture also has an **Insert Image...** button.
 
 ## After importing
 
