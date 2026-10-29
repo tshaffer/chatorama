@@ -160,6 +160,7 @@ export const subjectsApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_r, _e, { subjectId }) => [
         { type: 'Topic', id: `LIST:${subjectId}` },
+        { type: 'Subject', id: subjectId },
       ],
     }),
 
@@ -172,6 +173,7 @@ export const subjectsApi = baseApi.injectEndpoints({
         invalidatesTags: (_r, _e, { subjectId, topicId }) => [
           { type: 'Topic', id: `LIST:${subjectId}` },
           { type: 'Topic', id: topicId },
+          { type: 'Subject', id: subjectId },
         ],
       },
     ),
@@ -206,8 +208,9 @@ export const subjectsApi = baseApi.injectEndpoints({
           patch.undo();
         }
       },
-      invalidatesTags: (_r, _e, { topicId }) => [
+      invalidatesTags: (_r, _e, { subjectId, topicId }) => [
         { type: 'Topic', id: topicId },
+        { type: 'Subject', id: subjectId },
       ],
     }),
 
@@ -224,6 +227,8 @@ export const subjectsApi = baseApi.injectEndpoints({
         { type: 'Topic', id: `LIST:${subjectId}` },
         { type: 'Topic', id: `LIST:${destSubjectId}` },
         { type: 'Topic', id: topicId },
+        { type: 'Subject', id: subjectId },
+        { type: 'Subject', id: destSubjectId },
       ],
     }),
 
@@ -239,6 +244,7 @@ export const subjectsApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_r, _e, { subjectId }) => [
         { type: 'Topic', id: `LIST:${subjectId}` },
+        { type: 'Subject', id: subjectId },
       ],
     }),
   }),
