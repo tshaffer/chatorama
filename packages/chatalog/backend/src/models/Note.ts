@@ -19,6 +19,15 @@ export interface NoteDoc extends Document {
   links: string[];
   backlinks: string[];
   relations?: NoteRelation[];
+  archived?: boolean;
+  archivedAt?: Date;
+  consolidatedIntoNoteId?: string;
+  consolidation?: {
+    sourceNoteIds: string[];
+    instructions?: string;
+    model?: string;
+    createdAt: Date;
+  };
   sources?: {
     url?: string;
     type?: 'chatworthy' | 'clip' | 'manual' | 'googleDoc';
@@ -198,6 +207,24 @@ const NoteSchema = new Schema<NoteDoc>(
     sources:   { type: [SourceSchema], default: [] },
 
     relations: { type: [RelationSchema], default: [] },
+
+    // --- Archiving / Consolidate ---
+    archived: { type: Boolean, default: false },
+    archivedAt: { type: Date },
+    consolidatedIntoNoteId: { type: String, index: true },
+    consolidation: {
+      type: new Schema(
+        {
+          sourceNoteIds: { type: [String], default: [] },
+          instructions: { type: String },
+          model: { type: String },
+          createdAt: { type: Date, default: Date.now },
+        },
+        { _id: false },
+      ),
+      required: false,
+    },
+
     recipe: { type: RecipeMetaSchema, required: false },
     cookedHistory: { type: [CookedEventSchema], default: [] },
 
@@ -287,6 +314,7 @@ NoteSchema.index(
 
 // Fast stable sort when listing notes by topic
 NoteSchema.index({ topicId: 1, order: 1, _id: 1 });
+NoteSchema.index({ topicId: 1, archived: 1, order: 1 });
 
 // Optional: fast lookup by Chatworthy noteId (useful for de-dupe / AI-state)
 NoteSchema.index({ chatworthyNoteId: 1 });

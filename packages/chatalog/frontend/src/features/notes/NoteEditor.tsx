@@ -68,6 +68,7 @@ import NotePropertiesDialog from './NotePropertiesDialog';
 import EditIngredientsDialog from './EditIngredientsDialog';
 import RecipeView from './RecipeView';
 import RecipePropertiesDialog from './RecipePropertiesDialog';
+import ConsolidationInfo from './ConsolidationInfo';
 import { sortByStringKeyCI, sortStringsCI } from '../../utils/sort';
 import { downloadTextFile, sanitizeFilenameTitle } from '../../utils/files';
 
@@ -1398,6 +1399,8 @@ export default function NoteEditor({
           </Tooltip>
         </Stack>
       </Stack>
+
+      {note && <ConsolidationInfo note={note} />}
 
       {/* Meta row: Title (50%) / Subject (25%) / Topic (25%) */}
       {editing && (

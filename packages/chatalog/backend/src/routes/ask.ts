@@ -27,7 +27,7 @@ function buildSnippet(text: string, maxLen = 280): string {
 
 async function toolSearchNotes(query: string) {
   const docs = await NoteModel.find(
-    { $text: { $search: query }, recipe: { $exists: false } },
+    { $text: { $search: query }, recipe: { $exists: false }, archived: { $ne: true } },
     { score: { $meta: 'textScore' } },
   )
     .sort({ score: { $meta: 'textScore' } })
@@ -50,7 +50,7 @@ async function toolSearchNotes(query: string) {
 
 async function toolSearchRecipes(query: string) {
   const docs = await NoteModel.find(
-    { $text: { $search: query }, recipe: { $exists: true } },
+    { $text: { $search: query }, recipe: { $exists: true }, archived: { $ne: true } },
     { score: { $meta: 'textScore' } },
   )
     .sort({ score: { $meta: 'textScore' } })

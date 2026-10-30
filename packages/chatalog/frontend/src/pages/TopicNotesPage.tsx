@@ -16,6 +16,7 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
+  Snackbar,
 } from '@mui/material';
 import { skipToken } from '@reduxjs/toolkit/query';
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
@@ -26,6 +27,7 @@ import {
   useReorderNotesInTopicMutation,
   useDeleteNoteMutation,
   useGetNoteQuery,
+  useSetNotesArchivedMutation,
 } from '../features/notes/notesApi';
 import {
   useGetImportBatchesQuery,
@@ -41,6 +43,8 @@ import {
 import ReorderableNotesList from '../features/notes/ReorderableNotesList';
 import MoveNotesDialog from '../features/notes/MoveNotesDialog';
 import MergeNotesDialog from '../features/notes/MergeNotesDialog';
+import ConsolidateNotesDialog from '../features/notes/ConsolidateNotesDialog';
+import ArchivedNotesSection from '../features/notes/ArchivedNotesSection';
 import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
 import LinkNoteToTargetDialog from '../features/relations/LinkNoteToTargetDialog';
 import { NoteStatusIndicator } from '../features/notes/NoteStatusIndicator';
@@ -72,6 +76,13 @@ export default function TopicNotesPage() {
   const [linkTopicDialogOpen, setLinkTopicDialogOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [consolidateOpen, setConsolidateOpen] = useState(false);
+  const [consolidated, setConsolidated] = useState<{
+    noteId: string;
+    title: string;
+    archivedNoteIds: string[];
+  } | null>(null);
+  const [setNotesArchived] = useSetNotesArchivedMutation();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [propertiesNoteId, setPropertiesNoteId] = useState<string | null>(null);
@@ -138,6 +149,7 @@ export default function TopicNotesPage() {
   const { data: propertiesNote } = useGetNoteQuery(propertiesNoteId ?? skipToken);
 
   const notes = data?.notes ?? [];
+  const archivedNotes = data?.archivedNotes ?? [];
   const relatedSubjectNotes = data?.relatedSubjectNotes ?? [];
   const relatedDirectNotes = data?.relatedDirectNotes ?? [];
 
@@ -415,6 +427,18 @@ export default function TopicNotesPage() {
                     </Button>
                   </span>
                 </Tooltip>
+                <Tooltip title="Use Claude to rewrite the selected notes as one organized note without repetition">
+                  <span>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      disabled={!hasSelection || isBatchMode}
+                      onClick={() => setConsolidateOpen(true)}
+                    >
+                      Consolidate ({selectedIds.size})
+                    </Button>
+                  </span>
+                </Tooltip>
                 <Tooltip title="Permanently delete selected notes">
                   <span>
                     <Button
@@ -477,6 +501,10 @@ export default function TopicNotesPage() {
                     onOpenNote={onOpenNote}
                     onShowProperties={(id) => setPropertiesNoteId(id)}
                   />
+
+                  {!isBatchMode && (
+                    <ArchivedNotesSection notes={archivedNotes} onOpenNote={onOpenNote} />
+                  )}
 
                   {!isBatchMode && (
                     <>
@@ -642,9 +670,14 @@ export default function TopicNotesPage() {
                   )}
                 </>
               ) : (
-                <Box sx={{ color: 'text.secondary', fontSize: 14 }}>
-                  No notes yet
-                </Box>
+                <>
+                  <Box sx={{ color: 'text.secondary', fontSize: 14 }}>
+                    No notes yet
+                  </Box>
+                  {!isBatchMode && (
+                    <ArchivedNotesSection notes={archivedNotes} onOpenNote={onOpenNote} />
+                  )}
+                </>
               )}
             </Box>
 
@@ -675,6 +708,69 @@ export default function TopicNotesPage() {
                 }}
               />
             )}
+
+            {topicId && !isBatchMode && (
+              <ConsolidateNotesDialog
+                open={consolidateOpen}
+                subjectId={subjectId}
+                topicId={topicId}
+                topicName={currentTopicName}
+                notes={selectedNotes}
+                onClose={() => setConsolidateOpen(false)}
+                onSaved={(result, title) => {
+                  setConsolidateOpen(false);
+                  clearSelection();
+                  setConsolidated({ ...result, title });
+                  refetchNotes();
+                }}
+              />
+            )}
+            <Snackbar
+              open={Boolean(consolidated)}
+              autoHideDuration={10000}
+              onClose={(_e, reason) => reason !== 'clickaway' && setConsolidated(null)}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+              message={
+                consolidated
+                  ? `Saved “${consolidated.title}”.` +
+                    (consolidated.archivedNoteIds.length
+                      ? ` ${consolidated.archivedNoteIds.length} ${consolidated.archivedNoteIds.length === 1 ? 'note' : 'notes'} archived.`
+                      : '')
+                  : ''
+              }
+              action={
+                consolidated ? (
+                  <>
+                    {consolidated.archivedNoteIds.length > 0 && (
+                      <Button
+                        color="secondary"
+                        size="small"
+                        onClick={async () => {
+                          await setNotesArchived({
+                            noteIds: consolidated.archivedNoteIds,
+                            archived: false,
+                          });
+                          setConsolidated(null);
+                        }}
+                      >
+                        Undo archive
+                      </Button>
+                    )}
+                    <Button
+                      color="secondary"
+                      size="small"
+                      onClick={() => {
+                        const id = consolidated.noteId;
+                        setConsolidated(null);
+                        onOpenNote(id);
+                      }}
+                    >
+                      Open
+                    </Button>
+                  </>
+                ) : undefined
+              }
+            />
 
             {/* DELETE CONFIRMATION DIALOG */}
             <Dialog

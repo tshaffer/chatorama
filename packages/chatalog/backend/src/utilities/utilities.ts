@@ -27,6 +27,9 @@ export function toPreview(doc: any): NotePreview {
     chatworthyTotalTurns: doc.chatworthyTotalTurns,
     sourceType: doc.sourceType,
     sourceChatId: doc.sourceChatId,
+    archived: doc.archived || undefined,
+    archivedAt: doc.archivedAt instanceof Date ? doc.archivedAt.toISOString() : doc.archivedAt,
+    consolidatedIntoNoteId: doc.consolidatedIntoNoteId,
   };
 }
 

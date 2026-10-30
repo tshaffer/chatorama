@@ -164,10 +164,25 @@ export interface Note {
     };
   };
 
+  // Archiving (hidden from topic lists, Search, and Ask by default)
+  archived?: boolean;
+  archivedAt?: string;       // ISO
+  consolidatedIntoNoteId?: string; // set on a source note archived by Consolidate
+
+  // Set on a note created by Consolidate
+  consolidation?: NoteConsolidation;
+
   createdAt: string;         // ISO
   updatedAt: string;         // ISO
   contentUpdatedAt?: string; // ISO
   importedAt?: string;       // ISO
+}
+
+export interface NoteConsolidation {
+  sourceNoteIds: string[];
+  instructions?: string;
+  model?: string;
+  createdAt: string;         // ISO
 }
 
 // Lightweight list item for UIs
@@ -197,11 +212,18 @@ export interface NotePreview {
 
   // Include relations for smarter UIs (optional; may or may not be populated)
   relations?: NoteRelation[];
+
+  archived?: boolean;
+  archivedAt?: string;       // ISO
+  consolidatedIntoNoteId?: string;
 }
 
 export interface TopicNotesWithRelations {
   /** Notes actually in the current subject/topic */
   notes: NotePreview[];
+
+  /** Archived notes in the current subject/topic (hidden from `notes`) */
+  archivedNotes?: NotePreview[];
 
   /** Notes pulled in via topic relations (targetType: 'topic') */
   relatedTopicNotes: NotePreview[];
@@ -291,6 +313,39 @@ export interface MergeNotesRequest {
 export interface MergeNotesResult {
   mergedNoteId: string;
   deletedNoteIds: string[];
+}
+
+// ---- Consolidate (AI) ----
+
+export interface ConsolidateDraftRequest {
+  noteIds: string[];          // in the order Claude should read them
+  instructions?: string;
+  // Refinement: the draft being revised and the new request
+  currentDraft?: string;
+  refinement?: string;
+  priorRefinements?: string[];
+}
+
+export interface ConsolidateSaveRequest {
+  noteIds: string[];
+  title: string;
+  markdown: string;
+  instructions?: string;
+  archiveSources: boolean;
+}
+
+export interface ConsolidateSaveResult {
+  noteId: string;
+  archivedNoteIds: string[];
+}
+
+export interface SetNotesArchivedRequest {
+  noteIds: string[];
+  archived: boolean;
+}
+
+export interface SetNotesArchivedResult {
+  updatedNoteIds: string[];
 }
 
 // ---- Import duplicate detection ----

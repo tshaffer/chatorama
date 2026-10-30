@@ -67,7 +67,7 @@ export async function listNotesForSubjectTopicIds(req: Request, res: Response) {
   if (!topic) return res.status(404).json({ message: 'Topic not found for subject' });
 
   const notes = await NoteModel.find(
-    { topicId },
+    { topicId, archived: { $ne: true } },
     { title: 1, summary: 1, tags: 1, updatedAt: 1, order: 1 },
   )
     .sort({ order: 1, _id: 1 })

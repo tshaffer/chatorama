@@ -844,6 +844,9 @@ searchRouter.post('/', async (req, res, next) => {
       // or keep docKind:'note' if that’s your canonical definition of “note”
     }
 
+    // Archived notes (e.g. sources of a Consolidate) stay out of search results.
+    and.push({ archived: { $ne: true } });
+
     let baseFilter: any = and.length ? { $and: [...and] } : {};
     let mongoFilter: any = baseFilter;
 

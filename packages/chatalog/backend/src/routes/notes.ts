@@ -9,6 +9,7 @@ import {
   deleteNote,
   listNotesByTopicWithRelations, // make sure this is imported
 } from '../controllers/notesController';
+import { listConsolidationSources, setNotesArchived } from '../controllers/consolidateController';
 import { NoteModel } from '../models/Note';
 import { NoteAssetModel } from '../models/NoteAsset';
 import { AssetModel } from '../models/Asset';
@@ -20,8 +21,10 @@ const notesRouter = Router();
 // IMPORTANT: specific routes BEFORE the param route
 notesRouter.get('/by-topic-with-relations',
   listNotesByTopicWithRelations);                   // GET    /api/v1/notes/by-topic-with-relations
+notesRouter.post('/archive', setNotesArchived);     // POST   /api/v1/notes/archive
 notesRouter.get('/', listNotes);                    // GET    /api/v1/notes
 notesRouter.get('/:id', getNote);                   // GET    /api/v1/notes/:id
+notesRouter.get('/:id/consolidation-sources', listConsolidationSources);
 notesRouter.post('/', createNote);                  // POST   /api/v1/notes
 
 // POST /api/v1/notes/:noteId/assets

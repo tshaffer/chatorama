@@ -52,8 +52,13 @@ async function dedupeNoteSlug(topicId: string | undefined, base: string, exclude
 }
 
 export async function listNotes(req: Request, res: Response) {
-  const { subjectId, topicId } = req.query as { subjectId?: string; topicId?: string };
+  const { subjectId, topicId, includeArchived } = req.query as {
+    subjectId?: string;
+    topicId?: string;
+    includeArchived?: string;
+  };
   const filter: any = {};
+  if (includeArchived !== '1') filter.archived = { $ne: true };
   if (subjectId) filter.subjectId = subjectId;
   if (topicId) filter.topicId = topicId;
 
@@ -83,6 +88,9 @@ export async function listNotes(req: Request, res: Response) {
     links: 1,
     backlinks: 1,
     slug: 1,
+    archived: 1,
+    archivedAt: 1,
+    consolidatedIntoNoteId: 1,
   };
 
   let query = NoteModel.find(filter, projection);
@@ -108,7 +116,7 @@ export async function listNotesByTopicWithRelations(req: Request, res: Response)
   }
 
   // 1) Notes in this subject/topic
-  const baseFilter: any = { subjectId, topicId };
+  const baseFilter: any = { subjectId, topicId, archived: { $ne: true } };
   const projection = {
     title: 1,
     summary: 1,
@@ -134,10 +142,20 @@ export async function listNotesByTopicWithRelations(req: Request, res: Response)
     links: 1,
     backlinks: 1,
     slug: 1,
+    archived: 1,
+    archivedAt: 1,
+    consolidatedIntoNoteId: 1,
   };
 
   const topicNotes = await NoteModel.find(baseFilter, projection)
     .sort({ order: 1, _id: 1 })
+    .lean();
+
+  const archivedNotes = await NoteModel.find(
+    { subjectId, topicId, archived: true },
+    projection,
+  )
+    .sort({ archivedAt: -1, _id: 1 })
     .lean();
 
   // 2) Collect relation targets
@@ -161,7 +179,7 @@ export async function listNotesByTopicWithRelations(req: Request, res: Response)
   let relatedTopicNotes: NotePreview[] = [];
   if (topicTargets.size > 0) {
     const docs = await NoteModel.find(
-      { topicId: { $in: Array.from(topicTargets) } },
+      { topicId: { $in: Array.from(topicTargets) }, archived: { $ne: true } },
       projection,
     ).lean();
 
@@ -175,7 +193,7 @@ export async function listNotesByTopicWithRelations(req: Request, res: Response)
   let relatedSubjectNotes: NotePreview[] = [];
   if (subjectTargets.size > 0) {
     const docs = await NoteModel.find(
-      { subjectId: { $in: Array.from(subjectTargets) } },
+      { subjectId: { $in: Array.from(subjectTargets) }, archived: { $ne: true } },
       projection,
     ).lean();
 
@@ -210,6 +228,7 @@ export async function listNotesByTopicWithRelations(req: Request, res: Response)
 
   const payload: TopicNotesWithRelations = {
     notes: topicNotes.map(toPreview),
+    archivedNotes: archivedNotes.map(toPreview),
     relatedTopicNotes: dedupe(relatedTopicNotes),
     relatedSubjectNotes: dedupe(relatedSubjectNotes),
     relatedDirectNotes: dedupe(relatedDirectNotes),

@@ -8,6 +8,10 @@ import type {
   TopicNotesWithRelations,
   MergeNotesRequest,
   MergeNotesResult,
+  ConsolidateSaveRequest,
+  ConsolidateSaveResult,
+  SetNotesArchivedRequest,
+  SetNotesArchivedResult,
   Asset,
   NoteAssetWithAsset,
   CookedEvent,
@@ -99,6 +103,7 @@ export const notesApi = baseApi.injectEndpoints({
         // Collect all notes that appear in this payload
         const allNotes = [
           ...(res.notes ?? []),
+          ...(res.archivedNotes ?? []),
           ...(res.relatedTopicNotes ?? []),
           ...(res.relatedSubjectNotes ?? []),
           ...(res.relatedDirectNotes ?? []),
@@ -297,6 +302,43 @@ export const notesApi = baseApi.injectEndpoints({
       },
     }),
 
+    saveConsolidatedNote: build.mutation<
+      ConsolidateSaveResult,
+      ConsolidateSaveRequest & { topicId: string; subjectId?: string }
+    >({
+      query: ({ topicId, subjectId: _subjectId, ...body }) => ({
+        url: `topics/${topicId}/consolidate/save`,
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_res, _err, { subjectId, topicId, noteIds }) => {
+        const tags: { type: 'Note' | 'TopicNotes'; id: string }[] = [{ type: 'Note', id: 'LIST' }];
+        if (subjectId) {
+          tags.push({ type: 'Note', id: `LIST:${subjectId}:${topicId}` });
+          tags.push({ type: 'TopicNotes', id: `${subjectId}:${topicId}` });
+        }
+        tags.push(...noteIds.map((id) => ({ type: 'Note' as const, id })));
+        return tags;
+      },
+    }),
+
+    setNotesArchived: build.mutation<SetNotesArchivedResult, SetNotesArchivedRequest>({
+      query: (body) => ({ url: 'notes/archive', method: 'POST', body }),
+      // Topic lists and Sources lists provide per-note tags, so these refresh them.
+      invalidatesTags: (_res, _err, { noteIds }) => [
+        { type: 'Note', id: 'LIST' },
+        ...noteIds.map((id) => ({ type: 'Note' as const, id })),
+      ],
+    }),
+
+    getConsolidationSources: build.query<NotePreview[], string>({
+      query: (noteId) => ({ url: `notes/${noteId}/consolidation-sources` }),
+      providesTags: (res, _err, noteId) => [
+        { type: 'Note' as const, id: `SOURCES:${noteId}` },
+        ...(res ?? []).map((n) => ({ type: 'Note' as const, id: n.id })),
+      ],
+    }),
+
     importGoogleDocFromDrive: build.mutation<
       { noteId: string; importedAt: string; driveModifiedTimeAtImport: string; stale: boolean },
       { driveFileId: string; noteId?: string; subjectId: string; topicId: string }
@@ -336,5 +378,8 @@ export const {
   useGetTopicNotesWithRelationsQuery,
   useGetAllNotesForRelationsQuery,
   useMergeNotesInTopicMutation,
+  useSaveConsolidatedNoteMutation,
+  useSetNotesArchivedMutation,
+  useGetConsolidationSourcesQuery,
   useImportGoogleDocFromDriveMutation,
 } = notesApi;
