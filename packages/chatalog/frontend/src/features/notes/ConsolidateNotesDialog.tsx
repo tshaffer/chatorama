@@ -43,6 +43,8 @@ export type ConsolidateNotesDialogProps = {
   topicId: string;
   topicName: string;
   notes: NotePreview[]; // in topic order
+  // Pre-filled instructions (e.g. an Ask Claude answer handed over to Consolidate)
+  initialInstructions?: string;
   onClose: () => void;
   onSaved: (result: ConsolidateSaveResult, title: string) => void;
 };
@@ -90,6 +92,7 @@ export default function ConsolidateNotesDialog({
   topicId,
   topicName,
   notes,
+  initialInstructions,
   onClose,
   onSaved,
 }: ConsolidateNotesDialogProps) {
@@ -120,7 +123,7 @@ export default function ConsolidateNotesDialog({
   useEffect(() => {
     if (!open) return;
     setOrderedIds(notes.map((n) => n.id));
-    setInstructions('');
+    setInstructions(initialInstructions ?? '');
     setVersions([]);
     setCurrentIndex(0);
     setViewMode('preview');
@@ -359,7 +362,10 @@ export default function ConsolidateNotesDialog({
             onChange={(_e, v) => setInstructionsExpanded(v)}
             sx={{ flexShrink: 0 }}
           >
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <AccordionSummary
+              expandIcon={<ExpandMoreIcon />}
+              sx={{ '& .MuiAccordionSummary-content': { minWidth: 0 } }}
+            >
               <Typography variant="subtitle2">Instructions</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }} noWrap>
                 — {instructions.trim() ? instructions.trim() : 'optional; leave empty for the default'}

@@ -179,8 +179,11 @@ export interface Note {
 }
 
 export interface NoteConsolidation {
+  // 'consolidate' (default): rewritten from the sources; 'answer': Claude's answer to a question about them
+  kind?: 'consolidate' | 'answer';
   sourceNoteIds: string[];
   instructions?: string;
+  question?: string;
   model?: string;
   createdAt: string;         // ISO
 }
@@ -337,6 +340,28 @@ export interface ConsolidateSaveRequest {
 export interface ConsolidateSaveResult {
   noteId: string;
   archivedNoteIds: string[];
+}
+
+export interface AskNotesMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface AskNotesRequest {
+  noteIds: string[];
+  // The conversation so far; alternates user/assistant and ends with the new user question.
+  messages: AskNotesMessage[];
+}
+
+export interface AskNotesSaveRequest {
+  noteIds: string[];
+  title: string;
+  markdown: string;
+  question: string;
+}
+
+export interface AskNotesSaveResult {
+  noteId: string;
 }
 
 export interface SetNotesArchivedRequest {

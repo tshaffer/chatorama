@@ -8,6 +8,8 @@ import type {
   TopicNotesWithRelations,
   MergeNotesRequest,
   MergeNotesResult,
+  AskNotesSaveRequest,
+  AskNotesSaveResult,
   ConsolidateSaveRequest,
   ConsolidateSaveResult,
   SetNotesArchivedRequest,
@@ -322,6 +324,25 @@ export const notesApi = baseApi.injectEndpoints({
       },
     }),
 
+    saveAskNotesAnswer: build.mutation<
+      AskNotesSaveResult,
+      AskNotesSaveRequest & { topicId: string; subjectId?: string }
+    >({
+      query: ({ topicId, subjectId: _subjectId, ...body }) => ({
+        url: `topics/${topicId}/ask-notes/save`,
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_res, _err, { subjectId, topicId }) => {
+        const tags: { type: 'Note' | 'TopicNotes'; id: string }[] = [{ type: 'Note', id: 'LIST' }];
+        if (subjectId) {
+          tags.push({ type: 'Note', id: `LIST:${subjectId}:${topicId}` });
+          tags.push({ type: 'TopicNotes', id: `${subjectId}:${topicId}` });
+        }
+        return tags;
+      },
+    }),
+
     setNotesArchived: build.mutation<SetNotesArchivedResult, SetNotesArchivedRequest>({
       query: (body) => ({ url: 'notes/archive', method: 'POST', body }),
       // Topic lists and Sources lists provide per-note tags, so these refresh them.
@@ -379,6 +400,7 @@ export const {
   useGetAllNotesForRelationsQuery,
   useMergeNotesInTopicMutation,
   useSaveConsolidatedNoteMutation,
+  useSaveAskNotesAnswerMutation,
   useSetNotesArchivedMutation,
   useGetConsolidationSourcesQuery,
   useImportGoogleDocFromDriveMutation,

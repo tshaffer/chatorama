@@ -69,6 +69,7 @@ import EditIngredientsDialog from './EditIngredientsDialog';
 import RecipeView from './RecipeView';
 import RecipePropertiesDialog from './RecipePropertiesDialog';
 import ConsolidationInfo from './ConsolidationInfo';
+import AskNotesDialog from './AskNotesDialog';
 import { sortByStringKeyCI, sortStringsCI } from '../../utils/sort';
 import { downloadTextFile, sanitizeFilenameTitle } from '../../utils/files';
 
@@ -455,6 +456,7 @@ export default function NoteEditor({
   const [topicLabel, setTopicLabel] = useState('');
   const [dirty, setDirty] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
   const [recipePropsOpen, setRecipePropsOpen] = useState(false);
   const [editIngredientsOpen, setEditIngredientsOpen] = useState(false);
   const [resizeOpen, setResizeOpen] = useState(false);
@@ -1359,6 +1361,20 @@ export default function NoteEditor({
               </span>
             </Tooltip>
           )}
+          {note?.topicId && (
+            <Tooltip title="Ask Claude a question about this note">
+              <span>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setAskOpen(true)}
+                  disabled={isLoading}
+                >
+                  Ask Claude
+                </Button>
+              </span>
+            </Tooltip>
+          )}
           <Tooltip title="View note properties">
             <span>
               <Button
@@ -1401,6 +1417,19 @@ export default function NoteEditor({
       </Stack>
 
       {note && <ConsolidationInfo note={note} />}
+      {note?.topicId && (
+        <AskNotesDialog
+          open={askOpen}
+          subjectId={note.subjectId}
+          topicId={note.topicId}
+          scopeLabel="this note"
+          notes={[{ id: note.id, title: note.title }]}
+          onClose={() => setAskOpen(false)}
+          onSaved={(_noteId, savedTitle) =>
+            setSnack({ open: true, msg: `Saved “${savedTitle}” to this topic`, sev: 'success' })
+          }
+        />
+      )}
 
       {/* Meta row: Title (50%) / Subject (25%) / Topic (25%) */}
       {editing && (

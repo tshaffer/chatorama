@@ -1,7 +1,7 @@
 // frontend/src/features/notes/ConsolidationInfo.tsx
 // Shown on the note page:
 //  - an "Archived" banner on a note that was archived (e.g. by Consolidate)
-//  - a collapsed "Sources (N)" list on a note created by Consolidate
+//  - a collapsed "Sources (N)" list on a note created by Consolidate or saved from Ask Claude
 import { useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
@@ -31,6 +31,8 @@ export default function ConsolidationInfo({ note }: { note: Note }) {
   const [setNotesArchived, { isLoading: isUnarchiving }] = useSetNotesArchivedMutation();
 
   const sourceCount = note.consolidation?.sourceNoteIds?.length ?? 0;
+  const isAnswer = note.consolidation?.kind === 'answer';
+  const noun = sourceCount === 1 ? 'note' : 'notes';
   const { data: sources = [], isSuccess: sourcesLoaded } = useGetConsolidationSourcesQuery(
     sourceCount > 0 && sourcesOpen ? note.id : skipToken,
   );
@@ -78,7 +80,9 @@ export default function ConsolidationInfo({ note }: { note: Note }) {
             startIcon={sourcesOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
             onClick={() => setSourcesOpen((v) => !v)}
           >
-            Consolidated from {sourceCount} {sourceCount === 1 ? 'note' : 'notes'}
+            {isAnswer
+              ? `Claude’s answer about ${sourceCount} ${noun}`
+              : `Consolidated from ${sourceCount} ${noun}`}
           </Button>
           <Collapse in={sourcesOpen}>
             <List dense disablePadding sx={{ pl: 1 }}>

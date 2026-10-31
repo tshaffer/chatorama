@@ -20,6 +20,7 @@ import {
 } from '@mui/material';
 import { skipToken } from '@reduxjs/toolkit/query';
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
+import type { NotePreview } from '@chatorama/chatalog-shared';
 import { useSelector } from 'react-redux';
 
 import {
@@ -44,6 +45,7 @@ import ReorderableNotesList from '../features/notes/ReorderableNotesList';
 import MoveNotesDialog from '../features/notes/MoveNotesDialog';
 import MergeNotesDialog from '../features/notes/MergeNotesDialog';
 import ConsolidateNotesDialog from '../features/notes/ConsolidateNotesDialog';
+import AskNotesDialog from '../features/notes/AskNotesDialog';
 import ArchivedNotesSection from '../features/notes/ArchivedNotesSection';
 import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
 import LinkNoteToTargetDialog from '../features/relations/LinkNoteToTargetDialog';
@@ -77,6 +79,12 @@ export default function TopicNotesPage() {
   const [moveOpen, setMoveOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [consolidateOpen, setConsolidateOpen] = useState(false);
+  // Set when Ask Claude hands an answer to Consolidate: its notes and instructions
+  const [consolidateHandoff, setConsolidateHandoff] = useState<{
+    notes: NotePreview[];
+    instructions: string;
+  } | null>(null);
+  const [askOpen, setAskOpen] = useState(false);
   const [consolidated, setConsolidated] = useState<{
     noteId: string;
     title: string;
@@ -439,6 +447,24 @@ export default function TopicNotesPage() {
                     </Button>
                   </span>
                 </Tooltip>
+                <Tooltip
+                  title={
+                    hasSelection
+                      ? 'Ask Claude a question about the selected notes'
+                      : 'Ask Claude a question about all notes in this topic'
+                  }
+                >
+                  <span>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      disabled={isBatchMode || activeNotes.length === 0}
+                      onClick={() => setAskOpen(true)}
+                    >
+                      Ask Claude ({hasSelection ? selectedIds.size : 'all'})
+                    </Button>
+                  </span>
+                </Tooltip>
                 <Tooltip title="Permanently delete selected notes">
                   <span>
                     <Button
@@ -715,13 +741,46 @@ export default function TopicNotesPage() {
                 subjectId={subjectId}
                 topicId={topicId}
                 topicName={currentTopicName}
-                notes={selectedNotes}
-                onClose={() => setConsolidateOpen(false)}
+                notes={consolidateHandoff?.notes ?? selectedNotes}
+                initialInstructions={consolidateHandoff?.instructions}
+                onClose={() => {
+                  setConsolidateOpen(false);
+                  setConsolidateHandoff(null);
+                }}
                 onSaved={(result, title) => {
                   setConsolidateOpen(false);
+                  setConsolidateHandoff(null);
                   clearSelection();
                   setConsolidated({ ...result, title });
                   refetchNotes();
+                }}
+              />
+            )}
+            {topicId && !isBatchMode && (
+              <AskNotesDialog
+                open={askOpen}
+                subjectId={subjectId}
+                topicId={topicId}
+                scopeLabel={
+                  hasSelection
+                    ? `${selectedNotes.length} selected ${selectedNotes.length === 1 ? 'note' : 'notes'}`
+                    : activeNotes.length === 1
+                      ? `the only note in ${currentTopicName}`
+                      : `all ${activeNotes.length} notes in ${currentTopicName}`
+                }
+                notes={hasSelection ? selectedNotes : activeNotes}
+                onClose={() => setAskOpen(false)}
+                onSaved={(noteId, title) => {
+                  setConsolidated({ noteId, title, archivedNoteIds: [] });
+                  refetchNotes();
+                }}
+                onConsolidate={(instructions) => {
+                  setConsolidateHandoff({
+                    notes: hasSelection ? selectedNotes : activeNotes,
+                    instructions,
+                  });
+                  setAskOpen(false);
+                  setConsolidateOpen(true);
                 }}
               />
             )}

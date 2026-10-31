@@ -23,8 +23,10 @@ export interface NoteDoc extends Document {
   archivedAt?: Date;
   consolidatedIntoNoteId?: string;
   consolidation?: {
+    kind?: 'consolidate' | 'answer';
     sourceNoteIds: string[];
     instructions?: string;
+    question?: string;
     model?: string;
     createdAt: Date;
   };
@@ -215,8 +217,10 @@ const NoteSchema = new Schema<NoteDoc>(
     consolidation: {
       type: new Schema(
         {
+          kind: { type: String, enum: ['consolidate', 'answer'] },
           sourceNoteIds: { type: [String], default: [] },
           instructions: { type: String },
+          question: { type: String },
           model: { type: String },
           createdAt: { type: Date, default: Date.now },
         },

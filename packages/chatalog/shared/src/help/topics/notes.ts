@@ -5,7 +5,7 @@ export const notes: HelpTopic = {
   title: 'Notes',
   category: 'Content',
   order: 1,
-  keywords: ['note', 'create', 'edit', 'delete', 'markdown', 'content', 'draft', 'status', 'image', 'png', 'jpg', 'picture', 'photo', 'screenshot', 'insert image', 'consolidate', 'summarize', 'archive', 'archived', 'combine', 'merge'],
+  keywords: ['note', 'create', 'edit', 'delete', 'markdown', 'content', 'draft', 'status', 'image', 'png', 'jpg', 'picture', 'photo', 'screenshot', 'insert image', 'consolidate', 'summarize', 'archive', 'archived', 'combine', 'merge', 'ask claude', 'question', 'suggestions', 'summary', 'compare', 'contradictions'],
   body: `Notes are the primary content in Chatalog. Each note belongs to exactly one subject and topic.
 
 ## Creating a note
@@ -36,6 +36,22 @@ The image is uploaded, attached to the note, and inserted into the note body at 
 5. Check the suggested title and click **Save as note**. The new note is added to the same topic.
 
 **Merge**, by contrast, joins the selected notes' text as-is into the first note and deletes the others.
+
+## Asking Claude about notes
+
+**Ask Claude** lets you ask a question about one or more notes and get an answer, without changing the notes. Use it for things like a summary, suggestions for improving the notes, or finding contradictions.
+
+1. In a topic, select the notes you want to ask about and click **Ask Claude**. With nothing selected, it asks about every note in the topic. On a note's page, **Ask Claude** asks about that note.
+2. Type a question, or click a starter such as **Summarize**, **Suggest improvements**, or **What's missing?**. The answer appears as it's written; **Stop** ends it early.
+3. Ask follow-up questions to continue the conversation. Claude cites the notes it used as numbers like [2]; click a number or a **Sources** chip to open that note in a new tab.
+4. Under any answer:
+   - **Copy** copies it to the clipboard.
+   - **Save as note** saves it as a new note in the same topic, with your question at the top and a link back to the notes it was about.
+   - **Consolidate with this** (topic page only) opens Consolidate on the same notes with the answer as its instructions, for example to apply Claude's suggestions.
+
+Conversations aren't kept after you close the dialog, so save any answer you want to keep. Recipes and PDF notes can be included; Claude reads the recipe text or the PDF's summary.
+
+To search your whole library with a question instead, use **Ask** (the AI search button in the top bar).
 
 ## Archived notes
 

@@ -22,7 +22,10 @@ import { toPreview } from '../utilities';
 export const CONSOLIDATE_MODEL = 'claude-opus-5-5';
 
 // ~150k tokens of source text; above this, refuse rather than truncate.
-const MAX_INPUT_CHARS = 600_000;
+export const MAX_INPUT_CHARS = 600_000;
+
+// Written into an already-started text stream when generation fails mid-way.
+export const STREAM_ERROR_MARKER = '[[CONSOLIDATE_ERROR]]';
 
 const SYSTEM_PROMPT = `You consolidate a set of notes from a personal knowledge base into a single, well-organized Markdown document.
 
@@ -40,7 +43,7 @@ Begin the document with a single H1 heading that is a short, descriptive title. 
 
 If the user gives instructions, they take precedence over these defaults.`;
 
-type SourceNote = {
+export type SourceNote = {
   id: string;
   title: string;
   text: string;
@@ -54,11 +57,17 @@ function noteText(n: any): string {
 }
 
 /**
- * Load the requested notes in the given order. Recipes and PDF notes are
- * excluded (their content lives in structured fields Claude can't rewrite
- * into a plain note).
+ * Load the requested notes in the given order. By default recipes and PDF
+ * notes are excluded (their content lives in structured fields Claude can't
+ * rewrite into a plain note). With readOnly, they are included using whatever
+ * text they have (recipe markdown, the PDF summary or extracted text), since
+ * Claude only reads them.
  */
-async function loadSourceNotes(topicId: string, noteIds: string[]) {
+export async function loadSourceNotes(
+  topicId: string,
+  noteIds: string[],
+  opts: { readOnly?: boolean } = {},
+) {
   const uniqueIds = Array.from(new Set(noteIds)).filter((id) => isValidObjectId(id));
   const docs = await NoteModel.find({ _id: { $in: uniqueIds }, topicId })
     .select({
@@ -69,6 +78,7 @@ async function loadSourceNotes(topicId: string, noteIds: string[]) {
       sourceType: 1,
       createdAt: 1,
       'derived.googleDoc.textPlain': 1,
+      ...(opts.readOnly ? { pdfSummaryMarkdown: 1, 'derived.pdf.extractedText': 1 } : {}),
     })
     .lean();
 
@@ -80,7 +90,14 @@ async function loadSourceNotes(topicId: string, noteIds: string[]) {
     const d: any = byId.get(id);
     if (!d) continue;
     const title = d.title || 'Untitled';
-    if (d.recipe) {
+    if (opts.readOnly) {
+      const isPdf = d.pdfAssetId || d.sourceType === 'pdf';
+      const text = isPdf
+        ? (d.pdfSummaryMarkdown || d.derived?.pdf?.extractedText || '').toString()
+        : noteText(d);
+      if (text.trim()) included.push({ id, title, text, createdAt: d.createdAt });
+      else excluded.push({ id, title, reason: 'no text' });
+    } else if (d.recipe) {
       excluded.push({ id, title, reason: 'recipe' });
     } else if (d.pdfAssetId || d.sourceType === 'pdf') {
       excluded.push({ id, title, reason: 'PDF note' });
@@ -92,7 +109,7 @@ async function loadSourceNotes(topicId: string, noteIds: string[]) {
   return { included, excluded, missingCount: uniqueIds.length - docs.length };
 }
 
-function buildNotesBlock(notes: SourceNote[]): string {
+export function buildNotesBlock(notes: SourceNote[]): string {
   return notes
     .map((n, i) => {
       const created = n.createdAt ? ` created="${new Date(n.createdAt).toISOString()}"` : '';
@@ -167,15 +184,44 @@ export async function streamConsolidateDraft(req: Request, res: Response) {
     return res.status(503).json({ message: 'ANTHROPIC_API_KEY is not configured on the server.' });
   }
 
+  res.setHeader('X-Consolidate-Excluded', encodeURIComponent(JSON.stringify(excluded)));
+  res.setHeader('X-Consolidate-Input-Chars', String(inputChars));
+
+  await streamClaudeText(res, client, {
+    logTag: 'consolidate',
+    params: {
+      model: CONSOLIDATE_MODEL,
+      max_tokens: 64000,
+      output_config: { effort: 'medium' },
+      system: SYSTEM_PROMPT,
+      messages: buildMessages(included, body),
+    },
+    maxTokensNote: 'the draft was cut off because it reached the maximum length.',
+    refusalNote: 'Claude declined to complete this draft.',
+  });
+}
+
+/**
+ * Stream Claude's text output to an Express response as text/plain. Callers
+ * set any extra headers first. Stops generating (and billing) if the client
+ * disconnects; errors after the stream starts are written as STREAM_ERROR_MARKER.
+ */
+export async function streamClaudeText(
+  res: Response,
+  client: Anthropic,
+  args: {
+    logTag: string;
+    params: Omit<Anthropic.Beta.Messages.MessageCreateParamsStreaming, 'stream' | 'betas' | 'fallbacks'>;
+    maxTokensNote: string;
+    refusalNote: string;
+  },
+) {
   res.status(200);
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('X-Accel-Buffering', 'no');
-  res.setHeader('X-Consolidate-Excluded', encodeURIComponent(JSON.stringify(excluded)));
-  res.setHeader('X-Consolidate-Input-Chars', String(inputChars));
   res.flushHeaders();
 
-  // Stop generating (and billing) if the user clicks Stop or closes the dialog.
   const abort = new AbortController();
   res.on('close', () => {
     if (!res.writableEnded) abort.abort();
@@ -188,11 +234,7 @@ export async function streamConsolidateDraft(req: Request, res: Response) {
       {
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
-        model: CONSOLIDATE_MODEL,
-        max_tokens: 64000,
-        output_config: { effort: 'medium' },
-        system: SYSTEM_PROMPT,
-        messages: buildMessages(included, body),
+        ...args.params,
       },
       { signal: abort.signal },
     );
@@ -203,23 +245,23 @@ export async function streamConsolidateDraft(req: Request, res: Response) {
 
     const final = await stream.finalMessage();
     if (final.stop_reason === 'max_tokens') {
-      res.write('\n\n> **Note:** the draft was cut off because it reached the maximum length.');
+      res.write(`\n\n> **Note:** ${args.maxTokensNote}`);
     } else if (final.stop_reason === 'refusal') {
-      res.write('\n\n> **Note:** Claude declined to complete this draft.');
+      res.write(`\n\n> **Note:** ${args.refusalNote}`);
     }
     res.end();
   } catch (err: any) {
     if (abort.signal.aborted) return;
-    console.error('[consolidate] draft failed', err);
+    console.error(`[${args.logTag}] stream failed`, err);
     const msg =
       err instanceof Anthropic.APIError ? `${err.status ?? ''} ${err.message}`.trim() : String(err?.message ?? err);
     // Headers are already sent; append a marker the client recognizes.
-    res.write(`\n\n[[CONSOLIDATE_ERROR]] ${msg}`);
+    res.write(`\n\n${STREAM_ERROR_MARKER} ${msg}`);
     res.end();
   }
 }
 
-async function dedupeSlug(topicId: string, base: string): Promise<string> {
+export async function dedupeSlug(topicId: string, base: string): Promise<string> {
   let slug = base || 'untitled';
   let i = 2;
   while (await NoteModel.exists({ topicId, slug })) {
