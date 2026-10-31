@@ -31,6 +31,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SendIcon from '@mui/icons-material/Send';
 import StopIcon from '@mui/icons-material/Stop';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import CheckIcon from '@mui/icons-material/Check';
 import type {
   ApplyNoteChangesResult,
   AskConversationNoteStatus,
@@ -105,29 +106,45 @@ const NOTE_STATUS_LABEL: Partial<Record<AskConversationNoteStatus, string>> = {
   missing: 'No longer in this topic: left out',
 };
 
-function conversationTitle(question: string): string {
-  const q = question.replace(/\s+/g, ' ').trim();
+// Title for a new conversation: picked suggestions by name, then anything typed
+function conversationTitle(labels: string[], typed: string): string {
+  const q = [labels.join(' + '), typed.replace(/\s+/g, ' ').trim()].filter(Boolean).join(': ');
   return q.length > 80 ? `${q.slice(0, 77)}…` : q;
 }
 
-const STARTERS: { label: string; text: string; multiOnly?: boolean }[] = [
-  { label: 'Summarize', text: 'Summarize these notes.' },
+// Suggested requests. Any number can be picked, alone or with a typed question.
+// `notes` is "this note" or "these notes".
+const STARTERS: { label: string; text: (notes: string) => string; multiOnly?: boolean }[] = [
+  { label: 'Summarize', text: (notes) => `Summarize ${notes}.` },
   {
     label: 'Suggest improvements',
-    text: 'Suggest improvements to these notes: what should be clarified, corrected, reorganized, or removed?',
+    text: (notes) =>
+      `Suggest improvements to ${notes}: what should be clarified, corrected, reorganized, or removed?`,
   },
   {
     label: 'Find contradictions or outdated info',
-    text: 'Find contradictions, or information that looks outdated, in these notes.',
+    text: (notes) => `Find contradictions, or information that looks outdated, in ${notes}.`,
   },
-  { label: 'What’s missing?', text: 'What important information or open questions are missing from these notes?' },
-  { label: 'Action items', text: 'List the action items, decisions, and next steps in these notes.' },
+  {
+    label: 'What’s missing?',
+    text: (notes) => `What important information or open questions are missing from ${notes}?`,
+  },
+  { label: 'Action items', text: (notes) => `List the action items, decisions, and next steps in ${notes}.` },
   {
     label: 'Compare',
-    text: 'Compare these notes: where do they overlap, and how do they differ?',
+    text: (notes) => `Compare ${notes}: where do they overlap, and how do they differ?`,
     multiOnly: true,
   },
 ];
+
+// The question sent for the picked suggestions plus anything typed.
+function composeQuestion(requests: string[], typed: string): string {
+  const extra = typed.trim();
+  if (requests.length === 0) return extra;
+  const list =
+    requests.length === 1 ? requests[0] : requests.map((r, i) => `${i + 1}. ${r}`).join('\n');
+  return extra ? `${list}\n\n${extra}` : list;
+}
 
 // The first H1 of an answer, if any, makes a good note title.
 function extractTitle(markdown: string): string {
@@ -177,6 +194,8 @@ export default function AskNotesDialog({
 }: AskNotesDialogProps) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
+  // Labels of the suggestions picked for the next question
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [excluded, setExcluded] = useState<ConsolidateExcludedNote[]>([]);
@@ -226,6 +245,7 @@ export default function AskNotesDialog({
     savedRef.current = saved;
     setTurns([]);
     setInput('');
+    setPicked(new Set());
     setStreaming(false);
     setError(null);
     setExcluded([]);
@@ -280,7 +300,7 @@ export default function AskNotesDialog({
 
   // Save a finished answer to the conversation, creating it with the first one.
   const persistTurn = useCallback(
-    (saved: SavedConversation, localIndex: number, turn: AskConversationTurnInput) => {
+    (saved: SavedConversation, localIndex: number, turn: AskConversationTurnInput, title: string) => {
       saved.queue = saved.queue.then(async () => {
         try {
           if (saved.id) {
@@ -288,7 +308,7 @@ export default function AskNotesDialog({
           } else {
             const created = await createConversation({
               topicId,
-              title: conversationTitle(turn.question),
+              title,
               noteIds,
               turn,
             }).unwrap();
@@ -326,7 +346,8 @@ export default function AskNotesDialog({
   );
 
   const ask = useCallback(
-    async (question: string) => {
+    // onFailed restores what was being asked so it can be retried
+    async (question: string, title: string, onFailed: () => void) => {
       const q = question.trim();
       if (!q || streaming || loading || noteIds.length === 0) return;
       setError(null);
@@ -362,16 +383,16 @@ export default function AskNotesDialog({
             update({ answer: text });
           },
         });
-        if (answer.trim()) persistTurn(saved, index, { question: q, answer, sources });
+        if (answer.trim()) persistTurn(saved, index, { question: q, answer, sources }, title);
       } catch (err: any) {
         if (controller.signal.aborted) {
           update({ stopped: true });
           // Keep what arrived, even if the dialog was closed mid-answer
-          if (answer.trim()) persistTurn(saved, index, { question: q, answer, sources, stopped: true });
+          if (answer.trim()) persistTurn(saved, index, { question: q, answer, sources, stopped: true }, title);
         } else {
           // Drop the failed turn and put the question back so it can be retried
           setTurns((prev) => prev.filter((_, i) => i !== index));
-          setInput(q);
+          onFailed();
           setError(err?.message ?? 'Request failed');
         }
       } finally {
@@ -475,6 +496,32 @@ export default function AskNotesDialog({
 
   const starters = STARTERS.filter((s) => !s.multiOnly || notes.length > 1);
   const theseNotes = notes.length === 1 ? 'this note' : 'these notes';
+  const canAsk = !loading && noteIds.length > 0 && !(conversationId && !resumed);
+  const hasQuestion = Boolean(input.trim()) || picked.size > 0;
+
+  const togglePicked = (label: string) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+
+  const submit = () => {
+    const chosen = starters.filter((s) => picked.has(s.label));
+    const question = composeQuestion(
+      chosen.map((s) => s.text(theseNotes)),
+      input,
+    );
+    if (!question) return;
+    const typed = input;
+    const pickedBefore = picked;
+    setPicked(new Set());
+    ask(question, conversationTitle(chosen.map((s) => s.label), typed), () => {
+      setInput(typed);
+      setPicked(pickedBefore);
+    });
+  };
   const excludedIds = new Set(excluded.map((e) => e.id));
   // Every note the conversation is about, including ones left out when continuing it
   const listedNotes: { id: string; title: string; status: AskConversationNoteStatus }[] =
@@ -571,23 +618,8 @@ export default function AskNotesDialog({
             ) : conversationId && !resumed ? null : turns.length === 0 ? (
               <Box sx={{ py: 4, textAlign: 'center' }}>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Ask anything about {theseNotes}, or start with one of these:
+                  Ask anything about {theseNotes}, or pick one or more suggestions below and click Ask.
                 </Typography>
-                <Stack
-                  direction="row"
-                  spacing={1}
-                  justifyContent="center"
-                  sx={{ flexWrap: 'wrap', rowGap: 1 }}
-                >
-                  {starters.map((s) => (
-                    <Chip
-                      key={s.label}
-                      label={s.label}
-                      variant="outlined"
-                      onClick={() => ask(s.text)}
-                    />
-                  ))}
-                </Stack>
               </Box>
             ) : (
               <Stack spacing={2}>
@@ -742,6 +774,39 @@ export default function AskNotesDialog({
             )}
           </Box>
 
+          {canAsk && (
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              sx={{ flexShrink: 0, flexWrap: 'wrap', rowGap: 1 }}
+            >
+              {starters.map((s) => {
+                const on = picked.has(s.label);
+                return (
+                  <Chip
+                    key={s.label}
+                    size="small"
+                    label={s.label}
+                    title={s.text(theseNotes)}
+                    color={on ? 'primary' : 'default'}
+                    variant={on ? 'filled' : 'outlined'}
+                    icon={on ? <CheckIcon /> : undefined}
+                    disabled={streaming}
+                    onClick={() => togglePicked(s.label)}
+                  />
+                );
+              })}
+              {picked.size > 0 && (
+                <Typography variant="caption" color="text.secondary">
+                  {input.trim()
+                    ? 'Asked together with your question'
+                    : 'Click Ask, or add your own question to go with these'}
+                </Typography>
+              )}
+            </Stack>
+          )}
+
           <Stack direction="row" spacing={1} alignItems="flex-end" sx={{ flexShrink: 0 }}>
             <TextField
               fullWidth
@@ -762,7 +827,7 @@ export default function AskNotesDialog({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  ask(input);
+                  submit();
                 }
               }}
             />
@@ -774,8 +839,8 @@ export default function AskNotesDialog({
               <Button
                 variant="contained"
                 endIcon={<SendIcon />}
-                disabled={!input.trim() || loading || noteIds.length === 0}
-                onClick={() => ask(input)}
+                disabled={!hasQuestion || !canAsk}
+                onClick={submit}
               >
                 Ask
               </Button>

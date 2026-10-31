@@ -42,7 +42,7 @@ The image is uploaded, attached to the note, and inserted into the note body at 
 **Ask Claude** lets you ask a question about one or more notes and get an answer, without changing the notes. Use it for things like a summary, suggestions for improving the notes, or finding contradictions.
 
 1. In a topic, select the notes you want to ask about and click **Ask Claude**. With nothing selected, it asks about every note in the topic. On a note's page, **Ask Claude** asks about that note.
-2. Type a question, or click a starter such as **Summarize**, **Suggest improvements**, or **What's missing?**. The answer appears as it's written; **Stop** ends it early.
+2. Type a question, or pick one or more suggestions above the question box, such as **Summarize**, **Suggest improvements**, or **What's missing?**, and click **Ask**. Picked suggestions are asked together, along with anything you type. The suggestions stay available for follow-up questions. The answer appears as it's written; **Stop** ends it early.
 3. Ask follow-up questions to continue the conversation. Claude cites the notes it used as numbers like [2]; click a number or a **Sources** chip to open that note in a new tab.
 4. Under any answer:
    - **Copy** copies it to the clipboard.
