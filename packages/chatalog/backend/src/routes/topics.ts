@@ -10,6 +10,14 @@ import {
   proposeNoteChanges,
   undoNoteChangeSet,
 } from '../controllers/noteChangesController';
+import {
+  appendAskConversationTurn,
+  createAskConversation,
+  deleteAskConversation,
+  getAskConversation,
+  listAskConversations,
+  updateAskConversation,
+} from '../controllers/askConversationsController';
 
 const topicsRouter = Router();
 
@@ -25,5 +33,11 @@ topicsRouter.post('/:topicId/ask-notes/plan', proposeNoteChanges);
 topicsRouter.get('/:topicId/note-changes', listNoteChangeSets);
 topicsRouter.post('/:topicId/note-changes/apply', applyNoteChanges);
 topicsRouter.post('/:topicId/note-changes/:changeSetId/undo', undoNoteChangeSet);
+topicsRouter.get('/:topicId/ask-conversations', listAskConversations);
+topicsRouter.post('/:topicId/ask-conversations', createAskConversation);
+topicsRouter.get('/:topicId/ask-conversations/:conversationId', getAskConversation);
+topicsRouter.patch('/:topicId/ask-conversations/:conversationId', updateAskConversation);
+topicsRouter.delete('/:topicId/ask-conversations/:conversationId', deleteAskConversation);
+topicsRouter.post('/:topicId/ask-conversations/:conversationId/turns', appendAskConversationTurn);
 
 export default topicsRouter;

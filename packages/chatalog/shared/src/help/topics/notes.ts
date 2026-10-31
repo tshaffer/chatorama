@@ -5,7 +5,7 @@ export const notes: HelpTopic = {
   title: 'Notes',
   category: 'Content',
   order: 1,
-  keywords: ['note', 'create', 'edit', 'delete', 'markdown', 'content', 'draft', 'status', 'image', 'png', 'jpg', 'picture', 'photo', 'screenshot', 'insert image', 'consolidate', 'summarize', 'archive', 'archived', 'combine', 'merge', 'ask claude', 'question', 'suggestions', 'summary', 'compare', 'contradictions', 'plan these changes', 'make these changes', 'apply changes', 'reorganize', 'undo'],
+  keywords: ['note', 'create', 'edit', 'delete', 'markdown', 'content', 'draft', 'status', 'image', 'png', 'jpg', 'picture', 'photo', 'screenshot', 'insert image', 'consolidate', 'summarize', 'archive', 'archived', 'combine', 'merge', 'ask claude', 'question', 'suggestions', 'summary', 'compare', 'contradictions', 'plan these changes', 'make these changes', 'apply changes', 'reorganize', 'undo', 'conversation', 'continue', 'resume', 'set aside'],
   body: `Notes are the primary content in Chatalog. Each note belongs to exactly one subject and topic.
 
 ## Creating a note
@@ -50,7 +50,13 @@ The image is uploaded, attached to the note, and inserted into the note body at 
    - **Plan these changes…** has Claude turn the conversation into changes to your notes (see below).
    - **Consolidate with this** (topic page only) opens Consolidate on the same notes with the answer as its instructions, for example to apply Claude's suggestions.
 
-Conversations aren't kept after you close the dialog, so save any answer you want to keep. Recipes and PDF notes can be included; Claude reads the recipe text or the PDF's summary.
+Recipes and PDF notes can be included; Claude reads the recipe text or the PDF's summary.
+
+### Continuing a conversation later
+
+Conversations are saved after each answer, so you can close the dialog and pick up where you left off. In the topic, click **Show conversations with Claude** below the note list, then **Continue** on a conversation. Conversations started from a note's page are listed in that note's topic. **Rename** changes a conversation's title (the first question, to start with), and **Delete** removes it permanently without affecting notes saved from it.
+
+When you continue a conversation, Claude reads the notes as they are now. Notes edited since the last answer are marked **Changed since**, as a reminder that earlier answers may be out of date. Notes that were archived or moved to another topic are left out.
 
 To search your whole library with a question instead, use **Ask** (the AI search button in the top bar).
 

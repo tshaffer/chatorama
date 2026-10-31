@@ -18,6 +18,7 @@ export const chatalogApi = createApi({
     'SavedSearch',
     'GoogleDocStatus',
     'NoteChangeSet',
+    'AskConversation',
   ],
   endpoints: () => ({}), // no queries/mutations here — use injectEndpoints elsewhere
 });

@@ -49,6 +49,7 @@ import ConsolidateNotesDialog from '../features/notes/ConsolidateNotesDialog';
 import AskNotesDialog from '../features/notes/AskNotesDialog';
 import ArchivedNotesSection from '../features/notes/ArchivedNotesSection';
 import NoteChangeSetsSection from '../features/notes/NoteChangeSetsSection';
+import AskConversationsSection from '../features/notes/AskConversationsSection';
 import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
 import LinkNoteToTargetDialog from '../features/relations/LinkNoteToTargetDialog';
 import { NoteStatusIndicator } from '../features/notes/NoteStatusIndicator';
@@ -87,6 +88,8 @@ export default function TopicNotesPage() {
     instructions: string;
   } | null>(null);
   const [askOpen, setAskOpen] = useState(false);
+  // A saved conversation being continued; null for a new one
+  const [askConversationId, setAskConversationId] = useState<string | null>(null);
   const [changesApplied, setChangesApplied] = useState<{
     changeSetId: string;
     message: string;
@@ -466,7 +469,10 @@ export default function TopicNotesPage() {
                       size="small"
                       variant="contained"
                       disabled={isBatchMode || activeNotes.length === 0}
-                      onClick={() => setAskOpen(true)}
+                      onClick={() => {
+                        setAskConversationId(null);
+                        setAskOpen(true);
+                      }}
                     >
                       Ask Claude ({hasSelection ? selectedIds.size : 'all'})
                     </Button>
@@ -539,6 +545,15 @@ export default function TopicNotesPage() {
                     <>
                       <ArchivedNotesSection notes={archivedNotes} onOpenNote={onOpenNote} />
                       {topicId && <NoteChangeSetsSection topicId={topicId} subjectId={subjectId} />}
+                      {topicId && !isBatchMode && (
+                        <AskConversationsSection
+                          topicId={topicId}
+                          onContinue={(conversationId) => {
+                            setAskConversationId(conversationId);
+                            setAskOpen(true);
+                          }}
+                        />
+                      )}
                     </>
                   )}
 
@@ -714,6 +729,15 @@ export default function TopicNotesPage() {
                     <>
                       <ArchivedNotesSection notes={archivedNotes} onOpenNote={onOpenNote} />
                       {topicId && <NoteChangeSetsSection topicId={topicId} subjectId={subjectId} />}
+                      {topicId && !isBatchMode && (
+                        <AskConversationsSection
+                          topicId={topicId}
+                          onContinue={(conversationId) => {
+                            setAskConversationId(conversationId);
+                            setAskOpen(true);
+                          }}
+                        />
+                      )}
                     </>
                   )}
                 </>
@@ -782,6 +806,7 @@ export default function TopicNotesPage() {
                       : `all ${activeNotes.length} notes in ${currentTopicName}`
                 }
                 notes={hasSelection ? selectedNotes : activeNotes}
+                conversationId={askConversationId}
                 onClose={() => setAskOpen(false)}
                 onSaved={(noteId, title) => {
                   setConsolidated({ noteId, title, archivedNoteIds: [] });
@@ -798,9 +823,10 @@ export default function TopicNotesPage() {
                   });
                   refetchNotes();
                 }}
-                onConsolidate={(instructions) => {
+                onConsolidate={(instructions, askedNotes) => {
+                  const askedIds = new Set(askedNotes.map((n) => n.id));
                   setConsolidateHandoff({
-                    notes: hasSelection ? selectedNotes : activeNotes,
+                    notes: activeNotes.filter((n) => askedIds.has(n.id)),
                     instructions,
                   });
                   setAskOpen(false);

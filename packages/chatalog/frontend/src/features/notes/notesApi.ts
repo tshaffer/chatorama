@@ -9,6 +9,12 @@ import type {
   MergeNotesRequest,
   MergeNotesResult,
   ApplyNoteChangesRequest,
+  AppendAskConversationTurnRequest,
+  AskConversation,
+  AskConversationSummary,
+  AskConversationWithNotes,
+  CreateAskConversationRequest,
+  UpdateAskConversationRequest,
   ApplyNoteChangesResult,
   AskNotesSaveRequest,
   AskNotesSaveResult,
@@ -406,6 +412,59 @@ export const notesApi = baseApi.injectEndpoints({
       },
     }),
 
+    getAskConversations: build.query<AskConversationSummary[], string>({
+      query: (topicId) => ({ url: `topics/${topicId}/ask-conversations` }),
+      providesTags: (_res, _err, topicId) => [{ type: 'AskConversation' as const, id: topicId }],
+    }),
+
+    // Fetched fresh each time a conversation is continued (see AskNotesDialog), so not cached by tag
+    getAskConversation: build.query<AskConversationWithNotes, { topicId: string; conversationId: string }>({
+      query: ({ topicId, conversationId }) => ({
+        url: `topics/${topicId}/ask-conversations/${conversationId}`,
+      }),
+    }),
+
+    createAskConversation: build.mutation<AskConversation, CreateAskConversationRequest & { topicId: string }>({
+      query: ({ topicId, ...body }) => ({
+        url: `topics/${topicId}/ask-conversations`,
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_res, _err, { topicId }) => [{ type: 'AskConversation' as const, id: topicId }],
+    }),
+
+    appendAskConversationTurn: build.mutation<
+      { turnCount: number },
+      AppendAskConversationTurnRequest & { topicId: string; conversationId: string }
+    >({
+      query: ({ topicId, conversationId, ...body }) => ({
+        url: `topics/${topicId}/ask-conversations/${conversationId}/turns`,
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_res, _err, { topicId }) => [{ type: 'AskConversation' as const, id: topicId }],
+    }),
+
+    updateAskConversation: build.mutation<
+      AskConversation,
+      UpdateAskConversationRequest & { topicId: string; conversationId: string }
+    >({
+      query: ({ topicId, conversationId, ...body }) => ({
+        url: `topics/${topicId}/ask-conversations/${conversationId}`,
+        method: 'PATCH',
+        body,
+      }),
+      invalidatesTags: (_res, _err, { topicId }) => [{ type: 'AskConversation' as const, id: topicId }],
+    }),
+
+    deleteAskConversation: build.mutation<void, { topicId: string; conversationId: string }>({
+      query: ({ topicId, conversationId }) => ({
+        url: `topics/${topicId}/ask-conversations/${conversationId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: (_res, _err, { topicId }) => [{ type: 'AskConversation' as const, id: topicId }],
+    }),
+
     setNotesArchived: build.mutation<SetNotesArchivedResult, SetNotesArchivedRequest>({
       query: (body) => ({ url: 'notes/archive', method: 'POST', body }),
       // Topic lists and Sources lists provide per-note tags, so these refresh them.
@@ -468,6 +527,12 @@ export const {
   useApplyNoteChangesMutation,
   useGetNoteChangeSetsQuery,
   useUndoNoteChangesMutation,
+  useGetAskConversationsQuery,
+  useLazyGetAskConversationQuery,
+  useCreateAskConversationMutation,
+  useAppendAskConversationTurnMutation,
+  useUpdateAskConversationMutation,
+  useDeleteAskConversationMutation,
   useSetNotesArchivedMutation,
   useGetConsolidationSourcesQuery,
   useImportGoogleDocFromDriveMutation,

@@ -425,6 +425,65 @@ export interface UndoNoteChangesResult {
   archivedNoteIds: string[];
 }
 
+// ---- Saved Ask Claude conversations ----
+
+export interface AskConversationTurn {
+  question: string;
+  answer: string;
+  stopped?: boolean;
+  // The notes the answer was given from, in citation order ([1] is sources[0])
+  sources: { id: string; title: string }[];
+  // Set once the answer is saved as a note
+  savedNoteId?: string;
+  answeredAt: string;
+}
+
+export interface AskConversation {
+  id: string;
+  topicId: string;
+  title: string;
+  // The notes the conversation is about, in order
+  noteIds: string[];
+  turns: AskConversationTurn[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AskConversationSummary {
+  id: string;
+  title: string;
+  questionCount: number;
+  noteCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// How a conversation's notes stand now, for resuming it
+export type AskConversationNoteStatus = 'unchanged' | 'changed' | 'archived' | 'missing';
+
+export interface AskConversationWithNotes extends AskConversation {
+  notes: { id: string; title: string; status: AskConversationNoteStatus }[];
+}
+
+// A finished answer as the client sends it; the server stamps answeredAt.
+export type AskConversationTurnInput = Omit<AskConversationTurn, 'answeredAt' | 'savedNoteId'>;
+
+export interface CreateAskConversationRequest {
+  title: string;
+  noteIds: string[];
+  turn: AskConversationTurnInput;
+}
+
+export interface AppendAskConversationTurnRequest {
+  turn: AskConversationTurnInput;
+}
+
+export interface UpdateAskConversationRequest {
+  title?: string;
+  // Record that an answer was saved as a note
+  savedNote?: { turnIndex: number; noteId: string };
+}
+
 export interface SetNotesArchivedRequest {
   noteIds: string[];
   archived: boolean;
