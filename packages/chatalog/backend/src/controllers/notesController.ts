@@ -36,7 +36,7 @@ function validateStatusOrReject(res: Response, raw: unknown): {
 
 
 // Ensure slug is unique within a topic; optionally exclude current note id
-async function dedupeNoteSlug(topicId: string | undefined, base: string, excludeId?: string): Promise<string> {
+export async function dedupeNoteSlug(topicId: string | undefined, base: string, excludeId?: string): Promise<string> {
   let slug = base || 'untitled';
   let i = 2;
   // scope uniqueness to topicId (null/empty still becomes part of the query)

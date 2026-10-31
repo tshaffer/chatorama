@@ -1428,6 +1428,16 @@ export default function NoteEditor({
           onSaved={(_noteId, savedTitle) =>
             setSnack({ open: true, msg: `Saved “${savedTitle}” to this topic`, sev: 'success' })
           }
+          onChangesApplied={(result) => {
+            setAskOpen(false);
+            const count =
+              result.createdNoteIds.length + result.editedNoteIds.length + result.archivedNoteIds.length;
+            setSnack({
+              open: true,
+              msg: `Applied ${count} ${count === 1 ? 'change' : 'changes'}. You can undo them from the topic page.`,
+              sev: 'success',
+            });
+          }}
         />
       )}
 

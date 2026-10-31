@@ -179,8 +179,9 @@ export interface Note {
 }
 
 export interface NoteConsolidation {
-  // 'consolidate' (default): rewritten from the sources; 'answer': Claude's answer to a question about them
-  kind?: 'consolidate' | 'answer';
+  // 'consolidate' (default): rewritten from the sources; 'answer': Claude's answer to a question about them;
+  // 'change': created when applying an Ask Claude change plan
+  kind?: 'consolidate' | 'answer' | 'change';
   sourceNoteIds: string[];
   instructions?: string;
   question?: string;
@@ -362,6 +363,66 @@ export interface AskNotesSaveRequest {
 
 export interface AskNotesSaveResult {
   noteId: string;
+}
+
+// ---- Ask Claude change plans ("Make these changes") ----
+
+// Links in proposed Markdown use `new:<ref>` for notes the plan creates; they
+// become real note links when the plan is applied.
+export type NoteChangeOp =
+  | { type: 'create'; ref: string; title: string; markdown: string; reason?: string }
+  | { type: 'edit'; noteId: string; title?: string; markdown?: string; reason?: string }
+  // mergedInto: an existing noteId, or `new:<ref>`
+  | { type: 'archive'; noteId: string; mergedInto?: string; reason?: string };
+
+export interface NoteChangePlan {
+  summary: string;
+  ops: NoteChangeOp[];
+}
+
+export interface NoteChangePlanRequest {
+  noteIds: string[];
+  // The Ask Claude conversation the plan is based on (ends with an assistant answer)
+  messages: AskNotesMessage[];
+  // To revise a plan: the previous plan and what to change about it
+  currentPlan?: NoteChangePlan;
+  revision?: string;
+}
+
+export interface NoteChangePlanResponse {
+  plan: NoteChangePlan;
+  // Current title/text of notes the plan edits, for showing a diff
+  currentNotes: { id: string; title: string; markdown: string }[];
+  // Operations Claude proposed that were dropped as invalid
+  warnings: string[];
+}
+
+export interface ApplyNoteChangesRequest {
+  noteIds: string[];
+  summary: string;
+  ops: NoteChangeOp[];
+}
+
+export interface ApplyNoteChangesResult {
+  changeSetId: string;
+  createdNoteIds: string[];
+  editedNoteIds: string[];
+  archivedNoteIds: string[];
+}
+
+export interface NoteChangeSetSummary {
+  id: string;
+  summary: string;
+  createdAt: string; // ISO
+  createdCount: number;
+  editedCount: number;
+  archivedCount: number;
+}
+
+export interface UndoNoteChangesResult {
+  restoredNoteIds: string[];
+  // Notes this change set created; undo archives them
+  archivedNoteIds: string[];
 }
 
 export interface SetNotesArchivedRequest {

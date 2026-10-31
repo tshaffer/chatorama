@@ -8,9 +8,15 @@ import type {
   TopicNotesWithRelations,
   MergeNotesRequest,
   MergeNotesResult,
+  ApplyNoteChangesRequest,
+  ApplyNoteChangesResult,
   AskNotesSaveRequest,
   AskNotesSaveResult,
   ConsolidateSaveRequest,
+  NoteChangePlanRequest,
+  NoteChangePlanResponse,
+  NoteChangeSetSummary,
+  UndoNoteChangesResult,
   ConsolidateSaveResult,
   SetNotesArchivedRequest,
   SetNotesArchivedResult,
@@ -343,6 +349,63 @@ export const notesApi = baseApi.injectEndpoints({
       },
     }),
 
+    proposeNoteChanges: build.mutation<NoteChangePlanResponse, NoteChangePlanRequest & { topicId: string }>({
+      query: ({ topicId, ...body }) => ({ url: `topics/${topicId}/ask-notes/plan`, method: 'POST', body }),
+    }),
+
+    applyNoteChanges: build.mutation<
+      ApplyNoteChangesResult,
+      ApplyNoteChangesRequest & { topicId: string; subjectId?: string }
+    >({
+      query: ({ topicId, subjectId: _subjectId, ...body }) => ({
+        url: `topics/${topicId}/note-changes/apply`,
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_res, _err, { subjectId, topicId, noteIds }) => {
+        const tags: { type: 'Note' | 'TopicNotes' | 'NoteChangeSet'; id: string }[] = [
+          { type: 'Note', id: 'LIST' },
+          { type: 'NoteChangeSet', id: topicId },
+          ...noteIds.map((id) => ({ type: 'Note' as const, id })),
+        ];
+        if (subjectId) {
+          tags.push({ type: 'Note', id: `LIST:${subjectId}:${topicId}` });
+          tags.push({ type: 'TopicNotes', id: `${subjectId}:${topicId}` });
+        }
+        return tags;
+      },
+    }),
+
+    getNoteChangeSets: build.query<NoteChangeSetSummary[], string>({
+      query: (topicId) => ({ url: `topics/${topicId}/note-changes` }),
+      providesTags: (_res, _err, topicId) => [{ type: 'NoteChangeSet' as const, id: topicId }],
+    }),
+
+    undoNoteChanges: build.mutation<
+      UndoNoteChangesResult,
+      { topicId: string; subjectId?: string; changeSetId: string }
+    >({
+      query: ({ topicId, changeSetId }) => ({
+        url: `topics/${topicId}/note-changes/${changeSetId}/undo`,
+        method: 'POST',
+      }),
+      invalidatesTags: (res, _err, { subjectId, topicId }) => {
+        const tags: { type: 'Note' | 'TopicNotes' | 'NoteChangeSet'; id: string }[] = [
+          { type: 'Note', id: 'LIST' },
+          { type: 'NoteChangeSet', id: topicId },
+          ...[...(res?.restoredNoteIds ?? []), ...(res?.archivedNoteIds ?? [])].map((id) => ({
+            type: 'Note' as const,
+            id,
+          })),
+        ];
+        if (subjectId) {
+          tags.push({ type: 'Note', id: `LIST:${subjectId}:${topicId}` });
+          tags.push({ type: 'TopicNotes', id: `${subjectId}:${topicId}` });
+        }
+        return tags;
+      },
+    }),
+
     setNotesArchived: build.mutation<SetNotesArchivedResult, SetNotesArchivedRequest>({
       query: (body) => ({ url: 'notes/archive', method: 'POST', body }),
       // Topic lists and Sources lists provide per-note tags, so these refresh them.
@@ -401,6 +464,10 @@ export const {
   useMergeNotesInTopicMutation,
   useSaveConsolidatedNoteMutation,
   useSaveAskNotesAnswerMutation,
+  useProposeNoteChangesMutation,
+  useApplyNoteChangesMutation,
+  useGetNoteChangeSetsQuery,
+  useUndoNoteChangesMutation,
   useSetNotesArchivedMutation,
   useGetConsolidationSourcesQuery,
   useImportGoogleDocFromDriveMutation,

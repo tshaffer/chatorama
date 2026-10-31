@@ -5,7 +5,7 @@ export const notes: HelpTopic = {
   title: 'Notes',
   category: 'Content',
   order: 1,
-  keywords: ['note', 'create', 'edit', 'delete', 'markdown', 'content', 'draft', 'status', 'image', 'png', 'jpg', 'picture', 'photo', 'screenshot', 'insert image', 'consolidate', 'summarize', 'archive', 'archived', 'combine', 'merge', 'ask claude', 'question', 'suggestions', 'summary', 'compare', 'contradictions'],
+  keywords: ['note', 'create', 'edit', 'delete', 'markdown', 'content', 'draft', 'status', 'image', 'png', 'jpg', 'picture', 'photo', 'screenshot', 'insert image', 'consolidate', 'summarize', 'archive', 'archived', 'combine', 'merge', 'ask claude', 'question', 'suggestions', 'summary', 'compare', 'contradictions', 'make these changes', 'apply changes', 'reorganize', 'undo'],
   body: `Notes are the primary content in Chatalog. Each note belongs to exactly one subject and topic.
 
 ## Creating a note
@@ -47,11 +47,26 @@ The image is uploaded, attached to the note, and inserted into the note body at 
 4. Under any answer:
    - **Copy** copies it to the clipboard.
    - **Save as note** saves it as a new note in the same topic, with your question at the top and a link back to the notes it was about.
+   - **Make these changes** has Claude turn the conversation into changes to your notes (see below).
    - **Consolidate with this** (topic page only) opens Consolidate on the same notes with the answer as its instructions, for example to apply Claude's suggestions.
 
 Conversations aren't kept after you close the dialog, so save any answer you want to keep. Recipes and PDF notes can be included; Claude reads the recipe text or the PDF's summary.
 
 To search your whole library with a question instead, use **Ask** (the AI search button in the top bar).
+
+## Making changes with Claude
+
+After discussing your notes with Claude, for example asking which notes to combine, rename, or remove, click **Make these changes** under an answer. Claude turns what you agreed on into a list of changes:
+
+- **New**: a new note in the same topic. Click **Show note** to preview it.
+- **Edit**: a new title and/or new text for one of the notes. Click **Show changes** to see what changes, or **Preview** to see the result.
+- **Archive**: a note that's no longer needed, with the note its content was merged into, if any. Notes are never deleted.
+
+Untick anything you don't want, or type a request such as "keep note 3 and just shorten it" and click **Revise** for a new plan. Click **Apply** to make the ticked changes. Nothing changes until you do.
+
+Claude can only change the notes from the conversation, and new notes go in the same topic.
+
+To undo, click **Undo** in the message that appears after applying. Later, use **Show changes made with Claude** below the topic's note list. Undo restores the edited and archived notes and archives any notes the changes created. If you've edited one of those notes since, Undo won't overwrite your edits; it tells you which note changed.
 
 ## Archived notes
 

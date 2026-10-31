@@ -1,7 +1,7 @@
 // frontend/src/features/notes/ConsolidationInfo.tsx
 // Shown on the note page:
 //  - an "Archived" banner on a note that was archived (e.g. by Consolidate)
-//  - a collapsed "Sources (N)" list on a note created by Consolidate or saved from Ask Claude
+//  - a collapsed "Sources (N)" list on a note created by Consolidate or from Ask Claude
 import { useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
@@ -82,7 +82,9 @@ export default function ConsolidationInfo({ note }: { note: Note }) {
           >
             {isAnswer
               ? `Claude’s answer about ${sourceCount} ${noun}`
-              : `Consolidated from ${sourceCount} ${noun}`}
+              : note.consolidation?.kind === 'change'
+                ? `Created with Claude from ${sourceCount} ${noun}`
+                : `Consolidated from ${sourceCount} ${noun}`}
           </Button>
           <Collapse in={sourcesOpen}>
             <List dense disablePadding sx={{ pl: 1 }}>

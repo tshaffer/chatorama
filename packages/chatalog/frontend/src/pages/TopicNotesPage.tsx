@@ -29,6 +29,7 @@ import {
   useDeleteNoteMutation,
   useGetNoteQuery,
   useSetNotesArchivedMutation,
+  useUndoNoteChangesMutation,
 } from '../features/notes/notesApi';
 import {
   useGetImportBatchesQuery,
@@ -47,6 +48,7 @@ import MergeNotesDialog from '../features/notes/MergeNotesDialog';
 import ConsolidateNotesDialog from '../features/notes/ConsolidateNotesDialog';
 import AskNotesDialog from '../features/notes/AskNotesDialog';
 import ArchivedNotesSection from '../features/notes/ArchivedNotesSection';
+import NoteChangeSetsSection from '../features/notes/NoteChangeSetsSection';
 import SubjectTopicTree from '../features/subjects/SubjectTopicTree';
 import LinkNoteToTargetDialog from '../features/relations/LinkNoteToTargetDialog';
 import { NoteStatusIndicator } from '../features/notes/NoteStatusIndicator';
@@ -85,6 +87,11 @@ export default function TopicNotesPage() {
     instructions: string;
   } | null>(null);
   const [askOpen, setAskOpen] = useState(false);
+  const [changesApplied, setChangesApplied] = useState<{
+    changeSetId: string;
+    message: string;
+  } | null>(null);
+  const [undoNoteChanges] = useUndoNoteChangesMutation();
   const [consolidated, setConsolidated] = useState<{
     noteId: string;
     title: string;
@@ -529,7 +536,10 @@ export default function TopicNotesPage() {
                   />
 
                   {!isBatchMode && (
-                    <ArchivedNotesSection notes={archivedNotes} onOpenNote={onOpenNote} />
+                    <>
+                      <ArchivedNotesSection notes={archivedNotes} onOpenNote={onOpenNote} />
+                      {topicId && <NoteChangeSetsSection topicId={topicId} subjectId={subjectId} />}
+                    </>
                   )}
 
                   {!isBatchMode && (
@@ -701,7 +711,10 @@ export default function TopicNotesPage() {
                     No notes yet
                   </Box>
                   {!isBatchMode && (
-                    <ArchivedNotesSection notes={archivedNotes} onOpenNote={onOpenNote} />
+                    <>
+                      <ArchivedNotesSection notes={archivedNotes} onOpenNote={onOpenNote} />
+                      {topicId && <NoteChangeSetsSection topicId={topicId} subjectId={subjectId} />}
+                    </>
                   )}
                 </>
               )}
@@ -774,6 +787,17 @@ export default function TopicNotesPage() {
                   setConsolidated({ noteId, title, archivedNoteIds: [] });
                   refetchNotes();
                 }}
+                onChangesApplied={(result) => {
+                  setAskOpen(false);
+                  clearSelection();
+                  const count =
+                    result.createdNoteIds.length + result.editedNoteIds.length + result.archivedNoteIds.length;
+                  setChangesApplied({
+                    changeSetId: result.changeSetId,
+                    message: `Applied ${count} ${count === 1 ? 'change' : 'changes'}.`,
+                  });
+                  refetchNotes();
+                }}
                 onConsolidate={(instructions) => {
                   setConsolidateHandoff({
                     notes: hasSelection ? selectedNotes : activeNotes,
@@ -827,6 +851,31 @@ export default function TopicNotesPage() {
                       Open
                     </Button>
                   </>
+                ) : undefined
+              }
+            />
+
+            <Snackbar
+              open={Boolean(changesApplied)}
+              autoHideDuration={10000}
+              onClose={(_e, reason) => reason !== 'clickaway' && setChangesApplied(null)}
+              message={changesApplied?.message}
+              action={
+                changesApplied ? (
+                  <Button
+                    color="secondary"
+                    size="small"
+                    onClick={async () => {
+                      const { changeSetId } = changesApplied;
+                      setChangesApplied(null);
+                      if (topicId) {
+                        await undoNoteChanges({ topicId, subjectId, changeSetId });
+                        refetchNotes();
+                      }
+                    }}
+                  >
+                    Undo
+                  </Button>
                 ) : undefined
               }
             />

@@ -29,7 +29,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SendIcon from '@mui/icons-material/Send';
 import StopIcon from '@mui/icons-material/Stop';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import type { AskNotesMessage } from '@chatorama/chatalog-shared';
+import type { ApplyNoteChangesResult, AskNotesMessage } from '@chatorama/chatalog-shared';
 import MarkdownBody from '../../components/MarkdownBody';
 import { useSaveAskNotesAnswerMutation } from './notesApi';
 import {
@@ -39,6 +39,7 @@ import {
   type AskNotesSource,
 } from './askNotes';
 import type { ConsolidateExcludedNote } from './consolidateDraft';
+import ChangePlanDialog from './ChangePlanDialog';
 
 export type AskNotesDialogProps = {
   open: boolean;
@@ -51,6 +52,8 @@ export type AskNotesDialogProps = {
   onSaved: (noteId: string, title: string) => void;
   // When provided, answers get a "Consolidate with this" action.
   onConsolidate?: (instructions: string) => void;
+  // Called after a "Make these changes" plan is applied; the dialog is done at that point.
+  onChangesApplied: (result: ApplyNoteChangesResult, summary: string) => void;
 };
 
 type Turn = {
@@ -121,6 +124,7 @@ export default function AskNotesDialog({
   onClose,
   onSaved,
   onConsolidate,
+  onChangesApplied,
 }: AskNotesDialogProps) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
@@ -135,6 +139,8 @@ export default function AskNotesDialog({
   const [saveTitle, setSaveTitle] = useState('');
   const [savedTurns, setSavedTurns] = useState<Set<number>>(new Set());
   const [copiedTurn, setCopiedTurn] = useState<number | null>(null);
+  // The answer a "Make these changes" plan is based on
+  const [planTurn, setPlanTurn] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const answerEls = useRef(new Map<number, HTMLDivElement>());
@@ -157,6 +163,7 @@ export default function AskNotesDialog({
     setSavingTurn(null);
     setSavedTurns(new Set());
     setCopiedTurn(null);
+    setPlanTurn(null);
   }, [open]);
 
   // Stop any in-flight answer when the dialog unmounts
@@ -168,6 +175,25 @@ export default function AskNotesDialog({
     bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [turns.length, lastAnswerLength]);
 
+  // The conversation through turn `last`, as Claude sees it. Stopped or empty
+  // answers are left out.
+  const historyThrough = useCallback(
+    (last: number): AskNotesMessage[] =>
+      turns
+        .slice(0, last + 1)
+        .filter((t) => t.answer.trim() && !t.stopped)
+        .flatMap((t) => [
+          { role: 'user' as const, content: t.question },
+          { role: 'assistant' as const, content: t.answer },
+        ]),
+    [turns],
+  );
+
+  const planMessages = useMemo(
+    () => (planTurn === null ? [] : historyThrough(planTurn)),
+    [planTurn, historyThrough],
+  );
+
   const ask = useCallback(
     async (question: string) => {
       const q = question.trim();
@@ -175,13 +201,7 @@ export default function AskNotesDialog({
       setError(null);
       setInput('');
 
-      // Stopped or empty answers are left out of the history Claude sees.
-      const history: AskNotesMessage[] = turns
-        .filter((t) => t.answer.trim() && !t.stopped)
-        .flatMap((t) => [
-          { role: 'user' as const, content: t.question },
-          { role: 'assistant' as const, content: t.answer },
-        ]);
+      const history = historyThrough(turns.length - 1);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -218,7 +238,7 @@ export default function AskNotesDialog({
         setStreaming(false);
       }
     },
-    [streaming, turns, topicId, noteIds],
+    [streaming, turns, topicId, noteIds, historyThrough],
   );
 
   const handleStop = () => abortRef.current?.abort();
@@ -465,6 +485,20 @@ export default function AskNotesDialog({
                           >
                             {savedTurns.has(index) ? 'Saved' : 'Save as note'}
                           </Button>
+                          {!turn.stopped && (
+                            <Tooltip title="Have Claude turn the conversation so far into changes to your notes, for you to review and apply">
+                              <span>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  disabled={streaming}
+                                  onClick={() => setPlanTurn(index)}
+                                >
+                                  Make these changes
+                                </Button>
+                              </span>
+                            </Tooltip>
+                          )}
                           {onConsolidate && (
                             <Tooltip title="Open Consolidate on these notes, with this answer as its instructions">
                               <span>
@@ -561,6 +595,21 @@ export default function AskNotesDialog({
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ChangePlanDialog
+        open={planTurn !== null}
+        subjectId={subjectId}
+        topicId={topicId}
+        notes={notes}
+        messages={planMessages}
+        onClose={() => setPlanTurn(null)}
+        onApplied={(result, summary) => {
+          setPlanTurn(null);
+          // The notes have changed, so the conversation is over.
+          abortRef.current?.abort();
+          onChangesApplied(result, summary);
+        }}
+      />
 
       <Dialog open={confirmCloseOpen} onClose={() => setConfirmCloseOpen(false)}>
         <DialogTitle>Close this conversation?</DialogTitle>
