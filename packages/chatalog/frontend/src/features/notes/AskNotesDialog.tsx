@@ -52,7 +52,7 @@ export type AskNotesDialogProps = {
   onSaved: (noteId: string, title: string) => void;
   // When provided, answers get a "Consolidate with this" action.
   onConsolidate?: (instructions: string) => void;
-  // Called after a "Make these changes" plan is applied; the dialog is done at that point.
+  // Called after a "Plan these changes" plan is applied; the dialog is done at that point.
   onChangesApplied: (result: ApplyNoteChangesResult, summary: string) => void;
 };
 
@@ -139,7 +139,7 @@ export default function AskNotesDialog({
   const [saveTitle, setSaveTitle] = useState('');
   const [savedTurns, setSavedTurns] = useState<Set<number>>(new Set());
   const [copiedTurn, setCopiedTurn] = useState<number | null>(null);
-  // The answer a "Make these changes" plan is based on
+  // The answer a "Plan these changes" plan is based on
   const [planTurn, setPlanTurn] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -494,7 +494,7 @@ export default function AskNotesDialog({
                                   disabled={streaming}
                                   onClick={() => setPlanTurn(index)}
                                 >
-                                  Make these changes
+                                  Plan these changes…
                                 </Button>
                               </span>
                             </Tooltip>

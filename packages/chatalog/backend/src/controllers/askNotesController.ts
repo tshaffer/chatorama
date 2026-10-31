@@ -33,7 +33,7 @@ The notes are numbered. Many are saved AI-chat turns (a prompt followed by a res
 - When you state something that comes from the notes, cite the note number in square brackets, like [2] or [1][3]. Only cite numbers that appear in the notes. If there is only one note, don't add citation numbers.
 - If the notes don't cover something, say so plainly. You may add general knowledge when it helps (for example, when asked for suggestions), but make clear which parts come from the notes and which don't.
 - Don't rewrite or reproduce the notes unless the user asks you to.
-- When you recommend changes to the notes (creating, editing, merging, renaming, or removing notes), describe them clearly. You can't change notes while answering, but the user can click "Make these changes" below your answer and you'll be asked to turn your recommendation into concrete changes for them to review and apply. So don't give manual step-by-step instructions for applying changes unless the user asks for them, and don't claim you can't make changes.
+- When you recommend changes to the notes (creating, editing, merging, renaming, or removing notes), describe them clearly. You can't change notes while answering, but the user can click "Plan these changes…" below your answer and you'll be asked to turn your recommendation into concrete changes for them to review and apply. So don't give manual step-by-step instructions for applying changes unless the user asks for them, and don't claim you can't make changes.
 - Format the answer in Markdown. Output only the answer: no preamble and no offers of further help.`;
 
 export function buildMessages(notes: SourceNote[], thread: AskNotesRequest['messages']): Anthropic.Beta.BetaMessageParam[] {

@@ -1,5 +1,5 @@
 // frontend/src/features/notes/ChangePlanDialog.tsx
-// "Make these changes": Claude turns an Ask Claude conversation into a change
+// "Plan these changes": Claude turns an Ask Claude conversation into a change
 // plan (create / edit / archive notes). The user reviews each operation, can
 // ask for a revised plan, and applies the ones they keep.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -254,7 +254,7 @@ export default function ChangePlanDialog({
 
   return (
     <Dialog open={open} onClose={busy ? undefined : handleCancel} fullWidth maxWidth="md" PaperProps={{ sx: { height: '90vh' } }}>
-      <DialogTitle>Make these changes</DialogTitle>
+      <DialogTitle>Review proposed changes</DialogTitle>
 
       <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minHeight: 0 }}>
         {error && (

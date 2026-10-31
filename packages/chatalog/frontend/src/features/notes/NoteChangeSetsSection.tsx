@@ -1,6 +1,6 @@
 // frontend/src/features/notes/NoteChangeSetsSection.tsx
 // Collapsed-by-default list of change sets applied in this topic from Ask
-// Claude's "Make these changes", each of which can be undone.
+// Claude's "Plan these changes", each of which can be undone.
 import { useState } from 'react';
 import { Alert, Box, Button, List, ListItem, ListItemText } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';

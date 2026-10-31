@@ -365,7 +365,7 @@ export interface AskNotesSaveResult {
   noteId: string;
 }
 
-// ---- Ask Claude change plans ("Make these changes") ----
+// ---- Ask Claude change plans ("Plan these changes") ----
 
 // Links in proposed Markdown use `new:<ref>` for notes the plan creates; they
 // become real note links when the plan is applied.

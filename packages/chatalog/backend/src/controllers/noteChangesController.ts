@@ -1,6 +1,6 @@
 // controllers/noteChangesController.ts
 //
-// "Make these changes": after an Ask Claude conversation, Claude turns what was
+// "Plan these changes": after an Ask Claude conversation, Claude turns what was
 // agreed into a change plan (create / edit / archive notes). The user reviews
 // it, applies the operations they keep, and can undo the whole change set later.
 import { Request, Response } from 'express';
