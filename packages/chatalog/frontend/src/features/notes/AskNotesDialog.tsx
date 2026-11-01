@@ -663,32 +663,49 @@ export default function AskNotesDialog({
                           Stopped. This answer won’t be included in follow-up questions.
                         </Typography>
                       )}
-                      {!isStreaming && turn.answer.trim() && (
+                      {!isStreaming && turn.answer.trim() && cited.length > 0 && (
                         <Stack
                           direction="row"
                           spacing={1}
                           alignItems="center"
                           sx={{ mt: 1, flexWrap: 'wrap', rowGap: 1 }}
                         >
-                          {cited.length > 0 && (
-                            <>
-                              <Typography variant="caption" color="text.secondary">
-                                Sources:
-                              </Typography>
-                              {cited.map((s) => (
-                                <Tooltip key={s.id} title="Open this note in a new tab">
-                                  <Chip
-                                    size="small"
-                                    variant="outlined"
-                                    label={`${turn.sources.indexOf(s) + 1}. ${s.title}`}
-                                    onClick={() => window.open(`/n/${s.id}`, '_blank', 'noopener')}
-                                    sx={{ maxWidth: 260 }}
-                                  />
-                                </Tooltip>
-                              ))}
-                            </>
-                          )}
-                          <Box sx={{ flex: 1 }} />
+                          <Typography variant="caption" color="text.secondary">
+                            Sources:
+                          </Typography>
+                          {cited.map((s) => (
+                            <Tooltip key={s.id} title="Open this note in a new tab">
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={`${turn.sources.indexOf(s) + 1}. ${s.title}`}
+                                onClick={() => window.open(`/n/${s.id}`, '_blank', 'noopener')}
+                                sx={{ maxWidth: 260 }}
+                              />
+                            </Tooltip>
+                          ))}
+                        </Stack>
+                      )}
+                      {!isStreaming && turn.answer.trim() && (
+                        // Sticks to the bottom of the conversation while any of its answer is in view
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          alignItems="center"
+                          justifyContent="flex-end"
+                          sx={{
+                            mt: 1,
+                            py: 0.5,
+                            flexWrap: 'wrap',
+                            rowGap: 1,
+                            position: 'sticky',
+                            bottom: 0,
+                            zIndex: 1,
+                            bgcolor: 'background.paper',
+                            borderTop: 1,
+                            borderColor: 'divider',
+                          }}
+                        >
                           <Button
                             size="small"
                             startIcon={<ContentCopyIcon fontSize="small" />}
