@@ -17,6 +17,7 @@ import {
   DialogContentText,
   DialogActions,
   Snackbar,
+  Chip,
 } from '@mui/material';
 import { skipToken } from '@reduxjs/toolkit/query';
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
@@ -364,10 +365,7 @@ export default function TopicNotesPage() {
         ) : (
           <>
             {/* Header + toolbar */}
-            <Stack
-              direction="row"
-              alignItems="center"
-              justifyContent="space-between"
+            <Box
               sx={{
                 mb: 1,
                 position: 'sticky',
@@ -377,123 +375,140 @@ export default function TopicNotesPage() {
                 py: 1,
               }}
             >
-              <Box>
-                <Typography variant="h6">
-                  {isBatchMode && selectedBatch
-                    ? `Import on ${new Date(selectedBatch.createdAt).toLocaleString()}`
-                    : 'Notes'}
-                </Typography>
-                {isBatchMode && selectedBatch && (
-                  <Typography variant="body2" color="text.secondary">
-                    {selectedBatch.importedCount} notes imported,{' '}
-                    {selectedBatch.remainingCount} currently in Chatalog
+              <Stack direction="row" alignItems="center" justifyContent="space-between">
+                <Box>
+                  <Typography variant="h6">
+                    {isBatchMode && selectedBatch
+                      ? `Import on ${new Date(selectedBatch.createdAt).toLocaleString()}`
+                      : 'Notes'}
                   </Typography>
-                )}
-              </Box>
-              <Toolbar disableGutters sx={{ gap: 1, minHeight: 'auto' }}>
-                {subjectId && topicId && !isBatchMode && (
-                  <ImportFileButton
-                    mode="button"
-                    tooltip={`Import into ${currentSubjectName} / ${currentTopicName}`}
-                    defaultSubjectLabel={currentSubjectName}
-                    defaultTopicLabel={currentTopicName}
-                  />
-                )}
-                <Tooltip title="Select all notes in this topic">
-                  <span>
-                    <Button
+                  {isBatchMode && selectedBatch && (
+                    <Typography variant="body2" color="text.secondary">
+                      {selectedBatch.importedCount} notes imported,{' '}
+                      {selectedBatch.remainingCount} currently in Chatalog
+                    </Typography>
+                  )}
+                </Box>
+                <Toolbar disableGutters sx={{ gap: 1, minHeight: 'auto' }}>
+                  {subjectId && topicId && !isBatchMode && (
+                    <ImportFileButton
+                      mode="button"
+                      tooltip={`Import into ${currentSubjectName} / ${currentTopicName}`}
+                      defaultSubjectLabel={currentSubjectName}
+                      defaultTopicLabel={currentTopicName}
+                    />
+                  )}
+                  <Tooltip title="Select all notes in this topic">
+                    <span>
+                      <Button
+                        size="small"
+                        disabled={!activeNotes.length}
+                        onClick={() => selectAll(allIds)}
+                      >
+                        Select All
+                      </Button>
+                    </span>
+                  </Tooltip>
+                  <Tooltip title="Clear selection">
+                    <span>
+                      <Button
+                        size="small"
+                        disabled={!hasSelection}
+                        onClick={clearSelection}
+                      >
+                        Clear
+                      </Button>
+                    </span>
+                  </Tooltip>
+                  <Tooltip title="Move selected notes to another topic">
+                    <span>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        disabled={!hasSelection}
+                        onClick={() => setMoveOpen(true)}
+                      >
+                        Move ({selectedIds.size})
+                      </Button>
+                    </span>
+                  </Tooltip>
+                  <Tooltip title="Merge selected notes into one">
+                    <span>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        disabled={selectedIds.size < 2 || isBatchMode}
+                        onClick={() => setMergeOpen(true)}
+                      >
+                        Merge ({selectedIds.size})
+                      </Button>
+                    </span>
+                  </Tooltip>
+                  <Tooltip title="Use Claude to rewrite the selected notes as one organized note without repetition">
+                    <span>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        disabled={!hasSelection || isBatchMode}
+                        onClick={() => setConsolidateOpen(true)}
+                      >
+                        Consolidate ({selectedIds.size})
+                      </Button>
+                    </span>
+                  </Tooltip>
+                  <Tooltip
+                    title={
+                      hasSelection
+                        ? 'Ask Claude a question about the selected notes'
+                        : 'Ask Claude a question about all notes in this topic'
+                    }
+                  >
+                    <span>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        disabled={isBatchMode || activeNotes.length === 0}
+                        onClick={() => {
+                          setAskConversationId(null);
+                          setAskOpen(true);
+                        }}
+                      >
+                        Ask Claude ({hasSelection ? selectedIds.size : 'all'})
+                      </Button>
+                    </span>
+                  </Tooltip>
+                  <Tooltip title="Permanently delete selected notes">
+                    <span>
+                      <Button
+                        size="small"
+                        color="error"
+                        disabled={!hasSelection || isDeleting}
+                        onClick={() => setDeleteDialogOpen(true)}
+                      >
+                        {isDeleting
+                          ? 'Deleting…'
+                          : `Delete (${selectedIds.size})`}
+                      </Button>
+                    </span>
+                  </Tooltip>
+                </Toolbar>
+              </Stack>
+              {!isBatchMode && (currentSubjectName || currentTopicName) && (
+                <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap' }}>
+                  {currentSubjectName && (
+                    <Chip
                       size="small"
-                      disabled={!activeNotes.length}
-                      onClick={() => selectAll(allIds)}
-                    >
-                      Select All
-                    </Button>
-                  </span>
-                </Tooltip>
-                <Tooltip title="Clear selection">
-                  <span>
-                    <Button
-                      size="small"
-                      disabled={!hasSelection}
-                      onClick={clearSelection}
-                    >
-                      Clear
-                    </Button>
-                  </span>
-                </Tooltip>
-                <Tooltip title="Move selected notes to another topic">
-                  <span>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      disabled={!hasSelection}
-                      onClick={() => setMoveOpen(true)}
-                    >
-                      Move ({selectedIds.size})
-                    </Button>
-                  </span>
-                </Tooltip>
-                <Tooltip title="Merge selected notes into one">
-                  <span>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      disabled={selectedIds.size < 2 || isBatchMode}
-                      onClick={() => setMergeOpen(true)}
-                    >
-                      Merge ({selectedIds.size})
-                    </Button>
-                  </span>
-                </Tooltip>
-                <Tooltip title="Use Claude to rewrite the selected notes as one organized note without repetition">
-                  <span>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      disabled={!hasSelection || isBatchMode}
-                      onClick={() => setConsolidateOpen(true)}
-                    >
-                      Consolidate ({selectedIds.size})
-                    </Button>
-                  </span>
-                </Tooltip>
-                <Tooltip
-                  title={
-                    hasSelection
-                      ? 'Ask Claude a question about the selected notes'
-                      : 'Ask Claude a question about all notes in this topic'
-                  }
-                >
-                  <span>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      disabled={isBatchMode || activeNotes.length === 0}
-                      onClick={() => {
-                        setAskConversationId(null);
-                        setAskOpen(true);
-                      }}
-                    >
-                      Ask Claude ({hasSelection ? selectedIds.size : 'all'})
-                    </Button>
-                  </span>
-                </Tooltip>
-                <Tooltip title="Permanently delete selected notes">
-                  <span>
-                    <Button
-                      size="small"
-                      color="error"
-                      disabled={!hasSelection || isDeleting}
-                      onClick={() => setDeleteDialogOpen(true)}
-                    >
-                      {isDeleting
-                        ? 'Deleting…'
-                        : `Delete (${selectedIds.size})`}
-                    </Button>
-                  </span>
-                </Tooltip>
-              </Toolbar>
-            </Stack>
+                      variant="outlined"
+                      label={`Subject: ${currentSubjectName}`}
+                      onClick={() => subjectSlug && navigate(`/s/${subjectSlug}`)}
+                    />
+                  )}
+                  {currentTopicName && (
+                    <Chip size="small" variant="outlined" label={`Topic: ${currentTopicName}`} />
+                  )}
+                </Stack>
+              )}
+            </Box>
 
             {/* Scrollable body */}
             <Box
