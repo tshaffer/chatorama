@@ -216,12 +216,17 @@ export async function proposeNoteChanges(req: Request, res: Response) {
     return res.status(503).json({ message: 'ANTHROPIC_API_KEY is not configured on the server.' });
   }
 
+  const reply = typeof body.reply === 'string' ? body.reply.trim() : '';
+  const replyText = reply ? `My reply to your last answer:\n\n${reply}\n\n` : '';
   const request =
     body.currentPlan && body.revision?.trim()
-      ? `Here is the change plan you proposed:\n\n${JSON.stringify(body.currentPlan, null, 2)}\n\n` +
+      ? replyText +
+        `Here is the change plan you proposed:\n\n${JSON.stringify(body.currentPlan, null, 2)}\n\n` +
         `In that plan, ids refer to these notes: ${included.map((n, i) => `${n.id} = note ${i + 1}`).join(', ')}.\n\n` +
         `Revise the plan: ${body.revision.trim()}\n\nCall ${PLAN_TOOL_NAME} with the complete revised plan.`
-      : 'Make the changes we discussed.';
+      : reply
+        ? `${replyText}Make the changes we discussed, taking my reply into account.`
+        : 'Make the changes we discussed.';
 
   const abort = new AbortController();
   res.on('close', () => {

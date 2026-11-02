@@ -40,6 +40,8 @@ export type ChangePlanDialogProps = {
   notes: { id: string; title: string }[];
   // The conversation to act on; ends with Claude's answer
   messages: AskNotesMessage[];
+  // What the user typed in reply to the last answer, sent along with the request
+  reply?: string;
   onClose: () => void;
   onApplied: (result: ApplyNoteChangesResult, summary: string) => void;
 };
@@ -114,6 +116,7 @@ export default function ChangePlanDialog({
   topicId,
   notes,
   messages,
+  reply,
   onClose,
   onApplied,
 }: ChangePlanDialogProps) {
@@ -138,6 +141,7 @@ export default function ChangePlanDialog({
         topicId,
         noteIds,
         messages,
+        reply: reply?.trim() || undefined,
         currentPlan: revisionText ? response?.plan : undefined,
         revision: revisionText,
       });
@@ -157,7 +161,7 @@ export default function ChangePlanDialog({
         if (requestRef.current === request) requestRef.current = null;
       }
     },
-    [proposeNoteChanges, topicId, noteIds, messages, response],
+    [proposeNoteChanges, topicId, noteIds, messages, reply, response],
   );
 
   // Ask for a plan whenever the dialog opens
@@ -257,6 +261,16 @@ export default function ChangePlanDialog({
       <DialogTitle>Review proposed changes</DialogTitle>
 
       <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minHeight: 0 }}>
+        {reply?.trim() && (
+          <Box sx={{ bgcolor: 'action.hover', borderRadius: 1, px: 1.5, py: 1, maxHeight: 120, overflowY: 'auto' }}>
+            <Typography variant="caption" color="text.secondary">
+              Including your reply
+            </Typography>
+            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+              {reply.trim()}
+            </Typography>
+          </Box>
+        )}
         {error && (
           <Alert
             severity="error"

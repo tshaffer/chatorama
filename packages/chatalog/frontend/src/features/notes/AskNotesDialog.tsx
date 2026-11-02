@@ -207,6 +207,8 @@ export default function AskNotesDialog({
   const [copiedTurn, setCopiedTurn] = useState<number | null>(null);
   // The answer a "Plan these changes" plan is based on
   const [planTurn, setPlanTurn] = useState<number | null>(null);
+  // Text from the follow-up box that goes along with the plan request
+  const [planReply, setPlanReply] = useState('');
   // A continued conversation: its title and how its notes stand now
   const [resumed, setResumed] = useState<{
     title: string;
@@ -498,6 +500,7 @@ export default function AskNotesDialog({
   const theseNotes = notes.length === 1 ? 'this note' : 'these notes';
   const canAsk = !loading && noteIds.length > 0 && !(conversationId && !resumed);
   const hasQuestion = Boolean(input.trim()) || picked.size > 0;
+  const replyText = canAsk ? input.trim() : '';
 
   const togglePicked = (label: string) =>
     setPicked((prev) => {
@@ -722,15 +725,24 @@ export default function AskNotesDialog({
                             {turn.savedNoteId ? 'Saved' : 'Save as note'}
                           </Button>
                           {!turn.stopped && (
-                            <Tooltip title="Have Claude turn the conversation so far into changes to your notes, for you to review and apply">
+                            <Tooltip
+                              title={
+                                isLast && replyText
+                                  ? 'Have Claude turn the conversation so far, plus what you typed below, into changes to your notes, for you to review and apply'
+                                  : 'Have Claude turn the conversation so far into changes to your notes, for you to review and apply'
+                              }
+                            >
                               <span>
                                 <Button
                                   size="small"
                                   variant="outlined"
                                   disabled={streaming}
-                                  onClick={() => setPlanTurn(index)}
+                                  onClick={() => {
+                                    setPlanReply(isLast ? replyText : '');
+                                    setPlanTurn(index);
+                                  }}
                                 >
-                                  Plan these changes…
+                                  {isLast && replyText ? 'Plan these changes with your reply…' : 'Plan these changes…'}
                                 </Button>
                               </span>
                             </Tooltip>
@@ -835,7 +847,7 @@ export default function AskNotesDialog({
                 noteIds.length === 0 && !loading
                   ? 'None of this conversation’s notes are available any more'
                   : turns.length
-                    ? 'Ask a follow-up…'
+                    ? 'Ask a follow-up, or type a reply and click Plan these changes…'
                     : `Ask a question about ${theseNotes}…`
               }
               value={input}
@@ -878,6 +890,7 @@ export default function AskNotesDialog({
         topicId={topicId}
         notes={notes}
         messages={planMessages}
+        reply={planReply}
         onClose={() => setPlanTurn(null)}
         onApplied={(result, summary) => {
           setPlanTurn(null);

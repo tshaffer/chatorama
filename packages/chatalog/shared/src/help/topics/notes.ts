@@ -68,6 +68,8 @@ After discussing your notes with Claude, for example asking which notes to combi
 - **Edit**: a new title and/or new text for one of the notes. Click **Show changes** to see what changes, or **Preview** to see the result.
 - **Archive**: a note that's no longer needed, with the note its content was merged into, if any. Notes are never deleted.
 
+If Claude's last answer asks you something, such as details to check before making the changes, you can answer as part of the plan. Type your answers in the box at the bottom, then click **Plan these changes with your reply…** under that answer instead of **Ask**. Claude plans the changes with your answers taken into account, without writing another answer first.
+
 Untick anything you don't want, or type a request such as "keep note 3 and just shorten it" and click **Revise** for a new plan. Click **Apply** to make the ticked changes. Nothing changes until you do.
 
 Claude can only change the notes from the conversation, and new notes go in the same topic.

@@ -384,6 +384,8 @@ export interface NoteChangePlanRequest {
   noteIds: string[];
   // The Ask Claude conversation the plan is based on (ends with an assistant answer)
   messages: AskNotesMessage[];
+  // The user's reply to that answer (e.g. answers to its questions), to take into account
+  reply?: string;
   // To revise a plan: the previous plan and what to change about it
   currentPlan?: NoteChangePlan;
   revision?: string;
