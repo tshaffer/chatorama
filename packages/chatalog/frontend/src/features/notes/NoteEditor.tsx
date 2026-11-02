@@ -989,65 +989,73 @@ export default function NoteEditor({
     </Box>
   );
 
-  const renderPreviewContent = () => (
+  const hasContext = Boolean(noteSubject || noteTopic);
+
+  const contextBoxSx = {
+    p: 1,
+    borderRadius: 1,
+    border: '1px solid',
+    borderColor: 'divider',
+    backgroundColor: 'background.paper',
+  };
+
+  const renderContext = () => (
+    <>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
+      >
+        Context
+      </Typography>
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ mt: 0.5, flexWrap: 'wrap' }}
+      >
+        {noteSubject && (
+          <Chip
+            size="small"
+            variant="outlined"
+            label={`Subject: ${noteSubject.name}`}
+            onClick={() => {
+              const slug = slugifyStandard(noteSubject.name);
+              navigate(`/s/${noteSubject.id}-${slug}`);
+            }}
+          />
+        )}
+        {noteTopic && (
+          <Chip
+            size="small"
+            variant="outlined"
+            label={`Topic: ${noteTopic.name}`}
+            onClick={() => {
+              const subj = noteSubject;
+              if (!subj) return;
+              const subjSlug = slugifyStandard(subj.name);
+              const topicSlug = slugifyStandard(noteTopic.name);
+              navigate(
+                `/s/${subj.id}-${subjSlug}/t/${noteTopic.id}-${topicSlug}`,
+              );
+            }}
+          />
+        )}
+      </Stack>
+    </>
+  );
+
+  // showContext is false where the page shows the context above the scrolling preview.
+  const renderPreviewContent = (showContext: boolean) => (
     <>
       <Typography variant="h5" sx={{ mb: 0.5 }}>
         {title || 'Untitled'}
       </Typography>
 
-      {(noteSubject || noteTopic || (relations && relations.length > 0)) && (
-        <Box
-          sx={{
-            mb: 2,
-            p: 1,
-            borderRadius: 1,
-            border: '1px solid',
-            borderColor: 'divider',
-            backgroundColor: 'background.paper',
-          }}
-        >
-          {noteSubject || noteTopic ? (
+      {((showContext && hasContext) || (relations && relations.length > 0)) && (
+        <Box sx={{ ...contextBoxSx, mb: 2 }}>
+          {showContext && hasContext ? (
             <Box sx={{ mb: relations && relations.length > 0 ? 1.5 : 0 }}>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
-              >
-                Context
-              </Typography>
-              <Stack
-                direction="row"
-                spacing={1}
-                sx={{ mt: 0.5, flexWrap: 'wrap' }}
-              >
-                {noteSubject && (
-                  <Chip
-                    size="small"
-                    variant="outlined"
-                    label={`Subject: ${noteSubject.name}`}
-                    onClick={() => {
-                      const slug = slugifyStandard(noteSubject.name);
-                      navigate(`/s/${noteSubject.id}-${slug}`);
-                    }}
-                  />
-                )}
-                {noteTopic && (
-                  <Chip
-                    size="small"
-                    variant="outlined"
-                    label={`Topic: ${noteTopic.name}`}
-                    onClick={() => {
-                      const subj = noteSubject;
-                      if (!subj) return;
-                      const subjSlug = slugifyStandard(subj.name);
-                      const topicSlug = slugifyStandard(noteTopic.name);
-                      navigate(
-                        `/s/${subj.id}-${subjSlug}/t/${noteTopic.id}-${topicSlug}`,
-                      );
-                    }}
-                  />
-                )}
-              </Stack>
+              {renderContext()}
             </Box>
           ) : null}
 
@@ -1415,6 +1423,11 @@ export default function NoteEditor({
           </Tooltip>
         </Stack>
       </Stack>
+
+      {/* Context stays put while the note scrolls; edit mode has its own Subject/Topic fields */}
+      {!editing && hasContext && (
+        <Box sx={{ ...contextBoxSx, flexShrink: 0 }}>{renderContext()}</Box>
+      )}
 
       {note && <ConsolidationInfo note={note} />}
       {note?.topicId && (
@@ -1879,7 +1892,7 @@ export default function NoteEditor({
           <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
             Preview
           </Typography>
-          {renderPreviewContent()}
+          {renderPreviewContent(true)}
         </Box>
       ) : (
         <Box
@@ -1895,7 +1908,7 @@ export default function NoteEditor({
           <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
             Preview
           </Typography>
-          {renderPreviewContent()}
+          {renderPreviewContent(false)}
         </Box>
       )}
 
