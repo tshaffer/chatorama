@@ -52,6 +52,7 @@ export type SourceNote = {
   topicId?: string;
   // "Subject / Topic", for notes from more than one topic
   location?: string;
+  archived?: boolean;
 };
 
 function noteText(n: any): string {
@@ -63,6 +64,7 @@ function noteText(n: any): string {
 const placeOf = (d: any) => ({
   subjectId: d.subjectId ? String(d.subjectId) : undefined,
   topicId: d.topicId ? String(d.topicId) : undefined,
+  archived: d.archived ? true : undefined,
 });
 
 /**
@@ -84,6 +86,7 @@ export async function loadSourceNotes(
       title: 1,
       subjectId: 1,
       topicId: 1,
+      archived: 1,
       markdown: 1,
       recipe: 1,
       pdfAssetId: 1,
@@ -126,7 +129,8 @@ export function buildNotesBlock(notes: SourceNote[]): string {
     .map((n, i) => {
       const created = n.createdAt ? ` created="${new Date(n.createdAt).toISOString()}"` : '';
       const location = n.location ? ` location="${n.location.replace(/"/g, "'")}"` : '';
-      return `<note index="${i + 1}" title="${n.title.replace(/"/g, "'")}"${location}${created}>\n${n.text}\n</note>`;
+      const archived = n.archived ? ' archived="true"' : '';
+      return `<note index="${i + 1}" title="${n.title.replace(/"/g, "'")}"${location}${archived}${created}>\n${n.text}\n</note>`;
     })
     .join('\n\n');
 }

@@ -40,7 +40,7 @@ There are too many notes to read them all, so use the tools to find the ones tha
 - read_notes reads notes in full. Read a note before relying on it or citing it; search snippets aren't enough to go on.
 - Don't write anything before or between tool calls. Write only the final answer, after you're done searching.
 
-Notes you have read are numbered, and the numbers stay the same for the rest of the conversation. Notes read earlier in the conversation are included at the start.
+Notes you have read are numbered, and the numbers stay the same for the rest of the conversation. Notes read earlier in the conversation are included at the start, as they are now. A note marked archived="true" was archived after you read it, often by changes the user applied; it keeps its number but is no longer one of the user's current notes, and search won't find it. When the user applies changes to the notes, the conversation says so: treat that as what happened, and don't mistake the results for errors in your earlier answers.
 
 - Answer the user's question directly, using the notes as your source. Be concise: lead with the answer, then supporting detail.
 - When you state something that comes from the notes, cite the note number in square brackets, like [2] or [1][3]. Only cite numbers of notes you have read.
@@ -108,9 +108,10 @@ function snippet(markdown: string, maxLen = 300): string {
 
 const attr = (s: string) => s.replace(/"/g, "'");
 
-function noteXml(number: number, note: { title: string; location?: string }, text: string): string {
+function noteXml(number: number, note: { title: string; location?: string; archived?: boolean }, text: string): string {
   const location = note.location ? ` location="${attr(note.location)}"` : '';
-  return `<note number="${number}" title="${attr(note.title)}"${location}>\n${text}\n</note>`;
+  const archived = note.archived ? ' archived="true"' : '';
+  return `<note number="${number}" title="${attr(note.title)}"${location}${archived}>\n${text}\n</note>`;
 }
 
 function cleanSources(raw: unknown): AskSource[] {
@@ -155,16 +156,17 @@ export async function streamAskAll(req: Request, res: Response) {
     sources.map((s) => s.id),
     { readOnly: true },
   );
-  const knownById = new Map(included.map((n) => [n.id, n]));
+  // Current locations, since notes may have moved since they were read
+  const knownById = new Map((await withLocations(included)).map((n) => [n.id, n]));
   const knownBlocks = sources.map((s, i) => {
     const note = knownById.get(s.id);
-    if (!note) return noteXml(i + 1, s, '(This note no longer exists or has no text.)');
+    if (!note) return noteXml(i + 1, s, '(This note has been deleted.)');
     const text = note.text.slice(0, MAX_NOTE_CHARS);
     if (charsUsed + text.length > MAX_INPUT_CHARS) {
       return noteXml(i + 1, s, '(Not included: too much text. It can’t be read again in this conversation.)');
     }
     charsUsed += text.length;
-    return noteXml(i + 1, s, text);
+    return noteXml(i + 1, { ...note, location: note.location ?? s.location }, text);
   });
 
   res.status(200);

@@ -47,7 +47,8 @@ export type ChangePlanDialogProps = {
   // What the user typed in reply to the last answer, sent along with the request
   reply?: string;
   onClose: () => void;
-  onApplied: (result: ApplyNoteChangesResult, summary: string) => void;
+  // ops: the operations that were applied, in order
+  onApplied: (result: ApplyNoteChangesResult, summary: string, ops: NoteChangeOp[]) => void;
 };
 
 const OP_CHIP: Record<NoteChangeOp['type'], { label: string; color: 'success' | 'info' | 'default' }> = {
@@ -250,7 +251,7 @@ export default function ChangePlanDialog({
         summary: response.plan.summary,
         ops: kept,
       }).unwrap();
-      onApplied(result, response.plan.summary);
+      onApplied(result, response.plan.summary, kept);
     } catch (err: any) {
       setError(err?.data?.message ?? err?.message ?? 'Couldn’t apply the changes');
     }

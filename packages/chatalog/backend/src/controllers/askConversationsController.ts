@@ -47,6 +47,9 @@ function cleanTurn(turn: any): AskConversationTurnInput | null {
     stopped: turn.stopped ? true : undefined,
     sources,
     activity: activity?.length ? activity : undefined,
+    kind: turn.kind === 'changes' ? ('changes' as const) : undefined,
+    changeSetId: turn.kind === 'changes' ? str(turn.changeSetId) : undefined,
+    undone: turn.kind === 'changes' && turn.undone ? true : undefined,
   };
 }
 
@@ -69,12 +72,13 @@ export async function listAskConversations(req: Request, res: Response) {
   const docs = await AskConversationModel.find({ topicId: topicId ?? null })
     .sort({ updatedAt: -1 })
     .limit(50)
-    .select({ title: 1, noteIds: 1, 'turns.question': 1, 'turns.sources.id': 1, createdAt: 1, updatedAt: 1 })
+    .select({ title: 1, noteIds: 1, 'turns.question': 1, 'turns.kind': 1, 'turns.sources.id': 1, createdAt: 1, updatedAt: 1 })
     .lean();
   const payload: AskConversationSummary[] = docs.map((d: any) => ({
     id: String(d._id),
     title: d.title,
-    questionCount: d.turns?.length ?? 0,
+    // Records of applied changes aren't questions
+    questionCount: (d.turns ?? []).filter((t: any) => t.kind !== 'changes').length,
     noteCount: topicId
       ? (d.noteIds?.length ?? 0)
       : new Set((d.turns ?? []).flatMap((t: any) => (t.sources ?? []).map((src: any) => src.id))).size,
@@ -177,6 +181,14 @@ export async function updateAskConversation(req: Request, res: Response) {
       return res.status(400).json({ message: 'savedNote needs a valid turnIndex and noteId' });
     }
     turn.savedNoteId = noteId;
+    conversation.markModified('turns');
+  }
+  if (body.undoneTurn !== undefined) {
+    const turn = Number.isInteger(body.undoneTurn) ? conversation.turns[body.undoneTurn] : undefined;
+    if (!turn || turn.kind !== 'changes') {
+      return res.status(400).json({ message: 'undoneTurn must be the index of a changes record' });
+    }
+    turn.undone = true;
     conversation.markModified('turns');
   }
 

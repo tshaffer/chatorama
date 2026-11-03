@@ -39,6 +39,7 @@ import type {
   AskConversationNoteStatus,
   AskConversationTurnInput,
   AskNotesMessage,
+  NoteChangeOp,
 } from '@chatorama/chatalog-shared';
 import MarkdownBody from '../../components/MarkdownBody';
 import {
@@ -47,6 +48,7 @@ import {
   useLazyGetAskConversationQuery,
   useSaveAskAllAnswerMutation,
   useSaveAskNotesAnswerMutation,
+  useUndoNoteChangesMutation,
   useUpdateAskConversationMutation,
 } from './notesApi';
 import {
@@ -78,7 +80,9 @@ export type AskNotesDialogProps = {
   // When provided, answers get a "Consolidate with this" action, given the
   // conversation's notes.
   onConsolidate?: (instructions: string, notes: { id: string; title: string }[]) => void;
-  // Called after a "Plan these changes" plan is applied; the dialog is done at that point.
+  // Called after a "Plan these changes" plan is applied. On a topic the dialog
+  // is done at that point; across all notes it stays open, and the changes are
+  // recorded in the conversation, where they can be undone.
   onChangesApplied: (result: ApplyNoteChangesResult, summary: string) => void;
   // Across all notes: shows earlier conversations to continue when nothing has been asked yet
   onContinueConversation?: (conversationId: string) => void;
@@ -93,6 +97,12 @@ type Turn = {
   // Across all notes: what Claude searched for and read
   activity?: string[];
   savedNoteId?: string;
+  // 'changes': a record of changes applied from a plan (or undone), not a
+  // question. `question` is the plan's summary and `answer` describes the
+  // changes; Claude is told about them with the next question.
+  kind?: 'changes';
+  changeSetId?: string;
+  undone?: boolean;
 };
 
 // Where the conversation open in the dialog is saved. Replaced each time the
@@ -118,6 +128,63 @@ const NOTE_STATUS_LABEL: Partial<Record<AskConversationNoteStatus, string>> = {
   missing: 'No longer in this topic: left out',
 };
 const LEFT_OUT = new Set<AskConversationNoteStatus>(['archived', 'missing']);
+// Across all notes, archived and deleted notes keep their numbers (Claude is
+// told they're no longer current) instead of being left out.
+const NOTE_STATUS_LABEL_ALL: Partial<Record<AskConversationNoteStatus, string>> = {
+  changed: 'Changed since',
+  archived: 'Archived',
+  missing: 'Deleted',
+};
+
+type TopicOption = { id: string; subjectId: string; label: string };
+
+// A record of applied changes: Markdown describing them, citing notes by their
+// numbers in `sources`, which gains the notes the changes created.
+function changesRecord(
+  summary: string,
+  ops: NoteChangeOp[],
+  createdNoteIds: string[],
+  priorSources: AskNotesSource[],
+  topicOptions: TopicOption[],
+): { answer: string; sources: AskNotesSource[] } {
+  const creates = ops.filter((op): op is Extract<NoteChangeOp, { type: 'create' }> => op.type === 'create');
+  // Created notes are returned in the order of the create operations
+  const createdIdByRef = new Map(creates.map((op, i) => [op.ref, createdNoteIds[i]]));
+  const sources = [...priorSources];
+  creates.forEach((op, i) => {
+    const id = createdNoteIds[i];
+    if (!id || sources.some((s) => s.id === id)) return;
+    const topic = topicOptions.find((t) => t.id === op.topicId);
+    sources.push({ id, title: op.title.trim(), subjectId: topic?.subjectId, topicId: topic?.id, location: topic?.label });
+  });
+  const cite = (id: string | undefined) => {
+    const i = sources.findIndex((s) => s.id === id);
+    return i >= 0 ? `“${sources[i].title || 'Untitled'}” [${i + 1}]` : '“(a note)”';
+  };
+  const lines = ops.map((op) => {
+    switch (op.type) {
+      case 'create': {
+        const location = sources.find((s) => s.id === createdIdByRef.get(op.ref))?.location;
+        return `- Created ${cite(createdIdByRef.get(op.ref))}${location ? ` in ${location}` : ''}`;
+      }
+      case 'edit': {
+        const parts = [op.title !== undefined && `renamed to “${op.title.trim()}”`, op.markdown !== undefined && 'rewrote the text'];
+        return `- Edited ${cite(op.noteId)}${parts.some(Boolean) ? ` (${parts.filter(Boolean).join(', ')})` : ''}`;
+      }
+      case 'archive': {
+        const into = op.mergedInto?.startsWith('new:') ? createdIdByRef.get(op.mergedInto.slice(4)) : op.mergedInto;
+        return `- Archived ${cite(op.noteId)}${into ? `, merged into ${cite(into)}` : ''}`;
+      }
+    }
+  });
+  return { answer: `**Applied changes:** ${summary}\n\n${lines.join('\n')}`, sources };
+}
+
+// What Claude is told, with the next question, about changes recorded since its last answer
+function withApplied(applied: string[], question: string): string {
+  if (!applied.length) return question;
+  return `(Since your last answer, I applied changes from a plan. They are done; the notes are now as described:\n\n${applied.join('\n\n')})\n\n${question}`;
+}
 
 // "Searched “a”, “b” · read 6 notes" from an answer's activity
 function activitySummary(activity: string[]): string {
@@ -271,7 +338,7 @@ export default function AskNotesDialog({
   const [saveAllAnswer, { isLoading: isSavingAll }] = useSaveAskAllAnswerMutation();
   const isSaving = isSavingTopic || isSavingAll;
   const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery(undefined, { skip: !acrossAll });
-  const topicOptions = useMemo(
+  const topicOptions: TopicOption[] = useMemo(
     () =>
       subjectsWithTopics.flatMap((s) =>
         (s.topics ?? []).map((t) => ({ id: t.id, subjectId: s.id, label: `${s.name} / ${t.name}` })),
@@ -282,17 +349,17 @@ export default function AskNotesDialog({
   const [createConversation] = useCreateAskConversationMutation();
   const [appendTurn] = useAppendAskConversationTurnMutation();
   const [updateConversation] = useUpdateAskConversationMutation();
+  const [undoNoteChanges] = useUndoNoteChangesMutation();
+  const [undoingTurn, setUndoingTurn] = useState<number | null>(null);
 
   // Notes left out of a continued conversation because they were archived or moved since
   const leftOutIds = useMemo(
     () => new Set((resumed?.notes ?? []).filter((n) => LEFT_OUT.has(n.status)).map((n) => n.id)),
     [resumed],
   );
-  // Across all notes: the notes found through turn `index`, in citation order
-  const foundThrough = useCallback(
-    (index: number): AskNotesSource[] => (turns[index]?.sources ?? []).filter((s) => !leftOutIds.has(s.id)),
-    [turns, leftOutIds],
-  );
+  // Across all notes: the notes found through turn `index`, in citation order.
+  // Archived and deleted ones keep their places so citations keep their numbers.
+  const foundThrough = useCallback((index: number): AskNotesSource[] => turns[index]?.sources ?? [], [turns]);
   // The notes questions are asked about. Across all notes, the ones found so far.
   const notes: AskNotesSource[] = useMemo(
     () =>
@@ -323,6 +390,7 @@ export default function AskNotesDialog({
     setSavingTurn(null);
     setCopiedTurn(null);
     setPlanTurn(null);
+    setUndoingTurn(null);
     setSaveTopicId(null);
     setResumed(null);
     setSaveFailed(false);
@@ -348,6 +416,9 @@ export default function AskNotesDialog({
             sources: t.sources,
             activity: t.activity,
             savedNoteId: t.savedNoteId,
+            kind: t.kind,
+            changeSetId: t.changeSetId,
+            undone: t.undone,
           })),
         );
       })
@@ -398,18 +469,31 @@ export default function AskNotesDialog({
     [appendTurn, createConversation, topicId, acrossAll, noteIds],
   );
 
-  // The conversation through turn `last`, as Claude sees it. Stopped or empty
-  // answers are left out.
-  const historyThrough = useCallback(
-    (last: number): AskNotesMessage[] =>
-      turns
-        .slice(0, last + 1)
-        .filter((t) => t.answer.trim() && !t.stopped)
-        .flatMap((t) => [
-          { role: 'user' as const, content: t.question },
-          { role: 'assistant' as const, content: t.answer },
-        ]),
+  // The conversation through turn `last`, as Claude sees it, and the records
+  // of changes applied after its last answer there. Stopped or empty answers
+  // are left out; records of changes go along with the next question.
+  const conversationThrough = useCallback(
+    (last: number): { messages: AskNotesMessage[]; applied: string[] } => {
+      const messages: AskNotesMessage[] = [];
+      let applied: string[] = [];
+      for (const t of turns.slice(0, last + 1)) {
+        if (t.kind === 'changes') {
+          applied.push(t.answer);
+        } else if (t.answer.trim() && !t.stopped) {
+          messages.push(
+            { role: 'user', content: withApplied(applied, t.question) },
+            { role: 'assistant', content: t.answer },
+          );
+          applied = [];
+        }
+      }
+      return { messages, applied };
+    },
     [turns],
+  );
+  const historyThrough = useCallback(
+    (last: number): AskNotesMessage[] => conversationThrough(last).messages,
+    [conversationThrough],
   );
 
   const planMessages = useMemo(
@@ -425,7 +509,8 @@ export default function AskNotesDialog({
       setError(null);
       setInput('');
 
-      const history = historyThrough(turns.length - 1);
+      const { messages: history, applied } = conversationThrough(turns.length - 1);
+      const content = withApplied(applied, q);
       const saved = savedRef.current;
 
       const controller = new AbortController();
@@ -449,7 +534,7 @@ export default function AskNotesDialog({
           await streamAskNotes({
             topicId,
             signal: controller.signal,
-            body: { noteIds, messages: [...history, { role: 'user', content: q }] },
+            body: { noteIds, messages: [...history, { role: 'user', content }] },
             onMeta: (meta) => {
               sources = meta.sources;
               update({ sources });
@@ -465,7 +550,7 @@ export default function AskNotesDialog({
           update({ sources, activity });
           await streamAskAll({
             signal: controller.signal,
-            body: { sources: notes, messages: [...history, { role: 'user', content: q }] },
+            body: { sources: notes, messages: [...history, { role: 'user', content }] },
             onActivity: (text) => {
               activity = [...(activity ?? []), text];
               update({ activity });
@@ -494,10 +579,60 @@ export default function AskNotesDialog({
         setStreaming(false);
       }
     },
-    [streaming, loading, acrossAll, turns, topicId, noteIds, notes, historyThrough, persistTurn],
+    [streaming, loading, acrossAll, turns, topicId, noteIds, notes, conversationThrough, persistTurn],
   );
 
   const handleStop = () => abortRef.current?.abort();
+
+  // Record applied changes in the conversation
+  const recordChanges = (result: ApplyNoteChangesResult, summary: string, ops: NoteChangeOp[]) => {
+    const index = turns.length;
+    const prior = acrossAll ? foundThrough(index - 1) : notes;
+    const { answer, sources } = changesRecord(summary, ops, result.createdNoteIds, prior, topicOptions);
+    const turn: Turn = { question: summary, answer, sources, kind: 'changes', changeSetId: result.changeSetId };
+    setTurns((prev) => [...prev, turn]);
+    persistTurn(
+      savedRef.current,
+      index,
+      { question: summary, answer, sources, kind: 'changes', changeSetId: result.changeSetId },
+      summary,
+    );
+  };
+
+  // Undo the changes recorded in turn `index`, and record that they were undone
+  const handleUndo = async (index: number) => {
+    const turn = turns[index];
+    if (!turn.changeSetId || undoingTurn !== null) return;
+    setUndoingTurn(index);
+    setError(null);
+    const saved = savedRef.current;
+    try {
+      await undoNoteChanges({ topicId, subjectId, changeSetId: turn.changeSetId }).unwrap();
+      if (savedRef.current !== saved) return;
+      const record: Turn = {
+        question: turn.question,
+        answer: `**Undid the changes:** ${turn.question}\n\nThe edited and archived notes are back as they were, and the notes the changes created are archived.`,
+        sources: turn.sources,
+        kind: 'changes',
+      };
+      const recordIndex = turns.length;
+      setTurns((prev) => [...prev.map((t, i) => (i === index ? { ...t, undone: true } : t)), record]);
+      saved.queue = saved.queue.then(async () => {
+        const turnIndex = saved.positions.get(index);
+        if (!saved.id || turnIndex === undefined) return;
+        await updateConversation({ topicId, conversationId: saved.id, undoneTurn: turnIndex })
+          .unwrap()
+          .catch(() => {
+            // The undo itself worked; the record below says so.
+          });
+      });
+      persistTurn(saved, recordIndex, { ...record }, turn.question);
+    } catch (err: any) {
+      if (savedRef.current === saved) setError(err?.data?.message ?? err?.message ?? 'Undo failed');
+    } finally {
+      if (savedRef.current === saved) setUndoingTurn(null);
+    }
+  };
 
   const requestClose = () => {
     if (isSaving) return;
@@ -633,15 +768,12 @@ export default function AskNotesDialog({
   // Every note the conversation is about, including ones left out when continuing it
   const statusById = new Map((resumed?.notes ?? []).map((n) => [n.id, n.status]));
   const listedNotes: (AskNotesSource & { status: AskConversationNoteStatus })[] = acrossAll
-    ? [
-        ...notes.map((n) => ({ ...n, status: statusById.get(n.id) ?? ('unchanged' as const) })),
-        ...(resumed?.notes ?? []).filter((n) => LEFT_OUT.has(n.status)),
-      ]
+    ? notes.map((n) => ({ ...n, status: statusById.get(n.id) ?? ('unchanged' as const) }))
     : (resumed?.notes ?? notes.map((n) => ({ ...n, status: 'unchanged' as const })));
   const changedCount = resumed?.notes.filter((n) => n.status === 'changed').length ?? 0;
   const leftOutCount = acrossAll ? leftOutIds.size : resumed ? resumed.notes.length - notes.length : 0;
   const statusLabel = (status: AskConversationNoteStatus) =>
-    acrossAll && status === 'missing' ? 'Deleted: left out' : NOTE_STATUS_LABEL[status];
+    (acrossAll ? NOTE_STATUS_LABEL_ALL : NOTE_STATUS_LABEL)[status];
 
   return (
     <>
@@ -724,7 +856,9 @@ export default function AskNotesDialog({
                 changedCount > 0 &&
                   `${changedCount} ${changedCount === 1 ? 'note has' : 'notes have'} changed since the last answer, so earlier answers may be out of date. Claude will use the current ${changedCount === 1 ? 'version' : 'versions'}.`,
                 leftOutCount > 0 &&
-                  `${leftOutCount} ${leftOutCount === 1 ? 'note was' : 'notes were'} archived or ${acrossAll ? 'deleted' : 'moved'} and ${leftOutCount === 1 ? 'is' : 'are'} left out.`,
+                  (acrossAll
+                    ? `${leftOutCount} ${leftOutCount === 1 ? 'note was' : 'notes were'} archived or deleted since. ${leftOutCount === 1 ? 'It keeps its number' : 'They keep their numbers'}, and Claude knows ${leftOutCount === 1 ? 'it’s' : 'they’re'} no longer current.`
+                    : `${leftOutCount} ${leftOutCount === 1 ? 'note was' : 'notes were'} archived or moved and ${leftOutCount === 1 ? 'is' : 'are'} left out.`),
               ]
                 .filter(Boolean)
                 .join(' ')}{' '}
@@ -762,7 +896,37 @@ export default function AskNotesDialog({
                 {turns.map((turn, index) => {
                   const isLast = index === turns.length - 1;
                   const isStreaming = streaming && isLast;
+                  if (turn.kind === 'changes') {
+                    return (
+                      <Alert
+                        key={index}
+                        severity={turn.changeSetId && !turn.undone ? 'success' : 'info'}
+                        action={
+                          turn.changeSetId && !turn.undone ? (
+                            <Button
+                              color="inherit"
+                              size="small"
+                              disabled={undoingTurn !== null || streaming}
+                              onClick={() => handleUndo(index)}
+                            >
+                              {undoingTurn === index ? 'Undoing…' : 'Undo'}
+                            </Button>
+                          ) : undefined
+                        }
+                        sx={{ '& .MuiAlert-message': { flex: 1, minWidth: 0 } }}
+                      >
+                        <MarkdownBody markdown={linkCitations(turn.answer, turn.sources)} enableToc={false} />
+                        {turn.undone && (
+                          <Typography variant="caption" color="text.secondary">
+                            Undone
+                          </Typography>
+                        )}
+                      </Alert>
+                    );
+                  }
                   const cited = citedSources(turn.answer, turn.sources);
+                  // Once changes have been applied after an answer, plan from a newer one
+                  const changedSince = turns.slice(index + 1).some((t) => t.kind === 'changes');
                   return (
                     <Box key={index}>
                       <Box
@@ -864,7 +1028,7 @@ export default function AskNotesDialog({
                           >
                             {turn.savedNoteId ? 'Saved' : 'Save as note'}
                           </Button>
-                          {!turn.stopped && (!acrossAll || foundThrough(index).length > 0) && (
+                          {!turn.stopped && !changedSince && (!acrossAll || foundThrough(index).length > 0) && (
                             <Tooltip
                               title={
                                 isLast && replyText
@@ -1048,10 +1212,13 @@ export default function AskNotesDialog({
         messages={planMessages}
         reply={planReply}
         onClose={() => setPlanTurn(null)}
-        onApplied={(result, summary) => {
+        onApplied={(result, summary, ops) => {
           setPlanTurn(null);
-          // The notes have changed, so the conversation is over.
-          abortRef.current?.abort();
+          // A reply that went along with the plan has been used
+          if (planReply) setInput('');
+          recordChanges(result, summary, ops);
+          // On a topic the notes have changed, so the conversation is over.
+          if (!acrossAll) abortRef.current?.abort();
           onChangesApplied(result, summary);
         }}
       />

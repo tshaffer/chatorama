@@ -21,7 +21,7 @@ import { NoteModel } from '../models/Note';
 import { NoteChangeSetModel, type NoteChangeSnapshot } from '../models/NoteChangeSet';
 import { getClaudeClient } from '../ai/claudeClient';
 import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
-import { CONSOLIDATE_MODEL, MAX_INPUT_CHARS, loadSourceNotes } from './consolidateController';
+import { CONSOLIDATE_MODEL, MAX_INPUT_CHARS, loadSourceNotes, type SourceNote } from './consolidateController';
 import { SYSTEM_PROMPT as ASK_SYSTEM_PROMPT, buildMessages } from './askNotesController';
 import { dedupeNoteSlug } from './notesController';
 import { withLocations } from './askAllController';
@@ -39,7 +39,7 @@ You are now turning the conversation into concrete changes to the notes. Respond
 Rules for the operations:
 ${
   acrossTopics
-    ? '- You can only edit or archive the numbered notes above. They can be in different subjects and topics. For each new note, set place_with to the number of an existing note whose subject and topic the new note belongs in.'
+    ? '- You can only edit or archive the numbered notes above. They can be in different subjects and topics. Notes marked archived="true", or deleted, are no longer current: leave them alone. For each new note, set place_with to the number of an existing, current note whose subject and topic the new note belongs in.'
     : '- You can only edit or archive the numbered notes above. New notes are created in the same topic.'
 }
 - Never delete a note. Archive notes that are superseded or whose content was merged elsewhere, and set merged_into to where the content now lives.
@@ -241,6 +241,15 @@ async function proposeChanges(req: Request, res: Response, topicId: string | nul
   if (inputChars > MAX_INPUT_CHARS) {
     return res.status(413).json({ message: 'These notes are too large to change at once. Select fewer notes.' });
   }
+  // Across topics, notes keep the numbers they have in the conversation even
+  // after being deleted, so its citations still line up.
+  const byId = new Map(included.map((n) => [n.id, n]));
+  const numbered: SourceNote[] = acrossTopics
+    ? Array.from(new Set(body.noteIds))
+        .filter((id) => isValidObjectId(id))
+        .map((id) => byId.get(id) ?? { id, title: '(deleted note)', text: '(This note has been deleted.)' })
+    : included;
+  const exists = (n: SourceNote) => byId.has(n.id);
 
   let client: Anthropic;
   try {
@@ -255,7 +264,7 @@ async function proposeChanges(req: Request, res: Response, topicId: string | nul
     body.currentPlan && body.revision?.trim()
       ? replyText +
         `Here is the change plan you proposed:\n\n${JSON.stringify(body.currentPlan, null, 2)}\n\n` +
-        `In that plan, ids refer to these notes: ${included.map((n, i) => `${n.id} = note ${i + 1}`).join(', ')}.\n\n` +
+        `In that plan, ids refer to these notes: ${numbered.map((n, i) => `${n.id} = note ${i + 1}`).join(', ')}.\n\n` +
         `Revise the plan: ${body.revision.trim()}\n\nCall ${PLAN_TOOL_NAME} with the complete revised plan.`
       : reply
         ? `${replyText}Make the changes we discussed, taking my reply into account.`
@@ -280,7 +289,7 @@ async function proposeChanges(req: Request, res: Response, topicId: string | nul
         // Opus 5.5 doesn't accept a forced tool_choice; the prompt asks for the
         // tool call, and a text-only reply is handled below.
         tool_choice: { type: 'auto' },
-        messages: buildMessages(included, [...body.messages, { role: 'user', content: request }]),
+        messages: buildMessages(numbered, [...body.messages, { role: 'user', content: request }]),
       },
       { signal: abort.signal },
     );
@@ -311,8 +320,9 @@ async function proposeChanges(req: Request, res: Response, topicId: string | nul
     return res.status(502).json({ message: msg });
   }
 
-  const noteIdsByNumber = included.map((n) => n.id);
-  const flags = await NoteModel.find({ _id: { $in: noteIdsByNumber } })
+  // A deleted note's number maps to no id, so operations on it are dropped.
+  const noteIdsByNumber = numbered.map((n) => (exists(n) ? n.id : ''));
+  const flags = await NoteModel.find({ _id: { $in: noteIdsByNumber.filter(Boolean) } })
     .select({ recipe: 1, pdfAssetId: 1, sourceType: 1, title: 1, markdown: 1 })
     .lean();
   const notEditableIds = new Set(
@@ -327,11 +337,18 @@ async function proposeChanges(req: Request, res: Response, topicId: string | nul
     notEditableIds,
     acrossTopics
       ? (n) => {
-          const note = included[n - 1];
-          return note && { subjectId: note.subjectId, topicId: note.topicId };
+          const note = numbered[n - 1];
+          return note && exists(note) ? { subjectId: note.subjectId, topicId: note.topicId } : undefined;
         }
       : undefined,
   );
+  // Notes archived since the conversation found them are left alone.
+  const archivedIds = new Set(numbered.filter((n) => n.archived).map((n) => n.id));
+  plan.ops = plan.ops.filter((o) => {
+    if (o.type === 'create' || !archivedIds.has(o.noteId)) return true;
+    warnings.push(`“${byId.get(o.noteId)?.title}” is archived, so it was left out of the plan.`);
+    return false;
+  });
   const editedIds = new Set(plan.ops.filter((o) => o.type === 'edit').map((o) => (o as any).noteId));
   const currentNotes = flags
     .filter((d: any) => editedIds.has(String(d._id)))

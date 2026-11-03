@@ -469,6 +469,13 @@ export interface AskConversationTurn {
   sources: AskSource[];
   // Ask across all notes: what Claude searched for and read, e.g. 'Searched “backup”'
   activity?: string[];
+  // 'changes': not a question but a record of changes the user applied (or
+  // undid) from a plan; `answer` describes them, and Claude is told about them
+  // with the next question.
+  kind?: 'changes';
+  changeSetId?: string;
+  // Set on a 'changes' record once those changes are undone
+  undone?: boolean;
   // Set once the answer is saved as a note
   savedNoteId?: string;
   answeredAt: string;
@@ -519,6 +526,8 @@ export interface UpdateAskConversationRequest {
   title?: string;
   // Record that an answer was saved as a note
   savedNote?: { turnIndex: number; noteId: string };
+  // Record that the changes in this 'changes' turn were undone
+  undoneTurn?: number;
 }
 
 export interface SetNotesArchivedRequest {

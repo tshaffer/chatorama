@@ -71,9 +71,11 @@ The notes Claude reads are numbered for the rest of the conversation and listed 
 Under each answer, **Copy**, **Save as note**, and **Plan these changes…** work as above, with these differences:
 
 - **Save as note** asks which subject and topic to save the note in. It suggests the topic of the first note the answer cites.
-- **Plan these changes…** can edit and archive notes in different subjects and topics. For each new note, Claude suggests a subject and topic, which you can change in the review before applying. Undo the changes from the message that appears after applying, or later from **Show changes made with Claude** on the page of any topic they changed.
+- **Plan these changes…** can edit and archive notes in different subjects and topics. For each new note, Claude suggests a subject and topic, which you can change in the review before applying.
 
-Conversations are saved here too. To continue one, open Ask Claude from the top bar and click **Show conversations with Claude**.
+After you apply changes, the conversation stays open, and a record of what changed appears in it, such as "Archived “Backups throughout workflow” [3]" or "Created “Backup and restore” in Chatalog / Backup [8]". New notes get numbers too. Claude is told about the changes with your next question, so you can keep going, for example "what did you change?" or "now shorten note 8". Click **Undo** on the record to undo them; the undo is recorded too. You can also undo later from **Show changes made with Claude** on the page of any topic they changed. **Plan these changes…** is offered only on answers after the most recent changes.
+
+Conversations are saved here too. To continue one, open Ask Claude from the top bar and click **Show conversations with Claude**. Notes that were archived or deleted since keep their numbers, marked **Archived** or **Deleted**, so earlier answers still point to the right notes, and Claude knows they're no longer current and won't plan changes to them.
 
 Each question costs more than Ask Claude on a topic, because Claude reads more notes. It's billed to the Claude API key the app uses.
 

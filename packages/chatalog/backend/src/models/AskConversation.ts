@@ -8,6 +8,9 @@ export interface AskConversationTurnDoc {
   stopped?: boolean;
   sources: { id: string; title: string; subjectId?: string; topicId?: string; location?: string }[];
   activity?: string[];
+  kind?: 'changes';
+  changeSetId?: string;
+  undone?: boolean;
   savedNoteId?: string;
   answeredAt: Date;
 }
@@ -41,6 +44,9 @@ const TurnSchema = new Schema<AskConversationTurnDoc>(
     stopped: { type: Boolean },
     sources: { type: [SourceSchema], default: [] },
     activity: { type: [String], default: undefined },
+    kind: { type: String, enum: ['changes'] },
+    changeSetId: { type: String },
+    undone: { type: Boolean },
     savedNoteId: { type: String },
     answeredAt: { type: Date, default: () => new Date() },
   },
