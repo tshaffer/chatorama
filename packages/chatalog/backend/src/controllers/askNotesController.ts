@@ -52,7 +52,7 @@ export function buildMessages(notes: SourceNote[], thread: AskNotesRequest['mess
   );
 }
 
-function isValidThread(messages: unknown): messages is AskNotesRequest['messages'] {
+export function isValidThread(messages: unknown): messages is AskNotesRequest['messages'] {
   if (!Array.isArray(messages) || messages.length === 0 || messages.length % 2 === 0) return false;
   return messages.every(
     (m: any, i) =>

@@ -10,6 +10,7 @@ import type {
   MergeNotesResult,
   ApplyNoteChangesRequest,
   AppendAskConversationTurnRequest,
+  AskAllSaveRequest,
   AskConversation,
   AskConversationSummary,
   AskConversationWithNotes,
@@ -56,6 +57,11 @@ type UpdateNoteRequest = {
 };
 
 type DeleteNoteRequest = { noteId: string };
+
+// Saved Ask Claude conversations: per topic, or across all notes
+const ALL = 'ALL';
+const conversationsUrl = (topicId?: string | null) =>
+  topicId ? `topics/${topicId}/ask-conversations` : 'ask/conversations';
 
 export const notesApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
@@ -355,20 +361,39 @@ export const notesApi = baseApi.injectEndpoints({
       },
     }),
 
-    proposeNoteChanges: build.mutation<NoteChangePlanResponse, NoteChangePlanRequest & { topicId: string }>({
-      query: ({ topicId, ...body }) => ({ url: `topics/${topicId}/ask-notes/plan`, method: 'POST', body }),
+    saveAskAllAnswer: build.mutation<AskNotesSaveResult, AskAllSaveRequest & { subjectId?: string }>({
+      query: ({ subjectId: _subjectId, ...body }) => ({ url: 'ask/save', method: 'POST', body }),
+      invalidatesTags: (_res, _err, { subjectId, topicId }) => {
+        const tags: { type: 'Note' | 'TopicNotes'; id: string }[] = [{ type: 'Note', id: 'LIST' }];
+        if (subjectId) {
+          tags.push({ type: 'Note', id: `LIST:${subjectId}:${topicId}` });
+          tags.push({ type: 'TopicNotes', id: `${subjectId}:${topicId}` });
+        }
+        return tags;
+      },
+    }),
+
+    // No topicId: Ask across all notes, where changes can span topics
+    proposeNoteChanges: build.mutation<NoteChangePlanResponse, NoteChangePlanRequest & { topicId?: string }>({
+      query: ({ topicId, ...body }) => ({
+        url: topicId ? `topics/${topicId}/ask-notes/plan` : 'ask/plan',
+        method: 'POST',
+        body,
+      }),
     }),
 
     applyNoteChanges: build.mutation<
       ApplyNoteChangesResult,
-      ApplyNoteChangesRequest & { topicId: string; subjectId?: string }
+      ApplyNoteChangesRequest & { topicId?: string; subjectId?: string }
     >({
       query: ({ topicId, subjectId: _subjectId, ...body }) => ({
-        url: `topics/${topicId}/note-changes/apply`,
+        url: topicId ? `topics/${topicId}/note-changes/apply` : 'ask/note-changes/apply',
         method: 'POST',
         body,
       }),
       invalidatesTags: (_res, _err, { subjectId, topicId, noteIds }) => {
+        // Changes across topics can touch any topic's lists.
+        if (!topicId) return ['TopicNotes', 'NoteChangeSet', { type: 'Note', id: 'LIST' }, ...noteIds.map((id) => ({ type: 'Note' as const, id }))];
         const tags: { type: 'Note' | 'TopicNotes' | 'NoteChangeSet'; id: string }[] = [
           { type: 'Note', id: 'LIST' },
           { type: 'NoteChangeSet', id: topicId },
@@ -389,13 +414,18 @@ export const notesApi = baseApi.injectEndpoints({
 
     undoNoteChanges: build.mutation<
       UndoNoteChangesResult,
-      { topicId: string; subjectId?: string; changeSetId: string }
+      { topicId?: string; subjectId?: string; changeSetId: string }
     >({
       query: ({ topicId, changeSetId }) => ({
-        url: `topics/${topicId}/note-changes/${changeSetId}/undo`,
+        url: topicId ? `topics/${topicId}/note-changes/${changeSetId}/undo` : `ask/note-changes/${changeSetId}/undo`,
         method: 'POST',
       }),
       invalidatesTags: (res, _err, { subjectId, topicId }) => {
+        const noteTags = [...(res?.restoredNoteIds ?? []), ...(res?.archivedNoteIds ?? [])].map((id) => ({
+          type: 'Note' as const,
+          id,
+        }));
+        if (!topicId) return ['TopicNotes', 'NoteChangeSet', { type: 'Note', id: 'LIST' }, ...noteTags];
         const tags: { type: 'Note' | 'TopicNotes' | 'NoteChangeSet'; id: string }[] = [
           { type: 'Note', id: 'LIST' },
           { type: 'NoteChangeSet', id: topicId },
@@ -412,57 +442,52 @@ export const notesApi = baseApi.injectEndpoints({
       },
     }),
 
-    getAskConversations: build.query<AskConversationSummary[], string>({
-      query: (topicId) => ({ url: `topics/${topicId}/ask-conversations` }),
-      providesTags: (_res, _err, topicId) => [{ type: 'AskConversation' as const, id: topicId }],
+    // topicId null/absent: conversations across all notes
+    getAskConversations: build.query<AskConversationSummary[], string | null>({
+      query: (topicId) => ({ url: conversationsUrl(topicId) }),
+      providesTags: (_res, _err, topicId) => [{ type: 'AskConversation' as const, id: topicId ?? ALL }],
     }),
 
     // Fetched fresh each time a conversation is continued (see AskNotesDialog), so not cached by tag
-    getAskConversation: build.query<AskConversationWithNotes, { topicId: string; conversationId: string }>({
-      query: ({ topicId, conversationId }) => ({
-        url: `topics/${topicId}/ask-conversations/${conversationId}`,
-      }),
+    getAskConversation: build.query<AskConversationWithNotes, { topicId?: string; conversationId: string }>({
+      query: ({ topicId, conversationId }) => ({ url: `${conversationsUrl(topicId)}/${conversationId}` }),
     }),
 
-    createAskConversation: build.mutation<AskConversation, CreateAskConversationRequest & { topicId: string }>({
-      query: ({ topicId, ...body }) => ({
-        url: `topics/${topicId}/ask-conversations`,
-        method: 'POST',
-        body,
-      }),
-      invalidatesTags: (_res, _err, { topicId }) => [{ type: 'AskConversation' as const, id: topicId }],
+    createAskConversation: build.mutation<AskConversation, CreateAskConversationRequest & { topicId?: string }>({
+      query: ({ topicId, ...body }) => ({ url: conversationsUrl(topicId), method: 'POST', body }),
+      invalidatesTags: (_res, _err, { topicId }) => [{ type: 'AskConversation' as const, id: topicId ?? ALL }],
     }),
 
     appendAskConversationTurn: build.mutation<
       { turnCount: number },
-      AppendAskConversationTurnRequest & { topicId: string; conversationId: string }
+      AppendAskConversationTurnRequest & { topicId?: string; conversationId: string }
     >({
       query: ({ topicId, conversationId, ...body }) => ({
-        url: `topics/${topicId}/ask-conversations/${conversationId}/turns`,
+        url: `${conversationsUrl(topicId)}/${conversationId}/turns`,
         method: 'POST',
         body,
       }),
-      invalidatesTags: (_res, _err, { topicId }) => [{ type: 'AskConversation' as const, id: topicId }],
+      invalidatesTags: (_res, _err, { topicId }) => [{ type: 'AskConversation' as const, id: topicId ?? ALL }],
     }),
 
     updateAskConversation: build.mutation<
       AskConversation,
-      UpdateAskConversationRequest & { topicId: string; conversationId: string }
+      UpdateAskConversationRequest & { topicId?: string; conversationId: string }
     >({
       query: ({ topicId, conversationId, ...body }) => ({
-        url: `topics/${topicId}/ask-conversations/${conversationId}`,
+        url: `${conversationsUrl(topicId)}/${conversationId}`,
         method: 'PATCH',
         body,
       }),
-      invalidatesTags: (_res, _err, { topicId }) => [{ type: 'AskConversation' as const, id: topicId }],
+      invalidatesTags: (_res, _err, { topicId }) => [{ type: 'AskConversation' as const, id: topicId ?? ALL }],
     }),
 
-    deleteAskConversation: build.mutation<void, { topicId: string; conversationId: string }>({
+    deleteAskConversation: build.mutation<void, { topicId?: string; conversationId: string }>({
       query: ({ topicId, conversationId }) => ({
-        url: `topics/${topicId}/ask-conversations/${conversationId}`,
+        url: `${conversationsUrl(topicId)}/${conversationId}`,
         method: 'DELETE',
       }),
-      invalidatesTags: (_res, _err, { topicId }) => [{ type: 'AskConversation' as const, id: topicId }],
+      invalidatesTags: (_res, _err, { topicId }) => [{ type: 'AskConversation' as const, id: topicId ?? ALL }],
     }),
 
     setNotesArchived: build.mutation<SetNotesArchivedResult, SetNotesArchivedRequest>({
@@ -528,6 +553,7 @@ export const {
   useGetNoteChangeSetsQuery,
   useUndoNoteChangesMutation,
   useGetAskConversationsQuery,
+  useSaveAskAllAnswerMutation,
   useLazyGetAskConversationQuery,
   useCreateAskConversationMutation,
   useAppendAskConversationTurnMutation,

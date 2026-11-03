@@ -1,14 +1,16 @@
 // frontend/src/features/notes/AskNotesDialog.tsx
-// Ask Claude questions about a set of notes. Answers stream into a short
-// conversation; any answer can be copied, saved as a note, or (on the topic
-// page) handed to Consolidate as instructions. The conversation is saved after
-// each answer so it can be continued later.
+// Ask Claude questions about a set of notes, or (without a topic) about all
+// notes, which Claude searches itself. Answers stream into a conversation; any
+// answer can be copied, saved as a note, turned into changes to the notes, or
+// (on the topic page) handed to Consolidate as instructions. The conversation
+// is saved after each answer so it can be continued later.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -43,25 +45,31 @@ import {
   useAppendAskConversationTurnMutation,
   useCreateAskConversationMutation,
   useLazyGetAskConversationQuery,
+  useSaveAskAllAnswerMutation,
   useSaveAskNotesAnswerMutation,
   useUpdateAskConversationMutation,
 } from './notesApi';
 import {
   citedSources,
   linkCitations,
+  streamAskAll,
   streamAskNotes,
   type AskNotesSource,
 } from './askNotes';
 import type { ConsolidateExcludedNote } from './consolidateDraft';
 import ChangePlanDialog from './ChangePlanDialog';
+import AskConversationsSection from './AskConversationsSection';
+import { useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
 
 export type AskNotesDialogProps = {
   open: boolean;
   subjectId?: string;
-  topicId: string;
+  // Without a topic, questions are about all notes: Claude searches for the
+  // ones it needs, and scopeLabel and notes are ignored.
+  topicId?: string;
   // e.g. "5 selected notes" or "all 12 notes in Project Launcher"
-  scopeLabel: string;
-  notes: { id: string; title: string }[];
+  scopeLabel?: string;
+  notes?: { id: string; title: string }[];
   // Continue this saved conversation instead of starting a new one. Its own
   // notes are used, and scopeLabel and notes are ignored.
   conversationId?: string | null;
@@ -72,6 +80,8 @@ export type AskNotesDialogProps = {
   onConsolidate?: (instructions: string, notes: { id: string; title: string }[]) => void;
   // Called after a "Plan these changes" plan is applied; the dialog is done at that point.
   onChangesApplied: (result: ApplyNoteChangesResult, summary: string) => void;
+  // Across all notes: shows earlier conversations to continue when nothing has been asked yet
+  onContinueConversation?: (conversationId: string) => void;
 };
 
 type Turn = {
@@ -80,6 +90,8 @@ type Turn = {
   stopped?: boolean;
   // The notes this answer was given from; its [n] citations refer to these
   sources: AskNotesSource[];
+  // Across all notes: what Claude searched for and read
+  activity?: string[];
   savedNoteId?: string;
 };
 
@@ -105,6 +117,34 @@ const NOTE_STATUS_LABEL: Partial<Record<AskConversationNoteStatus, string>> = {
   archived: 'Archived: left out',
   missing: 'No longer in this topic: left out',
 };
+const LEFT_OUT = new Set<AskConversationNoteStatus>(['archived', 'missing']);
+
+// "Searched “a”, “b” · read 6 notes" from an answer's activity
+function activitySummary(activity: string[]): string {
+  const searches = activity.flatMap((a) => a.match(/^Searched (“.*”):/)?.[1] ?? []);
+  const read = activity.reduce((sum, a) => sum + Number(a.match(/^Read (\d+) note/)?.[1] ?? 0), 0);
+  return [
+    searches.length && `Searched for ${searches.join(', ')}`,
+    `read ${read} ${read === 1 ? 'note' : 'notes'}`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+// Suggested follow-ups across all notes, once Claude has found some
+const FOLLOW_UPS_ALL: { label: string; text: string }[] = [
+  { label: 'Summarize', text: 'Summarize what the notes you found say.' },
+  { label: 'Find duplicates', text: 'Which of the notes you found repeat or overlap each other?' },
+  {
+    label: 'Suggest how to consolidate',
+    text: 'Suggest how to consolidate the notes you found: what to combine, rename, move into one note, or archive.',
+  },
+  {
+    label: 'Find contradictions or outdated info',
+    text: 'Find contradictions, or information that looks outdated, in the notes you found.',
+  },
+  { label: 'Search more', text: 'Search for more notes about this that you may have missed.' },
+];
 
 // Title for a new conversation: picked suggestions by name, then anything typed
 function conversationTitle(labels: string[], typed: string): string {
@@ -173,6 +213,8 @@ function answerHtml(el: HTMLElement): string {
   return `<meta charset="utf-8">${clone.innerHTML}`;
 }
 
+const NO_NOTES: { id: string; title: string }[] = [];
+
 function defaultTitle(turn: Turn): string {
   const fromAnswer = extractTitle(turn.answer);
   if (fromAnswer) return fromAnswer;
@@ -184,14 +226,16 @@ export default function AskNotesDialog({
   open,
   subjectId,
   topicId,
-  scopeLabel,
-  notes: newNotes,
+  scopeLabel = '',
+  notes: newNotes = NO_NOTES,
   conversationId,
   onClose,
   onSaved,
   onConsolidate,
   onChangesApplied,
+  onContinueConversation,
 }: AskNotesDialogProps) {
+  const acrossAll = !topicId;
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
   // Labels of the suggestions picked for the next question
@@ -204,6 +248,8 @@ export default function AskNotesDialog({
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   const [savingTurn, setSavingTurn] = useState<number | null>(null);
   const [saveTitle, setSaveTitle] = useState('');
+  // Across all notes: the topic an answer is saved in
+  const [saveTopicId, setSaveTopicId] = useState<string | null>(null);
   const [copiedTurn, setCopiedTurn] = useState<number | null>(null);
   // The answer a "Plan these changes" plan is based on
   const [planTurn, setPlanTurn] = useState<number | null>(null);
@@ -221,22 +267,43 @@ export default function AskNotesDialog({
   const answerEls = useRef(new Map<number, HTMLDivElement>());
   const savedRef = useRef<SavedConversation>(newSavedConversation());
 
-  const [saveAnswer, { isLoading: isSaving }] = useSaveAskNotesAnswerMutation();
+  const [saveTopicAnswer, { isLoading: isSavingTopic }] = useSaveAskNotesAnswerMutation();
+  const [saveAllAnswer, { isLoading: isSavingAll }] = useSaveAskAllAnswerMutation();
+  const isSaving = isSavingTopic || isSavingAll;
+  const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery(undefined, { skip: !acrossAll });
+  const topicOptions = useMemo(
+    () =>
+      subjectsWithTopics.flatMap((s) =>
+        (s.topics ?? []).map((t) => ({ id: t.id, subjectId: s.id, label: `${s.name} / ${t.name}` })),
+      ),
+    [subjectsWithTopics],
+  );
   const [loadConversation] = useLazyGetAskConversationQuery();
   const [createConversation] = useCreateAskConversationMutation();
   const [appendTurn] = useAppendAskConversationTurnMutation();
   const [updateConversation] = useUpdateAskConversationMutation();
 
-  // The notes questions are asked about. A continued conversation leaves out
-  // notes that were archived or moved since.
-  const notes = useMemo(
+  // Notes left out of a continued conversation because they were archived or moved since
+  const leftOutIds = useMemo(
+    () => new Set((resumed?.notes ?? []).filter((n) => LEFT_OUT.has(n.status)).map((n) => n.id)),
+    [resumed],
+  );
+  // Across all notes: the notes found through turn `index`, in citation order
+  const foundThrough = useCallback(
+    (index: number): AskNotesSource[] => (turns[index]?.sources ?? []).filter((s) => !leftOutIds.has(s.id)),
+    [turns, leftOutIds],
+  );
+  // The notes questions are asked about. Across all notes, the ones found so far.
+  const notes: AskNotesSource[] = useMemo(
     () =>
-      resumed
-        ? resumed.notes
-            .filter((n) => n.status === 'unchanged' || n.status === 'changed')
-            .map(({ id, title }) => ({ id, title }))
-        : newNotes,
-    [resumed, newNotes],
+      acrossAll
+        ? foundThrough(turns.length - 1)
+        : resumed
+          ? resumed.notes
+              .filter((n) => !LEFT_OUT.has(n.status))
+              .map(({ id, title }) => ({ id, title }))
+          : newNotes,
+    [acrossAll, foundThrough, turns.length, resumed, newNotes],
   );
   const noteIds = useMemo(() => notes.map((n) => n.id), [notes]);
 
@@ -256,6 +323,7 @@ export default function AskNotesDialog({
     setSavingTurn(null);
     setCopiedTurn(null);
     setPlanTurn(null);
+    setSaveTopicId(null);
     setResumed(null);
     setSaveFailed(false);
     if (!conversationId) {
@@ -278,6 +346,7 @@ export default function AskNotesDialog({
             answer: t.answer,
             stopped: t.stopped,
             sources: t.sources,
+            activity: t.activity,
             savedNoteId: t.savedNoteId,
           })),
         );
@@ -311,7 +380,8 @@ export default function AskNotesDialog({
             const created = await createConversation({
               topicId,
               title,
-              noteIds,
+              // Across all notes, the notes are whatever Claude finds
+              noteIds: acrossAll ? turn.sources.map((s) => s.id) : noteIds,
               turn,
             }).unwrap();
             saved.id = created.id;
@@ -325,7 +395,7 @@ export default function AskNotesDialog({
         }
       });
     },
-    [appendTurn, createConversation, topicId, noteIds],
+    [appendTurn, createConversation, topicId, acrossAll, noteIds],
   );
 
   // The conversation through turn `last`, as Claude sees it. Stopped or empty
@@ -351,7 +421,7 @@ export default function AskNotesDialog({
     // onFailed restores what was being asked so it can be retried
     async (question: string, title: string, onFailed: () => void) => {
       const q = question.trim();
-      if (!q || streaming || loading || noteIds.length === 0) return;
+      if (!q || streaming || loading || (!acrossAll && noteIds.length === 0)) return;
       setError(null);
       setInput('');
 
@@ -369,28 +439,50 @@ export default function AskNotesDialog({
 
       let answer = '';
       let sources: AskNotesSource[] = [];
+      let activity: string[] | undefined;
+      const onText = (text: string) => {
+        answer = text;
+        update({ answer: text });
+      };
       try {
-        await streamAskNotes({
-          topicId,
-          signal: controller.signal,
-          body: { noteIds, messages: [...history, { role: 'user', content: q }] },
-          onMeta: (meta) => {
-            sources = meta.sources;
-            update({ sources });
-            setExcluded(meta.excluded);
-            setInputChars(meta.inputChars);
-          },
-          onText: (text) => {
-            answer = text;
-            update({ answer: text });
-          },
-        });
-        if (answer.trim()) persistTurn(saved, index, { question: q, answer, sources }, title);
+        if (topicId) {
+          await streamAskNotes({
+            topicId,
+            signal: controller.signal,
+            body: { noteIds, messages: [...history, { role: 'user', content: q }] },
+            onMeta: (meta) => {
+              sources = meta.sources;
+              update({ sources });
+              setExcluded(meta.excluded);
+              setInputChars(meta.inputChars);
+            },
+            onText,
+          });
+        } else {
+          // Notes found earlier keep their numbers; Claude adds any it reads now.
+          sources = notes;
+          activity = [];
+          update({ sources, activity });
+          await streamAskAll({
+            signal: controller.signal,
+            body: { sources: notes, messages: [...history, { role: 'user', content: q }] },
+            onActivity: (text) => {
+              activity = [...(activity ?? []), text];
+              update({ activity });
+            },
+            onSource: (source) => {
+              sources = [...sources, source];
+              update({ sources });
+            },
+            onText,
+          });
+        }
+        if (answer.trim()) persistTurn(saved, index, { question: q, answer, sources, activity }, title);
       } catch (err: any) {
         if (controller.signal.aborted) {
           update({ stopped: true });
           // Keep what arrived, even if the dialog was closed mid-answer
-          if (answer.trim()) persistTurn(saved, index, { question: q, answer, sources, stopped: true }, title);
+          if (answer.trim()) persistTurn(saved, index, { question: q, answer, sources, activity, stopped: true }, title);
         } else {
           // Drop the failed turn and put the question back so it can be retried
           setTurns((prev) => prev.filter((_, i) => i !== index));
@@ -402,7 +494,7 @@ export default function AskNotesDialog({
         setStreaming(false);
       }
     },
-    [streaming, loading, turns, topicId, noteIds, historyThrough, persistTurn],
+    [streaming, loading, acrossAll, turns, topicId, noteIds, notes, historyThrough, persistTurn],
   );
 
   const handleStop = () => abortRef.current?.abort();
@@ -451,6 +543,12 @@ export default function AskNotesDialog({
 
   const startSave = (index: number) => {
     setSaveTitle(defaultTitle(turns[index]));
+    if (acrossAll) {
+      // Default to where the first cited note lives
+      const turn = turns[index];
+      const first = [...citedSources(turn.answer, turn.sources), ...turn.sources].find((s) => s.topicId);
+      setSaveTopicId(first?.topicId ?? null);
+    }
     setSavingTurn(index);
   };
 
@@ -466,14 +564,15 @@ export default function AskNotesDialog({
     const index = savingTurn;
     const saved = savedRef.current;
     try {
-      const result = await saveAnswer({
-        topicId,
-        subjectId,
-        noteIds,
-        title,
-        markdown,
-        question: turn.question,
-      }).unwrap();
+      const saveTopic = topicOptions.find((t) => t.id === saveTopicId);
+      if (!topicId && !saveTopic) {
+        setError('Choose a topic to save the note in.');
+        return;
+      }
+      const request = { noteIds: turn.sources.map((s) => s.id), title, markdown, question: turn.question };
+      const result = topicId
+        ? await saveTopicAnswer({ ...request, topicId, subjectId, noteIds }).unwrap()
+        : await saveAllAnswer({ ...request, topicId: saveTopic!.id, subjectId: saveTopic!.subjectId }).unwrap();
       setTurns((prev) => prev.map((t, i) => (i === index ? { ...t, savedNoteId: result.noteId } : t)));
       setSavingTurn(null);
       onSaved(result.noteId, title);
@@ -496,9 +595,14 @@ export default function AskNotesDialog({
     }
   };
 
-  const starters = STARTERS.filter((s) => !s.multiOnly || notes.length > 1);
   const theseNotes = notes.length === 1 ? 'this note' : 'these notes';
-  const canAsk = !loading && noteIds.length > 0 && !(conversationId && !resumed);
+  // Across all notes, suggestions make sense once Claude has found something.
+  const starters: { label: string; text: (notes: string) => string }[] = acrossAll
+    ? notes.length
+      ? FOLLOW_UPS_ALL.map((f) => ({ label: f.label, text: () => f.text }))
+      : []
+    : STARTERS.filter((s) => !s.multiOnly || notes.length > 1);
+  const canAsk = !loading && (acrossAll || noteIds.length > 0) && !(conversationId && !resumed);
   const hasQuestion = Boolean(input.trim()) || picked.size > 0;
   const replyText = canAsk ? input.trim() : '';
 
@@ -527,10 +631,17 @@ export default function AskNotesDialog({
   };
   const excludedIds = new Set(excluded.map((e) => e.id));
   // Every note the conversation is about, including ones left out when continuing it
-  const listedNotes: { id: string; title: string; status: AskConversationNoteStatus }[] =
-    resumed?.notes ?? notes.map((n) => ({ ...n, status: 'unchanged' as const }));
+  const statusById = new Map((resumed?.notes ?? []).map((n) => [n.id, n.status]));
+  const listedNotes: (AskNotesSource & { status: AskConversationNoteStatus })[] = acrossAll
+    ? [
+        ...notes.map((n) => ({ ...n, status: statusById.get(n.id) ?? ('unchanged' as const) })),
+        ...(resumed?.notes ?? []).filter((n) => LEFT_OUT.has(n.status)),
+      ]
+    : (resumed?.notes ?? notes.map((n) => ({ ...n, status: 'unchanged' as const })));
   const changedCount = resumed?.notes.filter((n) => n.status === 'changed').length ?? 0;
-  const leftOutCount = resumed ? resumed.notes.length - notes.length : 0;
+  const leftOutCount = acrossAll ? leftOutIds.size : resumed ? resumed.notes.length - notes.length : 0;
+  const statusLabel = (status: AskConversationNoteStatus) =>
+    acrossAll && status === 'missing' ? 'Deleted: left out' : NOTE_STATUS_LABEL[status];
 
   return (
     <>
@@ -542,13 +653,20 @@ export default function AskNotesDialog({
         PaperProps={{ sx: { height: '90vh' } }}
       >
         <DialogTitle sx={{ overflowWrap: 'anywhere' }}>
-          {resumed ? `Ask Claude: ${resumed.title}` : conversationId ? 'Ask Claude' : `Ask Claude about ${scopeLabel}`}
+          {resumed
+            ? `Ask Claude: ${resumed.title}`
+            : conversationId
+              ? 'Ask Claude'
+              : acrossAll
+                ? 'Ask Claude about all your notes'
+                : `Ask Claude about ${scopeLabel}`}
         </DialogTitle>
 
         <DialogContent
           dividers
           sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minHeight: 0 }}
         >
+          {(!acrossAll || listedNotes.length > 0) && (
           <Accordion
             disableGutters
             expanded={notesExpanded}
@@ -557,7 +675,7 @@ export default function AskNotesDialog({
           >
             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
               <Typography variant="subtitle2">
-                Notes ({notes.length})
+                {acrossAll ? 'Notes found' : 'Notes'} ({notes.length})
               </Typography>
               {inputChars > 0 && (
                 <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
@@ -579,11 +697,12 @@ export default function AskNotesDialog({
                             {excludedIds.has(n.id) && (
                               <Chip size="small" label="Skipped: no text" sx={{ ml: 1 }} />
                             )}
-                            {NOTE_STATUS_LABEL[n.status] && (
-                              <Chip size="small" label={NOTE_STATUS_LABEL[n.status]} sx={{ ml: 1 }} />
+                            {statusLabel(n.status) && (
+                              <Chip size="small" label={statusLabel(n.status)} sx={{ ml: 1 }} />
                             )}
                           </span>
                         }
+                        secondary={n.location}
                       />
                     </ListItem>
                   );
@@ -591,6 +710,7 @@ export default function AskNotesDialog({
               </List>
             </AccordionDetails>
           </Accordion>
+          )}
 
           {error && (
             <Alert severity="error" onClose={() => setError(null)} sx={{ flexShrink: 0 }}>
@@ -604,7 +724,7 @@ export default function AskNotesDialog({
                 changedCount > 0 &&
                   `${changedCount} ${changedCount === 1 ? 'note has' : 'notes have'} changed since the last answer, so earlier answers may be out of date. Claude will use the current ${changedCount === 1 ? 'version' : 'versions'}.`,
                 leftOutCount > 0 &&
-                  `${leftOutCount} ${leftOutCount === 1 ? 'note was' : 'notes were'} archived or moved and ${leftOutCount === 1 ? 'is' : 'are'} left out.`,
+                  `${leftOutCount} ${leftOutCount === 1 ? 'note was' : 'notes were'} archived or ${acrossAll ? 'deleted' : 'moved'} and ${leftOutCount === 1 ? 'is' : 'are'} left out.`,
               ]
                 .filter(Boolean)
                 .join(' ')}{' '}
@@ -619,11 +739,24 @@ export default function AskNotesDialog({
                 <CircularProgress size={24} />
               </Box>
             ) : conversationId && !resumed ? null : turns.length === 0 ? (
+              acrossAll ? (
+                <Box sx={{ py: 3 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2, textAlign: 'center' }}>
+                    Ask anything about your notes, for example “Find all the notes that mention backing up an
+                    application database.” Claude searches all your notes to answer, and you can ask follow-up
+                    questions about what it finds.
+                  </Typography>
+                  {onContinueConversation && (
+                    <AskConversationsSection topicId={null} onContinue={onContinueConversation} />
+                  )}
+                </Box>
+              ) : (
               <Box sx={{ py: 4, textAlign: 'center' }}>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                   Ask anything about {theseNotes}, or pick one or more suggestions below and click Ask.
                 </Typography>
               </Box>
+              )
             ) : (
               <Stack spacing={2}>
                 {turns.map((turn, index) => {
@@ -646,6 +779,11 @@ export default function AskNotesDialog({
                           {turn.question}
                         </Typography>
                       </Box>
+                      {turn.activity && turn.activity.length > 0 && !isStreaming && (
+                        <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 1 }}>
+                          {activitySummary(turn.activity)}
+                        </Typography>
+                      )}
                       {turn.answer ? (
                         <Box
                           ref={(node: HTMLDivElement | null) => {
@@ -657,7 +795,9 @@ export default function AskNotesDialog({
                         </Box>
                       ) : (
                         <Typography variant="body2" color="text.secondary">
-                          Claude is reading the notes…
+                          {acrossAll
+                            ? `${turn.activity?.[turn.activity.length - 1] ?? 'Searching your notes'}…`
+                            : 'Claude is reading the notes…'}
                         </Typography>
                       )}
                       {isStreaming && <LinearProgress sx={{ mt: 1 }} />}
@@ -724,7 +864,7 @@ export default function AskNotesDialog({
                           >
                             {turn.savedNoteId ? 'Saved' : 'Save as note'}
                           </Button>
-                          {!turn.stopped && (
+                          {!turn.stopped && (!acrossAll || foundThrough(index).length > 0) && (
                             <Tooltip
                               title={
                                 isLast && replyText
@@ -787,10 +927,24 @@ export default function AskNotesDialog({
                             }}
                             sx={{ flex: 1 }}
                           />
+                          {acrossAll && (
+                            <Autocomplete
+                              size="small"
+                              options={topicOptions}
+                              value={topicOptions.find((t) => t.id === saveTopicId) ?? null}
+                              onChange={(_e, v) => setSaveTopicId(v?.id ?? null)}
+                              renderInput={(params) => <TextField {...params} label="Save in subject / topic" />}
+                              sx={{ flex: 1 }}
+                            />
+                          )}
                           <Button onClick={() => setSavingTurn(null)} disabled={isSaving}>
                             Cancel
                           </Button>
-                          <Button variant="contained" onClick={handleSave} disabled={isSaving}>
+                          <Button
+                            variant="contained"
+                            onClick={handleSave}
+                            disabled={isSaving || (acrossAll && !saveTopicId)}
+                          >
                             {isSaving ? 'Saving…' : 'Save'}
                           </Button>
                         </Stack>
@@ -844,14 +998,16 @@ export default function AskNotesDialog({
               maxRows={6}
               size="small"
               placeholder={
-                noteIds.length === 0 && !loading
+                !acrossAll && noteIds.length === 0 && !loading
                   ? 'None of this conversation’s notes are available any more'
                   : turns.length
                     ? 'Ask a follow-up, or type a reply and click Plan these changes…'
-                    : `Ask a question about ${theseNotes}…`
+                    : acrossAll
+                      ? 'Ask a question about your notes…'
+                      : `Ask a question about ${theseNotes}…`
               }
               value={input}
-              disabled={streaming || loading || noteIds.length === 0}
+              disabled={streaming || loading || (!acrossAll && noteIds.length === 0)}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -888,7 +1044,7 @@ export default function AskNotesDialog({
         open={planTurn !== null}
         subjectId={subjectId}
         topicId={topicId}
-        notes={notes}
+        notes={acrossAll ? foundThrough(planTurn ?? -1) : notes}
         messages={planMessages}
         reply={planReply}
         onClose={() => setPlanTurn(null)}

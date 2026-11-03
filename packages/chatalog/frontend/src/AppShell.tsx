@@ -222,7 +222,7 @@ export default function AppShell() {
               </IconButton>
             </Tooltip>
 
-            <Tooltip title="Ask (search with AI)">
+            <Tooltip title="Ask Claude about all your notes">
               <IconButton color="inherit" onClick={() => setAskOpen(true)}>
                 <AutoAwesomeIcon />
               </IconButton>

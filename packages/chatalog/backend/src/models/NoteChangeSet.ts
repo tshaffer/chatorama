@@ -19,7 +19,9 @@ export interface NoteChangeSnapshot {
 
 export interface NoteChangeSetDoc extends Document {
   _id: Types.ObjectId;
-  topicId: string;
+  // The topic it was made from; absent for changes made across topics
+  topicId?: string;
+  topicIds: string[];
   summary: string;
   sourceNoteIds: string[];
   createdNoteIds: string[];
@@ -47,7 +49,8 @@ const SnapshotSchema = new Schema<NoteChangeSnapshot>(
 
 const NoteChangeSetSchema = new Schema<NoteChangeSetDoc>(
   {
-    topicId: { type: String, required: true, index: true },
+    topicId: { type: String, index: true },
+    topicIds: { type: [String], default: [], index: true },
     summary: { type: String, default: '' },
     sourceNoteIds: { type: [String], default: [] },
     createdNoteIds: { type: [String], default: [] },

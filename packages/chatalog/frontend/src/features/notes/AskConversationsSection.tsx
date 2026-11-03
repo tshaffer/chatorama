@@ -1,6 +1,7 @@
 // frontend/src/features/notes/AskConversationsSection.tsx
-// Collapsed-by-default list of saved Ask Claude conversations in this topic,
-// each of which can be continued, renamed, or deleted.
+// Collapsed-by-default list of saved Ask Claude conversations in this topic
+// (or, with topicId null, across all notes), each of which can be continued,
+// renamed, or deleted.
 import { useRef, useState } from 'react';
 import {
   Alert,
@@ -27,7 +28,7 @@ import {
 } from './notesApi';
 
 type Props = {
-  topicId: string;
+  topicId: string | null;
   onContinue: (conversationId: string) => void;
 };
 
@@ -56,7 +57,7 @@ export default function AskConversationsSection({ topicId, onContinue }: Props) 
     if (!renaming || !newTitle.trim()) return;
     setError(null);
     try {
-      await updateConversation({ topicId, conversationId: renaming.id, title: newTitle }).unwrap();
+      await updateConversation({ topicId: topicId ?? undefined, conversationId: renaming.id, title: newTitle }).unwrap();
       setRenaming(null);
     } catch (err: any) {
       setError(err?.data?.message ?? err?.message ?? 'Rename failed');
@@ -67,7 +68,7 @@ export default function AskConversationsSection({ topicId, onContinue }: Props) 
     if (!deleting) return;
     setError(null);
     try {
-      await deleteConversation({ topicId, conversationId: deleting.id }).unwrap();
+      await deleteConversation({ topicId: topicId ?? undefined, conversationId: deleting.id }).unwrap();
       setDeleting(null);
     } catch (err: any) {
       setDeleting(null);

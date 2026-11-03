@@ -1,324 +1,35 @@
+// Ask Claude across all notes (the top bar's Ask). Claude searches the notes
+// itself; answers can be saved as notes, turned into changes to notes in any
+// topic, and the conversation is saved so it can be continued later.
 import { Router } from 'express';
-import type Anthropic from '@anthropic-ai/sdk';
-import { getClaudeClient } from '../ai/claudeClient';
-import { NoteModel } from '../models/Note';
-import { SubjectModel } from '../models/Subject';
-import { TopicModel } from '../models/Topic';
+import { saveAskAllAnswer, streamAskAll } from '../controllers/askAllController';
+import {
+  applyNoteChangesAcrossTopics,
+  proposeNoteChangesAcrossTopics,
+  undoNoteChangeSet,
+} from '../controllers/noteChangesController';
+import {
+  appendAskConversationTurn,
+  createAskConversation,
+  deleteAskConversation,
+  getAskConversation,
+  listAskConversations,
+  updateAskConversation,
+} from '../controllers/askConversationsController';
 
 const askRouter = Router();
 
-const MAX_TOOL_ROUNDS = 6;
-const NOTE_CONTENT_LIMIT = 6000;
-const SEARCH_LIMIT = 8;
+askRouter.post('/stream', streamAskAll);
+askRouter.post('/save', saveAskAllAnswer);
+askRouter.post('/plan', proposeNoteChangesAcrossTopics);
+askRouter.post('/note-changes/apply', applyNoteChangesAcrossTopics);
+askRouter.post('/note-changes/:changeSetId/undo', undoNoteChangeSet);
 
-function buildSnippet(text: string, maxLen = 280): string {
-  if (!text) return '';
-  const cleaned = text
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/`[^`]*`/g, ' ')
-    .replace(/!\[[^\]]*\]\([^\)]*\)/g, '')
-    .replace(/\[([^\]]+)\]\([^\)]*\)/g, '$1')
-    .replace(/^[>#]+\s+/gm, '')
-    .replace(/[*_~]+/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return cleaned.length > maxLen ? cleaned.slice(0, maxLen - 1) + '…' : cleaned;
-}
-
-async function toolSearchNotes(query: string) {
-  const docs = await NoteModel.find(
-    { $text: { $search: query }, recipe: { $exists: false }, archived: { $ne: true } },
-    { score: { $meta: 'textScore' } },
-  )
-    .sort({ score: { $meta: 'textScore' } })
-    .limit(SEARCH_LIMIT)
-    .select({ title: 1, markdown: 1, tags: 1, updatedAt: 1, slug: 1, subjectId: 1, topicId: 1 })
-    .lean();
-
-  return docs.map((doc: any) => ({
-    id: String(doc._id),
-    title: doc.title || 'Untitled',
-    snippet: buildSnippet(doc.markdown || ''),
-    tags: doc.tags || [],
-    wordCount: (doc.markdown || '').split(/\s+/).filter(Boolean).length,
-    updatedAt: doc.updatedAt,
-    _slug: doc.slug,
-    _subjectId: doc.subjectId,
-    _topicId: doc.topicId,
-  }));
-}
-
-async function toolSearchRecipes(query: string) {
-  const docs = await NoteModel.find(
-    { $text: { $search: query }, recipe: { $exists: true }, archived: { $ne: true } },
-    { score: { $meta: 'textScore' } },
-  )
-    .sort({ score: { $meta: 'textScore' } })
-    .limit(SEARCH_LIMIT)
-    .select({
-      title: 1,
-      'recipe.prepTimeMinutes': 1,
-      'recipe.cookTimeMinutes': 1,
-      'recipe.totalTimeMinutes': 1,
-      'recipe.yield': 1,
-      'recipe.description': 1,
-      'recipe.cuisine': 1,
-      'recipe.category': 1,
-      'recipe.ingredientsRaw': 1,
-      'recipe.stepsRaw': 1,
-      slug: 1,
-      subjectId: 1,
-      topicId: 1,
-    })
-    .lean();
-
-  return docs.map((doc: any) => {
-    const r = doc.recipe || {};
-    return {
-      id: String(doc._id),
-      title: doc.title || 'Untitled',
-      prepTimeMinutes: r.prepTimeMinutes ?? null,
-      cookTimeMinutes: r.cookTimeMinutes ?? null,
-      totalTimeMinutes: r.totalTimeMinutes ?? null,
-      yield: r.yield ?? null,
-      description: r.description ?? null,
-      cuisine: r.cuisine ?? null,
-      category: r.category ?? [],
-      ingredients: (r.ingredientsRaw ?? []).slice(0, 30),
-      instructions: (r.stepsRaw ?? []).slice(0, 10),
-      _slug: doc.slug,
-      _subjectId: doc.subjectId,
-      _topicId: doc.topicId,
-    };
-  });
-}
-
-async function toolGetNote(id: string) {
-  let doc: any;
-  try {
-    doc = await NoteModel.findById(id)
-      .select({ title: 1, markdown: 1, tags: 1, updatedAt: 1, docKind: 1 })
-      .lean();
-  } catch {
-    return null;
-  }
-  if (!doc) return null;
-  const markdown = doc.markdown || '';
-  const truncated = markdown.length > NOTE_CONTENT_LIMIT;
-  return {
-    id: String(doc._id),
-    title: doc.title || 'Untitled',
-    content: truncated
-      ? `${markdown.slice(0, NOTE_CONTENT_LIMIT)}\n\n[Note truncated — full note is ${markdown.length} chars]`
-      : markdown,
-    tags: doc.tags || [],
-    updatedAt: doc.updatedAt,
-  };
-}
-
-const TOOL_DEFINITIONS: Anthropic.Tool[] = [
-  {
-    name: 'search_notes',
-    description:
-      "Search the user's text notes (not recipes) by keyword. Returns titles and snippets. Call get_note to read the full content of a promising result.",
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        query: { type: 'string', description: 'Search terms' },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'search_recipes',
-    description:
-      "Search the user's saved recipes. Returns full recipe details including prep/cook times, ingredients, and instructions.",
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        query: { type: 'string', description: 'Recipe name, ingredient, or description' },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'get_note',
-    description:
-      'Retrieve the full markdown content of a specific note by its ID. Use this when a snippet from search_notes is not enough to answer the question.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        id: { type: 'string', description: 'The note ID from a previous search_notes result' },
-      },
-      required: ['id'],
-    },
-  },
-];
-
-const SYSTEM_PROMPT = `You are the Ask assistant for Chatalog, a personal knowledge base for saving and organizing notes and conversations.
-
-Your job is to answer the user's questions by searching their notes and recipes using the tools available to you.
-
-## Rules
-- Always search before answering — never assume what is or isn't in the user's data.
-- For questions about food, recipes, cooking times, or ingredients: use search_recipes.
-- For all other questions about notes, topics, or conversations: use search_notes.
-- If a snippet from search_notes is not enough to answer fully, use get_note to read the full note.
-- You may call multiple tools in sequence to gather enough information.
-- If nothing relevant is found after searching, say so clearly — do not invent information.
-- Keep answers concise and grounded in what you actually found.
-- When citing a specific note or recipe, mention its title.`;
-
-interface ConversationTurn {
-  question: string;
-  answer: string;
-}
-
-interface Source {
-  id: string;
-  title: string;
-  docKind: 'note' | 'recipe';
-  noteSlug?: string;
-  subjectId?: string;
-  topicId?: string;
-  subjectSlug?: string;
-  topicSlug?: string;
-}
-
-async function enrichSourcesWithSlugs(sources: Map<string, Source>): Promise<void> {
-  const subjectIds = new Set<string>();
-  const topicIds = new Set<string>();
-  for (const src of sources.values()) {
-    if (src.subjectId) subjectIds.add(src.subjectId);
-    if (src.topicId) topicIds.add(src.topicId);
-  }
-  const [subjects, topics] = await Promise.all([
-    subjectIds.size
-      ? SubjectModel.find({ _id: { $in: Array.from(subjectIds) } }).select({ _id: 1, slug: 1 }).lean()
-      : [],
-    topicIds.size
-      ? TopicModel.find({ _id: { $in: Array.from(topicIds) } }).select({ _id: 1, slug: 1 }).lean()
-      : [],
-  ]);
-  const subjectSlugMap = new Map((subjects as any[]).map((s) => [String(s._id), s.slug as string]));
-  const topicSlugMap = new Map((topics as any[]).map((t) => [String(t._id), t.slug as string]));
-  for (const src of sources.values()) {
-    if (src.subjectId) src.subjectSlug = subjectSlugMap.get(src.subjectId);
-    if (src.topicId) src.topicSlug = topicSlugMap.get(src.topicId);
-  }
-}
-
-askRouter.post('/', async (req, res) => {
-  const { question, history } = req.body as {
-    question?: string;
-    history?: ConversationTurn[];
-  };
-
-  if (!question?.trim()) {
-    res.status(400).json({ error: 'question is required' });
-    return;
-  }
-
-  try {
-    const client = getClaudeClient();
-
-    const historyMessages: Anthropic.MessageParam[] = (history ?? [])
-      .slice(-6)
-      .flatMap((turn): Anthropic.MessageParam[] => [
-        { role: 'user', content: turn.question },
-        { role: 'assistant', content: turn.answer },
-      ]);
-
-    const messages: Anthropic.MessageParam[] = [
-      ...historyMessages,
-      { role: 'user', content: question.trim() },
-    ];
-
-    const accessedSources = new Map<string, Source>();
-
-    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const response = await client.messages.create({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 2048,
-        system: SYSTEM_PROMPT,
-        tools: TOOL_DEFINITIONS,
-        messages,
-      });
-
-      messages.push({ role: 'assistant', content: response.content });
-
-      if (response.stop_reason === 'end_turn') {
-        const textBlock = response.content.find((b) => b.type === 'text');
-        const answer = textBlock?.type === 'text' ? textBlock.text : '';
-        await enrichSourcesWithSlugs(accessedSources);
-        res.json({ answer, sources: Array.from(accessedSources.values()) });
-        return;
-      }
-
-      if (response.stop_reason === 'tool_use') {
-        const toolResults: Anthropic.ToolResultBlockParam[] = [];
-
-        for (const block of response.content) {
-          if (block.type !== 'tool_use') continue;
-
-          let result: unknown = null;
-
-          if (block.name === 'search_notes') {
-            const input = block.input as { query: string };
-            result = await toolSearchNotes(input.query);
-            for (const item of result as any[]) {
-              accessedSources.set(item.id, {
-                id: item.id, title: item.title, docKind: 'note',
-                noteSlug: item._slug, subjectId: item._subjectId, topicId: item._topicId,
-              });
-            }
-          } else if (block.name === 'search_recipes') {
-            const input = block.input as { query: string };
-            result = await toolSearchRecipes(input.query);
-            for (const item of result as any[]) {
-              accessedSources.set(item.id, {
-                id: item.id, title: item.title, docKind: 'recipe',
-                noteSlug: item._slug, subjectId: item._subjectId, topicId: item._topicId,
-              });
-            }
-          } else if (block.name === 'get_note') {
-            const input = block.input as { id: string };
-            result = await toolGetNote(input.id);
-            if (result) {
-              const r = result as any;
-              const existing = accessedSources.get(r.id);
-              accessedSources.set(r.id, {
-                id: r.id, title: r.title, docKind: existing?.docKind ?? 'note',
-                noteSlug: existing?.noteSlug,
-                subjectId: existing?.subjectId,
-                topicId: existing?.topicId,
-              });
-            }
-          }
-
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: result === null ? 'Not found.' : JSON.stringify(result),
-          });
-        }
-
-        messages.push({ role: 'user', content: toolResults });
-        continue;
-      }
-
-      break;
-    }
-
-    res.status(500).json({ error: 'No answer was produced.' });
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('ANTHROPIC_API_KEY')) {
-      res.status(503).json({ error: 'Claude API is not configured (missing ANTHROPIC_API_KEY)' });
-      return;
-    }
-    console.error('[ask] error', error);
-    res.status(500).json({ error: 'Failed to answer question' });
-  }
-});
+askRouter.get('/conversations', listAskConversations);
+askRouter.post('/conversations', createAskConversation);
+askRouter.get('/conversations/:conversationId', getAskConversation);
+askRouter.patch('/conversations/:conversationId', updateAskConversation);
+askRouter.delete('/conversations/:conversationId', deleteAskConversation);
+askRouter.post('/conversations/:conversationId/turns', appendAskConversationTurn);
 
 export default askRouter;

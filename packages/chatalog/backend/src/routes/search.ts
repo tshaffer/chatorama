@@ -544,7 +544,7 @@ async function buildKeywordDocsForNotes(args: {
   return mergeDocs(primaryDocs, secondaryDocs);
 }
 
-async function buildNoteResultsByMode(args: {
+export async function buildNoteResultsByMode(args: {
   mode: 'auto' | 'keyword' | 'semantic';
   q: string;
   baseFilter: any;

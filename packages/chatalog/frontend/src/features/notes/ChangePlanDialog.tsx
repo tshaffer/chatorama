@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -31,13 +32,16 @@ import type {
 } from '@chatorama/chatalog-shared';
 import MarkdownBody from '../../components/MarkdownBody';
 import { useApplyNoteChangesMutation, useProposeNoteChangesMutation } from './notesApi';
+import { useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
+import type { AskNotesSource } from './askNotes';
 import { lineDiff, type DiffLine } from './lineDiff';
 
 export type ChangePlanDialogProps = {
   open: boolean;
   subjectId?: string;
-  topicId: string;
-  notes: { id: string; title: string }[];
+  // Without a topic, the notes can be in any topic, and new notes go in a topic chosen for each
+  topicId?: string;
+  notes: AskNotesSource[];
   // The conversation to act on; ends with Claude's answer
   messages: AskNotesMessage[];
   // What the user typed in reply to the last answer, sent along with the request
@@ -131,6 +135,19 @@ export default function ChangePlanDialog({
   const [proposeNoteChanges, { isLoading: isPlanning }] = useProposeNoteChangesMutation();
   const [applyNoteChanges, { isLoading: isApplying }] = useApplyNoteChangesMutation();
 
+  const acrossTopics = !topicId;
+  // Across topics: the topic chosen for each new note (by operation index)
+  const [placement, setPlacement] = useState<Record<number, string | null>>({});
+  const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery(undefined, { skip: !acrossTopics });
+  const topicOptions = useMemo(
+    () =>
+      subjectsWithTopics.flatMap((s) =>
+        (s.topics ?? []).map((t) => ({ id: t.id, subjectId: s.id, label: `${s.name} / ${t.name}` })),
+      ),
+    [subjectsWithTopics],
+  );
+  const locationById = useMemo(() => new Map(notes.map((n) => [n.id, n.location])), [notes]);
+
   const noteIds = useMemo(() => notes.map((n) => n.id), [notes]);
   const titleById = useMemo(() => new Map(notes.map((n) => [n.id, n.title || 'Untitled'])), [notes]);
 
@@ -149,6 +166,9 @@ export default function ChangePlanDialog({
       try {
         const result = await request.unwrap();
         setResponse(result);
+        setPlacement(
+          Object.fromEntries(result.plan.ops.map((o, i) => [i, o.type === 'create' ? (o.topicId ?? null) : null])),
+        );
         setChecked(new Set(result.plan.ops.map((_, i) => i)));
         setExpanded(new Set());
         setEditView({});
@@ -215,7 +235,12 @@ export default function ChangePlanDialog({
 
   const handleApply = async () => {
     if (!response) return;
-    const kept = ops.filter((_, i) => checked.has(i));
+    const kept = ops.flatMap((op, i) => {
+      if (!checked.has(i)) return [];
+      if (!acrossTopics || op.type !== 'create') return [op];
+      const topic = topicOptions.find((t) => t.id === placement[i]);
+      return [{ ...op, topicId: topic?.id, subjectId: topic?.subjectId }];
+    });
     if (!kept.length) return;
     try {
       const result = await applyNoteChanges({
@@ -255,6 +280,9 @@ export default function ChangePlanDialog({
   const hasDetails = (op: NoteChangeOp) => op.type === 'create' || (op.type === 'edit' && !!op.markdown);
 
   const busy = isPlanning || isApplying;
+  // Across topics, every kept new note needs a topic
+  const missingTopic =
+    acrossTopics && ops.some((op, i) => op.type === 'create' && checked.has(i) && !placement[i]);
 
   return (
     <Dialog open={open} onClose={busy ? undefined : handleCancel} fullWidth maxWidth="md" PaperProps={{ sx: { height: '90vh' } }}>
@@ -339,10 +367,25 @@ export default function ChangePlanDialog({
                                 {describe(op)}
                               </Typography>
                             </Stack>
+                            {acrossTopics && op.type !== 'create' && locationById.get(op.noteId) && (
+                              <Typography variant="caption" color="text.secondary" component="div">
+                                In {locationById.get(op.noteId)}
+                              </Typography>
+                            )}
                             {op.reason && (
                               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                                 {op.reason}
                               </Typography>
+                            )}
+                            {acrossTopics && op.type === 'create' && (
+                              <Autocomplete
+                                size="small"
+                                options={topicOptions}
+                                value={topicOptions.find((t) => t.id === placement[i]) ?? null}
+                                onChange={(_e, v) => setPlacement((prev) => ({ ...prev, [i]: v?.id ?? null }))}
+                                renderInput={(params) => <TextField {...params} label="Create in subject / topic" />}
+                                sx={{ mt: 1, maxWidth: 420 }}
+                              />
                             )}
                             {mergeTargetDropped && (
                               <Typography variant="caption" color="warning.main">
@@ -422,12 +465,14 @@ export default function ChangePlanDialog({
 
       <DialogActions>
         <Typography variant="caption" color="text.secondary" sx={{ flex: 1, pl: 1 }}>
-          Notes are archived, never deleted, and you can undo the whole set from the topic page.
+          {acrossTopics
+            ? 'Notes are archived, never deleted, and you can undo the whole set from the page of any topic it changes.'
+            : 'Notes are archived, never deleted, and you can undo the whole set from the topic page.'}
         </Typography>
         <Button onClick={handleCancel} disabled={isApplying}>
           Cancel
         </Button>
-        <Button variant="contained" onClick={handleApply} disabled={busy || checked.size === 0}>
+        <Button variant="contained" onClick={handleApply} disabled={busy || checked.size === 0 || missingTopic}>
           {isApplying ? 'Applying…' : `Apply ${checked.size} ${checked.size === 1 ? 'change' : 'changes'}`}
         </Button>
       </DialogActions>

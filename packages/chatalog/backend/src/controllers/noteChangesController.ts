@@ -24,15 +24,24 @@ import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
 import { CONSOLIDATE_MODEL, MAX_INPUT_CHARS, loadSourceNotes } from './consolidateController';
 import { SYSTEM_PROMPT as ASK_SYSTEM_PROMPT, buildMessages } from './askNotesController';
 import { dedupeNoteSlug } from './notesController';
+import { withLocations } from './askAllController';
+import { TopicModel } from '../models/Topic';
 
 const PLAN_TOOL_NAME = 'propose_note_changes';
 
-const PLAN_INSTRUCTIONS = `
+// The conversation's context when planning changes for Ask across all notes
+const ACROSS_TOPICS_CONTEXT = `You answered questions about the user's notes in Chatalog, their personal knowledge base app. Notes are organized into subjects and topics. The notes found during the conversation are numbered, and each shows its subject and topic as its location.`;
+
+const planInstructions = (acrossTopics: boolean) => `
 
 You are now turning the conversation into concrete changes to the notes. Respond by calling the ${PLAN_TOOL_NAME} tool exactly once, with no other text, with the operations needed to carry out what was agreed in the conversation. When the conversation contains several versions of a recommendation, use the latest one the user accepted or asked for.
 
 Rules for the operations:
-- You can only edit or archive the numbered notes above. New notes are created in the same topic.
+${
+  acrossTopics
+    ? '- You can only edit or archive the numbered notes above. They can be in different subjects and topics. For each new note, set place_with to the number of an existing note whose subject and topic the new note belongs in.'
+    : '- You can only edit or archive the numbered notes above. New notes are created in the same topic.'
+}
 - Never delete a note. Archive notes that are superseded or whose content was merged elsewhere, and set merged_into to where the content now lives.
 - For edit, markdown is the complete new body of the note. Keep everything the conversation didn't ask to change exactly as it is, including links and image Markdown. Only include markdown if the body changes, and only include title if the note is renamed.
 - Don't start a note body with an H1 that repeats its title; the title is stored separately.
@@ -40,7 +49,7 @@ Rules for the operations:
 - Keep each reason to one short sentence. In summary and reasons, refer to notes by title, not by number.
 - If the conversation didn't settle on any changes, return no operations and say why in summary.`;
 
-const PLAN_TOOL = {
+const planTool = (acrossTopics: boolean) => ({
   name: PLAN_TOOL_NAME,
   description: 'Propose changes to the notes for the user to review and apply.',
   input_schema: {
@@ -77,6 +86,15 @@ const PLAN_TOOL = {
               type: 'string',
               description: 'archive, optional: where its content now lives, as note:<number> or new:<ref>.',
             },
+            ...(acrossTopics
+              ? {
+                  place_with: {
+                    type: 'integer',
+                    description:
+                      'create: the number of an existing note; the new note goes in the same subject and topic.',
+                  },
+                }
+              : {}),
             reason: { type: 'string', description: 'One short sentence explaining this operation.' },
           },
           required: ['type', 'reason'],
@@ -85,7 +103,7 @@ const PLAN_TOOL = {
     },
     required: ['summary', 'operations'],
   },
-};
+});
 
 type RawOp = {
   type?: unknown;
@@ -94,6 +112,7 @@ type RawOp = {
   title?: unknown;
   markdown?: unknown;
   merged_into?: unknown;
+  place_with?: unknown;
   reason?: unknown;
 };
 
@@ -118,6 +137,8 @@ function toPlan(
   input: any,
   noteIdsByNumber: string[],
   notEditableIds: Set<string>,
+  // Across topics: where the note with this number lives, for placing new notes
+  placeOf?: (n: number) => { subjectId?: string; topicId?: string } | undefined,
 ): { plan: NoteChangePlan; warnings: string[] } {
   const warnings: string[] = [];
   const rawOps: RawOp[] = Array.isArray(input?.operations) ? input.operations : [];
@@ -152,7 +173,13 @@ function toPlan(
       if (!ref || seenRefs.has(ref)) return warnings.push(`${label} (create) has a missing or duplicate ref.`);
       if (!title || !markdown?.trim()) return warnings.push(`${label} (create) is missing a title or body.`);
       seenRefs.add(ref);
-      ops.push({ type: 'create', ref, title, markdown: linkNotes(markdown), reason });
+      if (placeOf) {
+        const n = typeof op.place_with === 'number' && Number.isInteger(op.place_with) ? op.place_with : 1;
+        const place = placeOf(n) ?? placeOf(1);
+        ops.push({ type: 'create', ref, title, markdown: linkNotes(markdown), reason, subjectId: place?.subjectId, topicId: place?.topicId });
+      } else {
+        ops.push({ type: 'create', ref, title, markdown: linkNotes(markdown), reason });
+      }
     } else if (op?.type === 'edit') {
       const noteId = noteIdFor(op.note);
       if (!noteId) return warnings.push(`${label} (edit) refers to a note that isn't in the conversation.`);
@@ -187,8 +214,13 @@ function toPlan(
 }
 
 // POST /api/v1/topics/:topicId/ask-notes/plan
-export async function proposeNoteChanges(req: Request, res: Response) {
-  const { topicId } = req.params;
+export const proposeNoteChanges = (req: Request, res: Response) => proposeChanges(req, res, req.params.topicId);
+
+// POST /api/v1/ask/plan
+export const proposeNoteChangesAcrossTopics = (req: Request, res: Response) => proposeChanges(req, res, null);
+
+async function proposeChanges(req: Request, res: Response, topicId: string | null) {
+  const acrossTopics = !topicId;
   const body = (req.body ?? {}) as NoteChangePlanRequest;
 
   if (!Array.isArray(body.noteIds) || body.noteIds.length === 0) {
@@ -200,7 +232,8 @@ export async function proposeNoteChanges(req: Request, res: Response) {
     });
   }
 
-  const { included } = await loadSourceNotes(topicId, body.noteIds, { readOnly: true });
+  const loaded = await loadSourceNotes(topicId, body.noteIds, { readOnly: true });
+  const included = acrossTopics ? await withLocations(loaded.included) : loaded.included;
   if (included.length === 0) {
     return res.status(400).json({ message: 'None of these notes have any text.' });
   }
@@ -242,8 +275,8 @@ export async function proposeNoteChanges(req: Request, res: Response) {
         model: CONSOLIDATE_MODEL,
         max_tokens: 64000,
         output_config: { effort: 'medium' },
-        system: ASK_SYSTEM_PROMPT + PLAN_INSTRUCTIONS,
-        tools: [PLAN_TOOL],
+        system: (acrossTopics ? ACROSS_TOPICS_CONTEXT : ASK_SYSTEM_PROMPT) + planInstructions(acrossTopics),
+        tools: [planTool(acrossTopics)],
         // Opus 5.5 doesn't accept a forced tool_choice; the prompt asks for the
         // tool call, and a text-only reply is handled below.
         tool_choice: { type: 'auto' },
@@ -288,7 +321,17 @@ export async function proposeNoteChanges(req: Request, res: Response) {
       .map((d: any) => String(d._id)),
   );
 
-  const { plan, warnings } = toPlan(input, noteIdsByNumber, notEditableIds);
+  const { plan, warnings } = toPlan(
+    input,
+    noteIdsByNumber,
+    notEditableIds,
+    acrossTopics
+      ? (n) => {
+          const note = included[n - 1];
+          return note && { subjectId: note.subjectId, topicId: note.topicId };
+        }
+      : undefined,
+  );
   const editedIds = new Set(plan.ops.filter((o) => o.type === 'edit').map((o) => (o as any).noteId));
   const currentNotes = flags
     .filter((d: any) => editedIds.has(String(d._id)))
@@ -299,8 +342,12 @@ export async function proposeNoteChanges(req: Request, res: Response) {
 }
 
 // POST /api/v1/topics/:topicId/note-changes/apply
-export async function applyNoteChanges(req: Request, res: Response) {
-  const { topicId } = req.params;
+export const applyNoteChanges = (req: Request, res: Response) => applyChanges(req, res, req.params.topicId);
+
+// POST /api/v1/ask/note-changes/apply
+export const applyNoteChangesAcrossTopics = (req: Request, res: Response) => applyChanges(req, res, null);
+
+async function applyChanges(req: Request, res: Response, topicId: string | null) {
   const body = (req.body ?? {}) as ApplyNoteChangesRequest;
 
   if (!Array.isArray(body.noteIds) || body.noteIds.length === 0 || !Array.isArray(body.ops) || body.ops.length === 0) {
@@ -308,9 +355,11 @@ export async function applyNoteChanges(req: Request, res: Response) {
   }
 
   const sourceIds = Array.from(new Set(body.noteIds)).filter((id) => isValidObjectId(id));
-  const sourceDocs = await NoteModel.find({ _id: { $in: sourceIds }, topicId });
+  const sourceDocs = await NoteModel.find({ _id: { $in: sourceIds }, ...(topicId ? { topicId } : {}) });
   const docsById = new Map(sourceDocs.map((d) => [String(d._id), d]));
-  if (docsById.size === 0) return res.status(404).json({ message: 'No source notes found in this topic' });
+  if (docsById.size === 0) {
+    return res.status(404).json({ message: topicId ? 'No source notes found in this topic' : 'None of these notes exist any more' });
+  }
 
   // Validate everything before changing anything.
   const creates = body.ops.filter((o): o is Extract<NoteChangeOp, { type: 'create' }> => o.type === 'create');
@@ -321,6 +370,22 @@ export async function applyNoteChanges(req: Request, res: Response) {
       return res.status(400).json({ message: 'Each new note needs a ref, title and body' });
     }
   }
+  // Where each new note goes: this topic, or the topic chosen for it across topics
+  const first: any = sourceDocs[0];
+  const placeById = new Map<string, string>();
+  if (topicId) {
+    placeById.set(topicId, String(first.subjectId));
+  } else {
+    const wanted = Array.from(new Set(creates.map((op) => op.topicId ?? '')));
+    const topics = wanted.every((id) => isValidObjectId(id))
+      ? await TopicModel.find({ _id: { $in: wanted } }).select({ subjectId: 1 }).lean()
+      : [];
+    topics.forEach((t: any) => placeById.set(String(t._id), String(t.subjectId)));
+    if (wanted.some((id) => !placeById.has(id))) {
+      return res.status(400).json({ message: 'Choose an existing topic for each new note' });
+    }
+  }
+  const topicFor = (op: Extract<NoteChangeOp, { type: 'create' }>) => topicId ?? op.topicId!;
   for (const op of [...edits, ...archives]) {
     if (!docsById.has(op.noteId)) {
       return res.status(400).json({ message: 'Changes can only target notes from the conversation' });
@@ -359,26 +424,33 @@ export async function applyNoteChanges(req: Request, res: Response) {
   };
   for (const op of [...edits, ...archives]) snapshot(docsById.get(op.noteId));
 
-  const first: any = sourceDocs[0];
-  const min = await NoteModel.findOne({ topicId }).sort({ order: 1 }).select({ order: 1 }).lean();
-  const baseOrder = (min?.order ?? 0) - creates.length;
+  // New notes go at the top of their topic, in plan order.
+  const nextOrder = new Map<string, number>();
+  for (const id of placeById.keys()) {
+    const count = creates.filter((op) => topicFor(op) === id).length;
+    const min = await NoteModel.findOne({ topicId: id }).sort({ order: 1 }).select({ order: 1 }).lean();
+    nextOrder.set(id, (min?.order ?? 0) - count);
+  }
   const now = new Date();
 
   const createdNoteIds: string[] = [];
-  for (const [i, op] of creates.entries()) {
+  for (const op of creates) {
     const _id = idForRef.get(op.ref)!;
     const title = op.title.trim();
+    const target = topicFor(op);
+    const order = nextOrder.get(target)!;
+    nextOrder.set(target, order + 1);
     await NoteModel.create({
       _id,
-      subjectId: first.subjectId,
-      topicId,
+      subjectId: placeById.get(target),
+      topicId: target,
       title,
-      slug: await dedupeNoteSlug(topicId, slugifyStandard(title)),
+      slug: await dedupeNoteSlug(target, slugifyStandard(title)),
       markdown: resolveNewLinks(op.markdown),
       tags: [],
       docKind: 'note',
       importedAt: now,
-      order: baseOrder + i,
+      order,
       consolidation: {
         kind: 'change',
         sourceNoteIds: sourceIds,
@@ -395,7 +467,7 @@ export async function applyNoteChanges(req: Request, res: Response) {
     const doc: any = docsById.get(op.noteId);
     if (op.title?.trim()) {
       doc.title = op.title.trim();
-      doc.slug = await dedupeNoteSlug(topicId, slugifyStandard(doc.title), op.noteId);
+      doc.slug = await dedupeNoteSlug(String(doc.topicId), slugifyStandard(doc.title), op.noteId);
     }
     if (typeof op.markdown === 'string' && op.markdown.trim()) doc.markdown = resolveNewLinks(op.markdown);
     editedNoteIds.push(op.noteId);
@@ -420,7 +492,14 @@ export async function applyNoteChanges(req: Request, res: Response) {
   }
 
   const changeSet = await NoteChangeSetModel.create({
-    topicId,
+    topicId: topicId ?? undefined,
+    // Every topic it touches, so it can be undone from any of their pages
+    topicIds: Array.from(
+      new Set([
+        ...[...edits, ...archives].map((op) => String((docsById.get(op.noteId) as any).topicId)),
+        ...creates.map(topicFor),
+      ]),
+    ),
     summary: body.summary?.trim() ?? '',
     sourceNoteIds: sourceIds,
     createdNoteIds,
@@ -446,7 +525,7 @@ export async function applyNoteChanges(req: Request, res: Response) {
 // Change sets in this topic that can still be undone, newest first.
 export async function listNoteChangeSets(req: Request, res: Response) {
   const { topicId } = req.params;
-  const sets = await NoteChangeSetModel.find({ topicId, undoneAt: { $exists: false } })
+  const sets = await NoteChangeSetModel.find({ $or: [{ topicId }, { topicIds: topicId }], undoneAt: { $exists: false } })
     .sort({ createdAt: -1 })
     .limit(20)
     .lean();
@@ -466,11 +545,15 @@ export async function listNoteChangeSets(req: Request, res: Response) {
 }
 
 // POST /api/v1/topics/:topicId/note-changes/:changeSetId/undo
+// POST /api/v1/ask/note-changes/:changeSetId/undo (changes made across topics)
 export async function undoNoteChangeSet(req: Request, res: Response) {
   const { topicId, changeSetId } = req.params;
   if (!isValidObjectId(changeSetId)) return res.status(400).json({ message: 'Invalid change set id' });
 
-  const changeSet = await NoteChangeSetModel.findOne({ _id: changeSetId, topicId });
+  const changeSet = await NoteChangeSetModel.findOne({
+    _id: changeSetId,
+    ...(topicId ? { $or: [{ topicId }, { topicIds: topicId }] } : {}),
+  });
   if (!changeSet) return res.status(404).json({ message: 'Change set not found' });
   if (changeSet.undoneAt) return res.status(409).json({ message: 'These changes were already undone.' });
 

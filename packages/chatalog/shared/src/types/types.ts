@@ -365,12 +365,44 @@ export interface AskNotesSaveResult {
   noteId: string;
 }
 
+// A note an answer was given from. Answers across all notes also say where it lives.
+export interface AskSource {
+  id: string;
+  title: string;
+  subjectId?: string;
+  topicId?: string;
+  // "Subject / Topic"
+  location?: string;
+}
+
+// Ask across all notes: Claude searches the notes itself.
+export interface AskAllRequest {
+  // The conversation so far; alternates user/assistant and ends with the new user question.
+  messages: AskNotesMessage[];
+  // Notes found earlier in the conversation, in citation order
+  sources: AskSource[];
+}
+
+// The answer streams as newline-delimited JSON events.
+export type AskAllEvent =
+  | { type: 'activity'; text: string }
+  | { type: 'source'; source: AskSource }
+  // Text written before searching again is discarded; the answer starts over
+  | { type: 'restart' }
+  | { type: 'text'; text: string }
+  | { type: 'error'; message: string };
+
+export interface AskAllSaveRequest extends AskNotesSaveRequest {
+  topicId: string;
+}
+
 // ---- Ask Claude change plans ("Plan these changes") ----
 
 // Links in proposed Markdown use `new:<ref>` for notes the plan creates; they
 // become real note links when the plan is applied.
 export type NoteChangeOp =
-  | { type: 'create'; ref: string; title: string; markdown: string; reason?: string }
+  // subjectId/topicId: where a new note goes when the plan spans topics (Ask across all notes)
+  | { type: 'create'; ref: string; title: string; markdown: string; reason?: string; subjectId?: string; topicId?: string }
   | { type: 'edit'; noteId: string; title?: string; markdown?: string; reason?: string }
   // mergedInto: an existing noteId, or `new:<ref>`
   | { type: 'archive'; noteId: string; mergedInto?: string; reason?: string };
@@ -434,7 +466,9 @@ export interface AskConversationTurn {
   answer: string;
   stopped?: boolean;
   // The notes the answer was given from, in citation order ([1] is sources[0])
-  sources: { id: string; title: string }[];
+  sources: AskSource[];
+  // Ask across all notes: what Claude searched for and read, e.g. 'Searched “backup”'
+  activity?: string[];
   // Set once the answer is saved as a note
   savedNoteId?: string;
   answeredAt: string;
@@ -442,7 +476,8 @@ export interface AskConversationTurn {
 
 export interface AskConversation {
   id: string;
-  topicId: string;
+  // Absent for conversations across all notes
+  topicId?: string;
   title: string;
   // The notes the conversation is about, in order
   noteIds: string[];

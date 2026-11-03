@@ -6,14 +6,16 @@ export interface AskConversationTurnDoc {
   question: string;
   answer: string;
   stopped?: boolean;
-  sources: { id: string; title: string }[];
+  sources: { id: string; title: string; subjectId?: string; topicId?: string; location?: string }[];
+  activity?: string[];
   savedNoteId?: string;
   answeredAt: Date;
 }
 
 export interface AskConversationDoc extends Document {
   _id: Types.ObjectId;
-  topicId: string;
+  // Absent for conversations across all notes
+  topicId?: string;
   title: string;
   noteIds: string[];
   turns: AskConversationTurnDoc[];
@@ -25,6 +27,9 @@ const SourceSchema = new Schema(
   {
     id: { type: String, required: true },
     title: { type: String, default: '' },
+    subjectId: { type: String },
+    topicId: { type: String },
+    location: { type: String },
   },
   { _id: false },
 );
@@ -35,6 +40,7 @@ const TurnSchema = new Schema<AskConversationTurnDoc>(
     answer: { type: String, default: '' },
     stopped: { type: Boolean },
     sources: { type: [SourceSchema], default: [] },
+    activity: { type: [String], default: undefined },
     savedNoteId: { type: String },
     answeredAt: { type: Date, default: () => new Date() },
   },
@@ -43,7 +49,7 @@ const TurnSchema = new Schema<AskConversationTurnDoc>(
 
 const AskConversationSchema = new Schema<AskConversationDoc>(
   {
-    topicId: { type: String, required: true, index: true },
+    topicId: { type: String, index: true },
     title: { type: String, default: '' },
     noteIds: { type: [String], default: [] },
     turns: { type: [TurnSchema], default: [] },

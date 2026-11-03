@@ -5,7 +5,7 @@ export const notes: HelpTopic = {
   title: 'Notes',
   category: 'Content',
   order: 1,
-  keywords: ['note', 'create', 'edit', 'delete', 'markdown', 'content', 'draft', 'status', 'image', 'png', 'jpg', 'picture', 'photo', 'screenshot', 'insert image', 'consolidate', 'summarize', 'archive', 'archived', 'combine', 'merge', 'ask claude', 'question', 'suggestions', 'summary', 'compare', 'contradictions', 'plan these changes', 'make these changes', 'apply changes', 'reorganize', 'undo', 'conversation', 'continue', 'resume', 'set aside'],
+  keywords: ['note', 'create', 'edit', 'delete', 'markdown', 'content', 'draft', 'status', 'image', 'png', 'jpg', 'picture', 'photo', 'screenshot', 'insert image', 'consolidate', 'summarize', 'archive', 'archived', 'combine', 'merge', 'ask claude', 'question', 'suggestions', 'summary', 'compare', 'contradictions', 'plan these changes', 'make these changes', 'apply changes', 'reorganize', 'undo', 'conversation', 'continue', 'resume', 'set aside', 'ask all', 'all notes', 'whole library', 'find all', 'search with ai'],
   body: `Notes are the primary content in Chatalog. Each note belongs to exactly one subject and topic.
 
 ## Creating a note
@@ -58,7 +58,24 @@ Conversations are saved after each answer, so you can close the dialog and pick 
 
 When you continue a conversation, Claude reads the notes as they are now. Notes edited since the last answer are marked **Changed since**, as a reminder that earlier answers may be out of date. Notes that were archived or moved to another topic are left out.
 
-To search your whole library with a question instead, use **Ask** (the AI search button in the top bar).
+## Asking Claude about all your notes
+
+To ask about your whole library instead of notes you pick, click the **Ask Claude about all your notes** button (the sparkle icon) in the top bar. Ask something like "Find all the notes that mention backing up an application database."
+
+There are too many notes for Claude to read them all, so it searches for the ones it needs, by keyword and by meaning, and reads the promising ones in full. When you ask for *all* the notes about something, it tries several wordings. While it works you'll see what it's doing, and under each question a line such as "Searched for “database backup”, “mongodump” · read 9 notes" shows what it looked at.
+
+Claude can still miss a note that's worded unusually. If one you know about is missing, ask it to search for more, for example "also search for Atlas snapshots", or pick the **Search more** suggestion.
+
+The notes Claude reads are numbered for the rest of the conversation and listed under **Notes found**, with their subject and topic. Follow-up questions can refer to them ("combine notes 2, 5 and 7"), and Claude searches again when it needs to.
+
+Under each answer, **Copy**, **Save as note**, and **Plan these changes…** work as above, with these differences:
+
+- **Save as note** asks which subject and topic to save the note in. It suggests the topic of the first note the answer cites.
+- **Plan these changes…** can edit and archive notes in different subjects and topics. For each new note, Claude suggests a subject and topic, which you can change in the review before applying. Undo the changes from the message that appears after applying, or later from **Show changes made with Claude** on the page of any topic they changed.
+
+Conversations are saved here too. To continue one, open Ask Claude from the top bar and click **Show conversations with Claude**.
+
+Each question costs more than Ask Claude on a topic, because Claude reads more notes. It's billed to the Claude API key the app uses.
 
 ## Making changes with Claude
 
@@ -72,7 +89,7 @@ If Claude's last answer asks you something, such as details to check before maki
 
 Untick anything you don't want, or type a request such as "keep note 3 and just shorten it" and click **Revise** for a new plan. Click **Apply** to make the ticked changes. Nothing changes until you do.
 
-Claude can only change the notes from the conversation, and new notes go in the same topic.
+Claude can only change the notes from the conversation, and new notes go in the same topic. (When asking about all your notes, see above.)
 
 To undo, click **Undo** in the message that appears after applying. Later, use **Show changes made with Claude** below the topic's note list. Undo restores the edited and archived notes and archives any notes the changes created. If you've edited one of those notes since, Undo won't overwrite your edits; it tells you which note changed.
 

@@ -8,6 +8,9 @@ import { NoteChangeSetModel } from '../NoteChangeSet';
 async function deleteTopicRecords(topicIds: string[]) {
   await AskConversationModel.deleteMany({ topicId: { $in: topicIds } });
   await NoteChangeSetModel.deleteMany({ topicId: { $in: topicIds } });
+  // Changes made across topics stay undoable for the topics that remain.
+  await NoteChangeSetModel.updateMany({ topicIds: { $in: topicIds } }, { $pull: { topicIds: { $in: topicIds } } });
+  await NoteChangeSetModel.deleteMany({ topicId: { $exists: false }, topicIds: { $size: 0 } });
 }
 
 export async function deleteTopicCascade(topicId: Types.ObjectId | string) {

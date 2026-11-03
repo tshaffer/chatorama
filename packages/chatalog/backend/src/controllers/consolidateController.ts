@@ -48,6 +48,10 @@ export type SourceNote = {
   title: string;
   text: string;
   createdAt?: Date;
+  subjectId?: string;
+  topicId?: string;
+  // "Subject / Topic", for notes from more than one topic
+  location?: string;
 };
 
 function noteText(n: any): string {
@@ -55,6 +59,11 @@ function noteText(n: any): string {
   if (md.trim()) return md;
   return (n.derived?.googleDoc?.textPlain ?? '').toString();
 }
+
+const placeOf = (d: any) => ({
+  subjectId: d.subjectId ? String(d.subjectId) : undefined,
+  topicId: d.topicId ? String(d.topicId) : undefined,
+});
 
 /**
  * Load the requested notes in the given order. By default recipes and PDF
@@ -64,14 +73,17 @@ function noteText(n: any): string {
  * Claude only reads them.
  */
 export async function loadSourceNotes(
-  topicId: string,
+  // null: notes from any topic (Ask across all notes)
+  topicId: string | null,
   noteIds: string[],
   opts: { readOnly?: boolean } = {},
 ) {
   const uniqueIds = Array.from(new Set(noteIds)).filter((id) => isValidObjectId(id));
-  const docs = await NoteModel.find({ _id: { $in: uniqueIds }, topicId })
+  const docs = await NoteModel.find({ _id: { $in: uniqueIds }, ...(topicId ? { topicId } : {}) })
     .select({
       title: 1,
+      subjectId: 1,
+      topicId: 1,
       markdown: 1,
       recipe: 1,
       pdfAssetId: 1,
@@ -95,14 +107,14 @@ export async function loadSourceNotes(
       const text = isPdf
         ? (d.pdfSummaryMarkdown || d.derived?.pdf?.extractedText || '').toString()
         : noteText(d);
-      if (text.trim()) included.push({ id, title, text, createdAt: d.createdAt });
+      if (text.trim()) included.push({ id, title, text, createdAt: d.createdAt, ...placeOf(d) });
       else excluded.push({ id, title, reason: 'no text' });
     } else if (d.recipe) {
       excluded.push({ id, title, reason: 'recipe' });
     } else if (d.pdfAssetId || d.sourceType === 'pdf') {
       excluded.push({ id, title, reason: 'PDF note' });
     } else {
-      included.push({ id, title, text: noteText(d), createdAt: d.createdAt });
+      included.push({ id, title, text: noteText(d), createdAt: d.createdAt, ...placeOf(d) });
     }
   }
 
@@ -113,7 +125,8 @@ export function buildNotesBlock(notes: SourceNote[]): string {
   return notes
     .map((n, i) => {
       const created = n.createdAt ? ` created="${new Date(n.createdAt).toISOString()}"` : '';
-      return `<note index="${i + 1}" title="${n.title.replace(/"/g, "'")}"${created}>\n${n.text}\n</note>`;
+      const location = n.location ? ` location="${n.location.replace(/"/g, "'")}"` : '';
+      return `<note index="${i + 1}" title="${n.title.replace(/"/g, "'")}"${location}${created}>\n${n.text}\n</note>`;
     })
     .join('\n\n');
 }
