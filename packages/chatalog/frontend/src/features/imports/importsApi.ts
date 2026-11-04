@@ -62,6 +62,11 @@ export type ApplyImportRequestPayload = {
 
 const importsApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
+    // An export sent from Chatworthy with Send to Chatalog
+    getPendingImport: build.query<{ fileName: string; markdown: string }, string>({
+      query: (id) => `imports/pending/${id}`,
+    }),
+
     // PREVIEW import (no DB writes) - Chatworthy markdown/zip
     importChatworthy: build.mutation<ImportResponse, File>({
       query: (file) => {
@@ -184,6 +189,7 @@ const importsApi = baseApi.injectEndpoints({
 });
 
 export const {
+  useLazyGetPendingImportQuery,
   useImportChatworthyMutation,
   useImportPdfMutation,
   useApplyChatworthyImportMutation,

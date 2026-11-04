@@ -186,7 +186,7 @@ export default function AppShell() {
 
           {/* Actions */}
           <Stack direction="row" spacing={1} alignItems="center">
-            <ImportFileButton mode="icon" />
+            <ImportFileButton mode="icon" handlePendingImports />
             <ImportPdfButton mode="icon" />
 
             <Tooltip title="Import Google Doc">

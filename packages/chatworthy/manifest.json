@@ -16,7 +16,8 @@
     "https://claude.ai/*",
     "https://cooking.nytimes.com/*",
     "https://www.bonappetit.com/*",
-    "https://bonappetit.com/*"
+    "https://bonappetit.com/*",
+    "http://localhost:8008/*"
   ],
   "background": {
     "service_worker": "background.js",

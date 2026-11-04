@@ -25,6 +25,7 @@ const ROOT_ID = 'chatworthy-root';
 const LIST_ID = 'chatworthy-list';
 const CONTROLS_ID = 'chatworthy-controls';
 const EXPORT_BTN_ID = 'chatworthy-export-btn';
+const SEND_BTN_ID = 'chatworthy-send-btn';
 const TOGGLE_BTN_ID = 'chatworthy-toggle-btn';
 const ALL_BTN_ID = 'chatworthy-all-btn';
 const NONE_BTN_ID = 'chatworthy-none-btn';
@@ -738,10 +739,12 @@ function updateControlsState() {
   const allBtn = document.getElementById(ALL_BTN_ID) as HTMLButtonElement | null;
   const noneBtn = document.getElementById(NONE_BTN_ID) as HTMLButtonElement | null;
   const expBtn = document.getElementById(EXPORT_BTN_ID) as HTMLButtonElement | null;
+  const sendBtn = document.getElementById(SEND_BTN_ID) as HTMLButtonElement | null;
 
   if (allBtn) allBtn.disabled = total > 0 && selected === total;
   if (noneBtn) noneBtn.disabled = selected === 0;
   if (expBtn) expBtn.disabled = selected === 0;
+  if (sendBtn) sendBtn.disabled = selected === 0;
 }
 
 // ---- Export helpers ---------------------------------------
@@ -851,6 +854,38 @@ function downloadExport(filename: string, data: string | Blob) {
   a.remove();
 
   setTimeout(() => URL.revokeObjectURL(url), 500);
+}
+
+// The selected prompts as Markdown, or null (after saying so) if none are selected
+function buildSelectedMarkdown(): string | null {
+  const { turns, htmlBodies } = buildSelectedPayload();
+  if (turns.length === 0) {
+    alert('Select at least one prompt to export.');
+    return null;
+  }
+  const meta = createExportMeta(turns.length);
+  return buildExportFromTurns(turns, htmlBodies, meta);
+}
+
+// Send the selected prompts to Chatalog, which opens them for review. The
+// background worker does the sending and finds or opens the Chatalog tab.
+async function sendSelectedToChatalog(button: HTMLButtonElement) {
+  const md = buildSelectedMarkdown();
+  if (md === null) return;
+
+  const fileName = `${filenameBase()}.md`;
+  button.disabled = true;
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'chatworthy:sendToChatalog', fileName, markdown: md });
+    if (!res?.ok) throw new Error(res?.error ?? 'request failed');
+  } catch (err) {
+    console.error('[chatworthy] send to Chatalog failed:', err);
+    if (confirm('Couldn’t reach Chatalog. Is it running?\n\nDownload the export as a file instead?')) {
+      downloadExport(fileName, md);
+    }
+  } finally {
+    updateControlsState();
+  }
 }
 
 // ---- Collapsed state helpers -------------------------------
@@ -1278,7 +1313,7 @@ function ensureFloatingUI() {
       controls.style.alignItems = 'center';
       controls.style.justifyContent = 'flex-end';
       controls.style.gap = '6px';
-      controls.style.flexWrap = 'nowrap';
+      controls.style.flexWrap = 'wrap';
       controls.style.width = '100%';
 
       const toggleBtn = d.createElement('button');
@@ -1329,18 +1364,20 @@ function ensureFloatingUI() {
       exportBtn.textContent = 'Export';
       exportBtn.onclick = () => {
         try {
-          const { turns, htmlBodies } = buildSelectedPayload();
-          if (turns.length === 0) {
-            alert('Select at least one prompt to export.');
-            return;
-          }
-          const meta = createExportMeta(turns.length);
-          const md = buildExportFromTurns(turns, htmlBodies, meta);
-          downloadExport(`${filenameBase()}.md`, md);
+          const md = buildSelectedMarkdown();
+          if (md !== null) downloadExport(`${filenameBase()}.md`, md);
         } catch (err) {
           console.error('[chatworthy] export failed:', err);
           alert('Export failed — see console for details.');
         }
+      };
+
+      const sendBtn = d.createElement('button');
+      sendBtn.id = SEND_BTN_ID;
+      sendBtn.type = 'button';
+      sendBtn.textContent = 'Send to Chatalog';
+      sendBtn.onclick = () => {
+        void sendSelectedToChatalog(sendBtn);
       };
 
       controls.appendChild(toggleBtn);
@@ -1349,6 +1386,7 @@ function ensureFloatingUI() {
       controls.appendChild(statusToggle);
       controls.appendChild(reviewToggle);
       controls.appendChild(exportBtn);
+      controls.appendChild(sendBtn);
       root.appendChild(controls);
     } else {
       const toggle = controls.querySelector('#' + TOGGLE_BTN_ID) as HTMLButtonElement | null;

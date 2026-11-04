@@ -1,6 +1,6 @@
 // frontend/src/features/imports/ImportChatworthyButton.tsx
-import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Button,
   CircularProgress,
@@ -19,6 +19,7 @@ import {
   useImportChatworthyMutation,
   type ImportResponse,
   useApplyChatworthyImportMutation,
+  useLazyGetPendingImportQuery,
 } from './importsApi';
 import { notesApi } from '../notes/notesApi';
 import { useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
@@ -47,6 +48,8 @@ type Props = {
   accept?: string;
   defaultSubjectLabel?: string;
   defaultTopicLabel?: string;
+  /** Open exports sent with Chatworthy's Send to Chatalog. Set on one instance only. */
+  handlePendingImports?: boolean;
 };
 
 const ImportChatworthyButton = forwardRef<ImportChatworthyRef, Props>(
@@ -57,6 +60,7 @@ function ImportChatworthyButton({
   accept = '.zip,.cbz,.tar,.tgz,.gz,.md,.markdown',
   defaultSubjectLabel = '',
   defaultTopicLabel = '',
+  handlePendingImports = false,
 }: Props, ref) {
   const dispatch = useAppDispatch();
 
@@ -110,6 +114,24 @@ function ImportChatworthyButton({
   }, [importChatworthy]);
 
   useImperativeHandle(ref, () => ({ processFile }), [processFile]);
+
+  // Chatworthy's Send to Chatalog points this tab at #import=<id>
+  const { pathname, search, hash } = useLocation();
+  const [getPendingImport] = useLazyGetPendingImportQuery();
+  const handledImport = useRef<string | null>(null);
+  useEffect(() => {
+    const id = handlePendingImports ? hash.match(/^#import=([0-9a-f]{24})$/)?.[1] : undefined;
+    if (!id || handledImport.current === id) return;
+    handledImport.current = id;
+    navigate({ pathname, search }, { replace: true });
+    getPendingImport(id)
+      .unwrap()
+      .then(({ fileName, markdown }) => processFile(new File([markdown], fileName, { type: 'text/markdown' })))
+      .catch((err: any) => {
+        const msg = err?.data?.message ?? 'Couldn’t open the export from Chatworthy';
+        setSnack({ open: true, msg: `${msg}. Send it to Chatalog again.`, severity: 'error' });
+      });
+  }, [handlePendingImports, hash, pathname, search, navigate, getPendingImport, processFile]);
 
   const onFileChosen: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     const file = e.target.files?.[0];

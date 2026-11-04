@@ -1,5 +1,6 @@
 // packages/chatalog/backend/src/routes/imports.chatworthy.ts
-import { Router } from 'express';
+import express, { Router } from 'express';
+import { isValidObjectId } from 'mongoose';
 import multer from 'multer';
 import matter from 'gray-matter';
 import unzipper from 'unzipper';
@@ -11,6 +12,7 @@ import { TopicModel } from '../models/Topic';
 import type { NoteDoc } from '../models/Note';
 import { slugifyStandard, type ApplyImportRequest, type ApplyNoteImportCommand, type ApplyImportResponse, type CleanupNeededItem, extractPromptResponseTurns } from '@chatorama/chatalog-shared';
 import { ImportBatchModel } from '../models/ImportBatch';
+import { PendingImportModel } from '../models/PendingImport';
 import { hashPromptResponsePair } from '../utils/textHash';
 import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
 import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
@@ -795,6 +797,34 @@ async function parseOneMarkdownForPreview(
 
 // POST /api/v1/imports/chatworthy
 // Now: PREVIEW ONLY. No subjects/topics/notes are created here.
+// Chatworthy's Send to Chatalog: hold an export until Chatalog opens it for review.
+// Text, not JSON, because exports can be well over the server's JSON size limit.
+router.post('/pending', express.text({ type: 'text/markdown', limit: '15mb' }), async (req, res, next) => {
+  try {
+    const markdown = req.body;
+    if (typeof markdown !== 'string' || !markdown.trim()) {
+      return res.status(400).json({ message: 'No Markdown provided' });
+    }
+    const fileName = typeof req.query.fileName === 'string' && req.query.fileName ? req.query.fileName : 'chat.md';
+    const pending = await PendingImportModel.create({ fileName, markdown });
+    res.status(201).json({ id: String(pending._id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/pending/:id', async (req, res, next) => {
+  try {
+    const pending = isValidObjectId(req.params.id)
+      ? await PendingImportModel.findById(req.params.id).lean()
+      : null;
+    if (!pending) return res.status(404).json({ message: 'This export is no longer available' });
+    res.json({ fileName: pending.fileName, markdown: pending.markdown });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/chatworthy', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });

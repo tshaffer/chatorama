@@ -64,7 +64,6 @@ module.exports = {
           </head>
           <body>
             <div id="root"></div>
-            ${htmlWebpackPlugin.tags.bodyTags}
           </body>
         </html>
       `,
