@@ -5,7 +5,7 @@ let isConnecting = false;
 
 export async function connectToDatabase() {
 
-  console.log(`[db] connecting to ${ENV.MONGO_URI}...`);
+  console.log('[db] connecting...');
   console.log('mongoose.connection.readyState:', mongoose.connection.readyState);
 
   if (mongoose.connection.readyState === 1 || isConnecting) return;
@@ -19,7 +19,8 @@ export async function connectToDatabase() {
 
   await mongoose.connect(ENV.MONGO_URI, opts);
 
-  console.log(`[db] connected to ${ENV.MONGO_URI}`);
+  const { host, name } = mongoose.connection;
+  console.log(`[db] connected to ${host}/${name}`);
   console.log('mongoose.connection.readyState:', mongoose.connection.readyState);
   
   isConnecting = false;
