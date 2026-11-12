@@ -49,7 +49,12 @@ function normalizeTopic(chatTitle: string, subject: string): string {
   return chatTitle.replace(re, '').trim() || chatTitle.trim();
 }
 
-function buildAndDownload(data: SessionData, selectedIndices: Set<number>) {
+interface BuiltExport {
+  filename: string;
+  markdown: string;
+}
+
+function buildExport(data: SessionData, selectedIndices: Set<number>): BuiltExport {
   const { session, turns } = data;
 
   // Gather selected turns: each selected user turn + its following assistant turns
@@ -86,7 +91,7 @@ function buildAndDownload(data: SessionData, selectedIndices: Set<number>) {
     visibility: 'private',
   };
 
-  const md = buildMarkdownExport(meta, exportTurns, {
+  const markdown = buildMarkdownExport(meta, exportTurns, {
     title: chatTitle,
     freeformNotes: '',
     includeFrontMatter: true,
@@ -94,9 +99,11 @@ function buildAndDownload(data: SessionData, selectedIndices: Set<number>) {
 
   const date = new Date().toISOString().slice(0, 10);
   const slug = chatTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
-  const filename = `${slug || 'session'}-${date}.md`;
+  return { filename: `${slug || 'session'}-${date}.md`, markdown };
+}
 
-  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+function download({ filename, markdown }: BuiltExport) {
+  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -106,8 +113,68 @@ function buildAndDownload(data: SessionData, selectedIndices: Set<number>) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 500);
+}
 
-  return filename;
+// ---- Send to Chatalog --------------------------------------
+
+// Chatalog's address. Must match PORT in packages/chatalog/backend/.env.
+const CHATALOG_URL = 'http://localhost:8008';
+
+type SendResult = { ok: true; via: 'extension' | 'tab' } | { ok: false; error: string; chatalogUrl?: string };
+
+// With Chatworthy installed, its exporterBridge content script hands the export to
+// the extension, which reuses (and brings to the front) the Chatalog tab already open.
+function sendViaChatworthy(exp: BuiltExport): Promise<{ ok: boolean; error?: string }> | null {
+  if (document.documentElement.dataset.chatworthyBridge !== '1') return null;
+  const requestId = generateNoteId();
+  return new Promise(resolve => {
+    const timer = setTimeout(() => finish({ ok: false, error: 'Chatworthy didn’t answer' }), 15000);
+    function finish(result: { ok: boolean; error?: string }) {
+      clearTimeout(timer);
+      window.removeEventListener('message', onMessage);
+      resolve(result);
+    }
+    function onMessage(e: MessageEvent) {
+      const msg = e.data;
+      if (e.source !== window || msg?.type !== 'chatworthy:sendToChatalogResult' || msg.requestId !== requestId) return;
+      finish({ ok: !!msg.ok, error: msg.error });
+    }
+    window.addEventListener('message', onMessage);
+    window.postMessage(
+      { type: 'chatworthy:sendToChatalog', requestId, fileName: exp.filename, markdown: exp.markdown },
+      location.origin,
+    );
+  });
+}
+
+// Without Chatworthy: hold the export in Chatalog and open it in a Chatalog tab.
+// A page can't find tabs it didn't open, so this reuses only a tab it opened before.
+async function sendDirect(exp: BuiltExport): Promise<SendResult> {
+  let id: string;
+  try {
+    const res = await fetch(
+      `${CHATALOG_URL}/api/v1/imports/pending?fileName=${encodeURIComponent(exp.filename)}`,
+      { method: 'POST', headers: { 'Content-Type': 'text/markdown' }, body: exp.markdown },
+    );
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    ({ id } = await res.json());
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? 'request failed' };
+  }
+  const chatalogUrl = `${CHATALOG_URL}/#import=${id}`;
+  const win = window.open(chatalogUrl, 'chatalog');
+  if (!win) return { ok: false, error: 'popup blocked', chatalogUrl };
+  return { ok: true, via: 'tab' };
+}
+
+async function sendToChatalog(exp: BuiltExport): Promise<SendResult> {
+  const viaExtension = sendViaChatworthy(exp);
+  if (viaExtension) {
+    const res = await viaExtension;
+    if (res.ok) return { ok: true, via: 'extension' };
+    console.warn('[exporter] Chatworthy couldn’t send, trying directly:', res.error);
+  }
+  return sendDirect(exp);
 }
 
 // ---- App ---------------------------------------------------
@@ -117,7 +184,8 @@ function App() {
   const [selectedSessionId, setSelectedSessionId] = useState<string>('');
   const [sessionData, setSessionData] = useState<SessionData | null>(null);
   const [checked, setChecked] = useState<Set<number>>(new Set());
-  const [status, setStatus] = useState<string>('');
+  const [status, setStatus] = useState<React.ReactNode>('');
+  const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const turnRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -137,8 +205,6 @@ function App() {
       if (!res.ok) { setSessionData(null); return; }
       const data: SessionData = await res.json();
       setSessionData(data);
-      setChecked(new Set());
-      setStatus('');
     } finally {
       setLoading(false);
     }
@@ -151,8 +217,11 @@ function App() {
     });
   }, [fetchSessions]);
 
-  // Load session whenever selection changes
+  // Load session whenever selection changes. Live refreshes reload the same
+  // session and keep the checked prompts; only switching sessions clears them.
   useEffect(() => {
+    setChecked(new Set());
+    setStatus('');
     if (selectedSessionId) fetchSession(selectedSessionId);
   }, [selectedSessionId, fetchSession]);
 
@@ -209,14 +278,48 @@ function App() {
   const handleExport = () => {
     if (!sessionData || checked.size === 0) return;
     try {
-      const filename = buildAndDownload(sessionData, checked);
-      setStatus(`✓ Downloaded ${filename}`);
+      const exp = buildExport(sessionData, checked);
+      download(exp);
+      setStatus(`✓ Downloaded ${exp.filename}`);
     } catch (err: any) {
       setStatus(`✗ Export failed: ${err.message}`);
     }
   };
 
+  const handleSend = async () => {
+    if (!sessionData || checked.size === 0) return;
+    let exp: BuiltExport;
+    try {
+      exp = buildExport(sessionData, checked);
+    } catch (err: any) {
+      setStatus(`✗ Export failed: ${err.message}`);
+      return;
+    }
+    setSending(true);
+    setStatus('Sending to Chatalog…');
+    try {
+      const res = await sendToChatalog(exp);
+      if (res.ok) {
+        setStatus('✓ Sent to Chatalog — review it there');
+      } else if (res.chatalogUrl) {
+        // Sent, but the browser blocked the new tab
+        setStatus(<>✓ Sent. <a href={res.chatalogUrl} target="chatalog">Open it in Chatalog</a></>);
+      } else {
+        console.error('[exporter] send to Chatalog failed:', res.error);
+        setStatus('✗ Couldn’t reach Chatalog. Is it running?');
+        if (confirm('Couldn’t reach Chatalog. Is it running?\n\nDownload the export as a file instead?')) {
+          download(exp);
+          setStatus(`✓ Downloaded ${exp.filename}`);
+        }
+      }
+    } finally {
+      setSending(false);
+    }
+  };
+
   const hasPrompts = sessionData && sessionData.userPrompts.length > 0;
+  // A live refresh of the shown session reloads in place, without the Loading… flash
+  const switching = loading && sessionData?.session.sessionId !== selectedSessionId;
 
   return (
     <>
@@ -247,14 +350,17 @@ function App() {
           <button className="export-btn" onClick={handleExport} disabled={checked.size === 0}>
             Export ({checked.size})
           </button>
+          <button onClick={handleSend} disabled={checked.size === 0 || sending}>
+            Send to Chatalog
+          </button>
         </div>
 
         <div className="turns-list">
-          {loading && <div className="empty">Loading…</div>}
-          {!loading && sessionData && !hasPrompts && (
+          {switching && <div className="empty">Loading…</div>}
+          {!switching && sessionData && !hasPrompts && (
             <div className="empty">No prompts found in this session.</div>
           )}
-          {!loading && sessionData && sessionData.userPrompts.map(p => (
+          {!switching && sessionData && sessionData.userPrompts.map(p => (
             <div
               key={p.turnIndex}
               className={`turn-item${checked.has(p.turnIndex) ? ' selected' : ''}`}

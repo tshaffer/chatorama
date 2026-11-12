@@ -15,6 +15,7 @@ const buildOptions: esbuild.BuildOptions = {
     'src/background.ts',
     'src/recipeContent.ts',
     'src/recipeBulkContent.ts',
+    'src/exporterBridge.ts',
   ],
   outdir: 'dist',
   bundle: true,

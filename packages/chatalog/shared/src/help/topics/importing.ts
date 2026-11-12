@@ -5,7 +5,7 @@ export const importing: HelpTopic = {
   title: 'Importing',
   category: 'Getting Content In',
   order: 1,
-  keywords: ['import', 'chatworthy', 'pdf', 'markdown', 'google docs', 'upload', 'chatgpt', 'conversation', 'send to chatalog', 'image', 'png', 'jpg', 'picture'],
+  keywords: ['import', 'chatworthy', 'pdf', 'markdown', 'google docs', 'upload', 'chatgpt', 'conversation', 'send to chatalog', 'claude code', 'image', 'png', 'jpg', 'picture'],
   body: `Chatalog can import content from several sources. Import buttons are in the top toolbar.
 
 ## From Chatworthy (ChatGPT conversations)
@@ -13,6 +13,10 @@ export const importing: HelpTopic = {
 The **Chatworthy** Chrome extension exports selected prompts from AI chats to Chatalog. Install Chatworthy, select the prompts you want to save, and click **Send to Chatalog**. Chatalog comes to the front, using a tab that's already open or a new one if there isn't one, and opens the import review, where you assign the notes to a subject and topic. Nothing is saved until you apply it there.
 
 If Chatalog isn't running, Chatworthy offers to download the export as a file instead. To save a file without sending it, click **Export**, then use the **Import file** button in Chatalog's toolbar.
+
+## From Claude Code
+
+The **Claude Code Exporter** (\`http://localhost:9090\`) has the same **Send to Chatalog** button. With Chatworthy installed it reuses your open Chatalog tab; without it, it opens Chatalog in a new tab.
 
 ## From PDF
 

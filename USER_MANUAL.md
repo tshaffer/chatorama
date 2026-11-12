@@ -301,6 +301,7 @@ Chatworthy works on **ChatGPT** (`chatgpt.com`, `chat.openai.com`), **Gemini** (
 - **Click a list item** to scroll to that prompt. The highlighted item follows as you scroll.
 - **Checkboxes** select prompts. **All** and **None** select or clear every prompt, including ones the chat has unloaded while scrolling.
 - **Export** downloads the selected prompt/response pairs as Markdown with YAML front matter: `<chat-title>-<YYYYMMDDHHmm>.md`. Import that file into Chatalog with **Import file**.
+- **Send to Chatalog** sends the selected prompts straight to Chatalog's import review. Chatalog comes to the front in the tab that's already open, or a new tab if there isn't one. Nothing is saved until you apply the import there. If Chatalog isn't running, Chatworthy offers to download the file instead.
 - **Hide List / Show List** collapses the panel; this is remembered.
 
 #### Long ChatGPT chats
@@ -338,9 +339,11 @@ Progress is saved in extension storage (`chatworthy:nytRecipeBoxImport`), so a r
 1. Run `npm start` in `packages/claude-code-exporter` (or `npm run dev` without rebuilding the client).
 2. Open `http://localhost:9090`.
 3. Pick a session from the dropdown, listed by date and title. The full conversation is shown with **Prompt** / **Response** labels.
-4. Check prompts (or use **All** / **None**), then click **Export (n)**.
+4. Check prompts (or use **All** / **None**), then click **Export (n)** or **Send to Chatalog**.
 
-The export downloads `<title>-<date>.md` in the same front-matter format as Chatworthy, ready for **Import file**. The session list refreshes automatically when Claude Code writes new session data.
+**Export** downloads `<title>-<date>.md` in the same front-matter format as Chatworthy, ready for **Import file**.
+
+**Send to Chatalog** opens the selected prompts in Chatalog's import review, the same way Chatworthy does. With the Chatworthy extension installed, Chatalog comes to the front in the tab that's already open, or a new tab if there isn't one. Without Chatworthy, the exporter can only reuse a Chatalog tab it opened itself, so it opens a new one the first time. If Chatalog isn't running, it offers to download the file instead. The session list refreshes automatically when Claude Code writes new session data.
 
 ### `claude-export` CLI and auto-export hook
 `claude-export` exports a whole session to Markdown, and an optional Claude Code `Stop` hook re-exports the current session after every response. Common commands:
