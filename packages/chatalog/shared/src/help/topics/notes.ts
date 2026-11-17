@@ -5,7 +5,7 @@ export const notes: HelpTopic = {
   title: 'Notes',
   category: 'Content',
   order: 1,
-  keywords: ['note', 'create', 'edit', 'delete', 'markdown', 'content', 'draft', 'status', 'image', 'png', 'jpg', 'picture', 'photo', 'screenshot', 'insert image', 'consolidate', 'summarize', 'archive', 'archived', 'combine', 'merge', 'ask claude', 'question', 'suggestions', 'summary', 'compare', 'contradictions', 'plan these changes', 'make these changes', 'apply changes', 'reorganize', 'undo', 'conversation', 'continue', 'resume', 'set aside', 'ask all', 'all notes', 'whole library', 'find all', 'search with ai'],
+  keywords: ['note', 'create', 'edit', 'delete', 'markdown', 'content', 'draft', 'status', 'image', 'png', 'jpg', 'picture', 'photo', 'screenshot', 'insert image', 'consolidate', 'summarize', 'archive', 'archived', 'combine', 'merge', 'ask claude', 'question', 'suggestions', 'summary', 'compare', 'contradictions', 'plan these changes', 'make these changes', 'apply changes', 'reorganize', 'undo', 'conversation', 'continue', 'resume', 'set aside', 'ask all', 'all notes', 'whole library', 'find all', 'search with ai', 'properties', 'source', 'provenance', 'imported from', 'origin', 'where did this come from', 'chat link'],
   body: `Notes are the primary content in Chatalog. Each note belongs to exactly one subject and topic.
 
 ## Creating a note
@@ -113,6 +113,19 @@ Each note has:
 - **Subject / Topic** — where the note lives in the hierarchy.
 - **Tags** — optional keywords for filtering and searching.
 - **Status** — tracks the editorial state of the note.
+
+## Seeing where a note came from
+
+Open a note's **Properties** to see its details and where it came from: click **Properties** in the note's toolbar, or use the **⋮** menu on the note in a topic's list.
+
+- **Created**, **Updated** and **Imported** dates. "Imported (fallback)" means no import date was recorded, so the creation date is shown.
+- **Sources** — any links recorded for the note, with their type (Chatworthy, clip, manual or Google Doc).
+- **Chatworthy provenance**, for notes imported from Chatworthy: the chat site (ChatGPT, Gemini, Claude, or a Claude Code transcript), the export's file name, the chat's title and ID, and which turn of the chat the note came from. The open button next to the chat ID opens the original chat on its site. Claude Code transcripts are local files, so they can't be opened from the browser.
+- Google Doc notes show the Drive file, when it was last imported, and whether the Doc has changed since. PDF notes link to the original PDF.
+
+Notes that Claude made by combining or answering from other notes show a banner on the note listing the notes they came from.
+
+A note you wrote by hand shows "—" in the import fields.
 
 ## Moving a note
 

@@ -33,6 +33,22 @@ type Props = {
   topicName?: string;
 };
 
+/** Names the chat site from the address Chatworthy recorded at export. */
+function chatSiteLabel(url?: string): string | undefined {
+  if (!url) return undefined;
+  if (/^file:.*\.jsonl$/i.test(url)) return 'Claude Code (local transcript)';
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return undefined;
+  }
+  if (host === 'chatgpt.com' || host === 'chat.openai.com') return 'ChatGPT';
+  if (host === 'gemini.google.com') return 'Gemini';
+  if (host === 'claude.ai') return 'Claude';
+  return host || undefined;
+}
+
 function formatDate(iso?: string) {
   if (!iso) return { label: '—', iso: undefined };
   const d = new Date(iso);
@@ -195,9 +211,12 @@ export default function NotePropertiesDialog({
     return isPdf ? asset : undefined;
   }, [note?.sourceType, noteAssets]);
 
-  const chatLink = note?.chatworthyChatId
-    ? `https://chat.openai.com/c/${note.chatworthyChatId}`
-    : undefined;
+  // The address Chatworthy recorded when the chat was exported. It is the only
+  // reliable link: chat IDs alone don't say which site (ChatGPT, Gemini, Claude)
+  // the chat lives on.
+  const chatSourceUrl = note?.sources?.find((s) => s?.type === 'chatworthy' && s.url)?.url;
+  const chatLink = chatSourceUrl && /^https?:\/\//i.test(chatSourceUrl) ? chatSourceUrl : undefined;
+  const chatSite = chatSiteLabel(chatSourceUrl);
   const pdfLink =
     (viewerAsset?.id
       ? `${API_BASE}/assets/${viewerAsset.id}/content`
@@ -412,6 +431,7 @@ export default function NotePropertiesDialog({
           </Section>
 
           <Section title="Chatworthy provenance">
+            <FieldRow label="Chat site" value={chatSite || '—'} />
             <FieldRow label="File name" value={note?.chatworthyFileName || '—'} />
             <FieldRow
               label="Chat ID"
@@ -432,7 +452,16 @@ export default function NotePropertiesDialog({
                     </span>
                   </Tooltip>
 
-                  <Tooltip title="Open source chat" arrow>
+                  <Tooltip
+                    title={
+                      chatLink
+                        ? `Open the chat on ${chatSite}`
+                        : chatSourceUrl
+                          ? 'This chat is a local file and can’t be opened from the browser'
+                          : 'No chat address was recorded'
+                    }
+                    arrow
+                  >
                     <span>
                       <IconButton
                         size="small"
