@@ -1,6 +1,9 @@
 # claudeTools — Setup & Update Guide
 
 This folder contains tools for exporting Claude Code sessions to Markdown.
+
+Exports are written to `~/Documents/ClaudeExports/`, one file per session
+(`<title-slug>-<session-id-prefix>.md`); each export overwrites that session's file.
 The files here are the **source of record** in git. To make changes active,
 you need to copy them to the locations where Claude Code reads them.
 

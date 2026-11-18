@@ -7,9 +7,12 @@
 //   claude-export --list                   # list recent sessions
 //   claude-export -o ~/notes/session.md    # specify output file
 //   claude-export --dir /path/to/project   # sessions for a specific project dir
+//
+// Default output: ~/Documents/ClaudeExports/<title-slug>-<session-id-prefix>.md
+// One file per session; each export overwrites that session's previous file.
 
-import { readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
-import { join, resolve } from 'path';
+import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync } from 'fs';
+import { join, resolve, dirname } from 'path';
 import { homedir } from 'os';
 
 const PROJECTS_DIR = join(homedir(), '.claude', 'projects');
@@ -200,10 +203,11 @@ if (resolvedSessionId) {
 const { title, turns } = parseSession(session.filePath);
 const md = renderMarkdown(title, turns, session.sessionId, session.mtime);
 
-const date = session.mtime.toISOString().slice(0, 10);
+const EXPORT_DIR = join(homedir(), 'Documents', 'ClaudeExports');
 const slug = (title || 'session').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
-const defaultOut = join(homedir(), 'Desktop', `${slug}-${date}.md`);
+const defaultOut = join(EXPORT_DIR, `${slug}-${session.sessionId.slice(0, 8)}.md`);
 const dest = outFile ? resolve(outFile) : defaultOut;
 
+mkdirSync(dirname(dest), { recursive: true });
 writeFileSync(dest, md);
 console.log(`Exported ${turns.length} turns → ${dest}`);
