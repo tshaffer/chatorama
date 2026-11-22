@@ -48,6 +48,8 @@ type Props = {
   accept?: string;
   defaultSubjectLabel?: string;
   defaultTopicLabel?: string;
+  /** Fill empty Subject/Topic labels from the file (see ImportResultsDialog) */
+  prefillLabelsFromFile?: boolean;
   /** Open exports sent with Chatworthy's Send to Chatalog. Set on one instance only. */
   handlePendingImports?: boolean;
 };
@@ -60,6 +62,7 @@ function ImportChatworthyButton({
   accept = '.zip,.cbz,.tar,.tgz,.gz,.md,.markdown',
   defaultSubjectLabel = '',
   defaultTopicLabel = '',
+  prefillLabelsFromFile = true,
   handlePendingImports = false,
 }: Props, ref) {
   const dispatch = useAppDispatch();
@@ -299,6 +302,7 @@ function ImportChatworthyButton({
         duplicateTurnCount={lastImport.duplicateTurnCount}
         defaultSubjectLabel={defaultSubjectLabel}
         defaultTopicLabel={defaultTopicLabel}
+        prefillLabelsFromFile={prefillLabelsFromFile}
       />
     ) : null;
 

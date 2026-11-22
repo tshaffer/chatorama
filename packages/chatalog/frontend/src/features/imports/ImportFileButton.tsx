@@ -38,6 +38,8 @@ type Props = {
   onDone?: () => void;
   defaultSubjectLabel?: string;
   defaultTopicLabel?: string;
+  /** Fill empty Subject/Topic labels from the file's own subject/topic */
+  prefillLabelsFromFile?: boolean;
   /** Open exports sent with Chatworthy's Send to Chatalog. Set on one instance only. */
   handlePendingImports?: boolean;
 };
@@ -48,6 +50,7 @@ export default function ImportFileButton({
   onDone,
   defaultSubjectLabel = '',
   defaultTopicLabel = '',
+  prefillLabelsFromFile = true,
   handlePendingImports = false,
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -113,7 +116,7 @@ export default function ImportFileButton({
         onChange={onFileChosen}
       />
       {/* Both components always mounted; only the detected one receives processFile calls. */}
-      <ImportChatworthyButton ref={chatworthyRef} mode="controlled" onDone={onDone} defaultSubjectLabel={defaultSubjectLabel} defaultTopicLabel={defaultTopicLabel} handlePendingImports={handlePendingImports} />
+      <ImportChatworthyButton ref={chatworthyRef} mode="controlled" onDone={onDone} defaultSubjectLabel={defaultSubjectLabel} defaultTopicLabel={defaultTopicLabel} prefillLabelsFromFile={prefillLabelsFromFile} handlePendingImports={handlePendingImports} />
       <ImportMarkdownButton ref={markdownRef} mode="controlled" onDone={onDone} defaultSubjectLabel={defaultSubjectLabel} defaultTopicLabel={defaultTopicLabel} />
       {triggerIcon}
     </>

@@ -79,6 +79,11 @@ type Props = {
   duplicateTurnCount?: number;
   defaultSubjectLabel?: string;
   defaultTopicLabel?: string;
+  /**
+   * Fill empty Subject/Topic labels from the subject and topic in the imported
+   * file. Off for the toolbar's Import File, which starts with blank labels.
+   */
+  prefillLabelsFromFile?: boolean;
 };
 
 export function ImportResultsDialog({
@@ -92,6 +97,7 @@ export function ImportResultsDialog({
   duplicateTurnCount = 0,
   defaultSubjectLabel: propDefaultSubjectLabel = '',
   defaultTopicLabel: propDefaultTopicLabel = '',
+  prefillLabelsFromFile = true,
 }: Props) {
   type ViewMode = 'simple' | 'markdown' | 'full';
   const VIEW_MODE_STORAGE_KEY = 'chatalog.importResults.viewMode';
@@ -125,8 +131,8 @@ export function ImportResultsDialog({
     notes.map((n) => ({
       ...n,
       editedTitle: n.title,
-      subjectLabel: n.subjectName ?? '',
-      topicLabel: n.topicName ?? '',
+      subjectLabel: prefillLabelsFromFile ? n.subjectName ?? '' : '',
+      topicLabel: prefillLabelsFromFile ? n.topicName ?? '' : '',
       showBody: false,
       subjectTouched: false,
       topicTouched: false,
@@ -177,12 +183,16 @@ export function ImportResultsDialog({
   React.useEffect(() => {
     if (!importedNotes.length) return;
 
+    // The file's own subject/topic, used only when prefilling from the file
+    const fileSubject = (n?: ImportedNoteSummary) => (prefillLabelsFromFile ? n?.subjectName : undefined);
+    const fileTopic = (n?: ImportedNoteSummary) => (prefillLabelsFromFile ? n?.topicName : undefined);
+
     const firstSubject =
       propDefaultSubjectLabel ||
-      (importedNotes.find((n) => n.subjectName)?.subjectName ?? combinedNote?.subjectName ?? '');
+      (fileSubject(importedNotes.find((n) => n.subjectName)) ?? fileSubject(combinedNote) ?? '');
     const firstTopic =
       propDefaultTopicLabel ||
-      (importedNotes.find((n) => n.topicName)?.topicName ?? combinedNote?.topicName ?? '');
+      (fileTopic(importedNotes.find((n) => n.topicName)) ?? fileTopic(combinedNote) ?? '');
 
     setDefaultSubjectLabel(firstSubject);
     setDefaultTopicLabel(firstTopic);
@@ -191,8 +201,8 @@ export function ImportResultsDialog({
       importedNotes.map((n) => ({
         ...n,
         editedTitle: n.title,
-        subjectLabel: propDefaultSubjectLabel || n.subjectName || firstSubject || '',
-        topicLabel: propDefaultTopicLabel || n.topicName || firstTopic || '',
+        subjectLabel: propDefaultSubjectLabel || fileSubject(n) || firstSubject || '',
+        topicLabel: propDefaultTopicLabel || fileTopic(n) || firstTopic || '',
         showBody: false,
         subjectTouched: false,
         topicTouched: false,
@@ -206,8 +216,8 @@ export function ImportResultsDialog({
           {
             ...combinedNote,
             editedTitle: combinedNote.title,
-            subjectLabel: propDefaultSubjectLabel || combinedNote.subjectName || firstSubject || '',
-            topicLabel: propDefaultTopicLabel || combinedNote.topicName || firstTopic || '',
+            subjectLabel: propDefaultSubjectLabel || fileSubject(combinedNote) || firstSubject || '',
+            topicLabel: propDefaultTopicLabel || fileTopic(combinedNote) || firstTopic || '',
             showBody: false,
             subjectTouched: false,
             topicTouched: false,
@@ -374,7 +384,10 @@ export function ImportResultsDialog({
     );
   };
 
+  const missingDefaultLabels = !defaultSubjectLabel.trim() || !defaultTopicLabel.trim();
+
   const handleApply = () => {
+    if (missingDefaultLabels) return;
     const base = importMode === 'perTurn' ? rows : singleRows.length ? singleRows : rows;
     const commands: ApplyNoteImportCommand[] = base.map((r) => {
       const resolution = duplicateResolutions[r.importKey];
@@ -1418,9 +1431,14 @@ export function ImportResultsDialog({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={handleApply}>
-          Import
-        </Button>
+        <Tooltip title={missingDefaultLabels ? 'Enter a Default Subject label and a Default Topic label to import' : ''}>
+          {/* span so the tooltip still shows while the button is disabled */}
+          <span>
+            <Button variant="contained" onClick={handleApply} disabled={missingDefaultLabels}>
+              Import
+            </Button>
+          </span>
+        </Tooltip>
       </DialogActions>
     </Dialog>
   );

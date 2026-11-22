@@ -172,7 +172,7 @@ Limits: 100 MB for chat exports.
 
 #### Review Imported Notes (chat exports)
 - **Import mode** (multi-turn chats): **One note per turn** or **Single note for entire conversation**. A warning appears when a single note would exceed the 8,000-character embedding limit, because only the first ~8,000 characters are indexed for semantic search.
-- **Default Subject / Topic labels** apply to every row you haven't edited by hand.
+- **Default Subject / Topic labels** apply to every row you haven't edited by hand. From the top bar's **Import file** they start empty. From a topic's **Import File** they start as that subject and topic.
 - Each row has an include checkbox, an editable title, Subject/Topic fields, and a **Dupes** indicator:
   - ✓ no duplicate turns
   - ⚠ some turns already exist in Chatalog
