@@ -21,6 +21,7 @@ export const selectSearchSpec = createSelector([selectSearchCommitted], (search)
     status: search.filters.status,
     tags: search.filters.tags,
     importedOnly: search.filters.importedOnly,
+    archivedSubjects: search.filters.archivedSubjects,
     updatedFrom: search.filters.updatedFrom,
     updatedTo: search.filters.updatedTo,
     minSemanticScore: search.filters.minSemanticScore,

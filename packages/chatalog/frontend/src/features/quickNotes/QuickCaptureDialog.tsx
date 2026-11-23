@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { Dialog, DialogTitle, DialogContent, DialogActions, TextField, Stack, Button, FormControl, InputLabel, Select, MenuItem, Box, Typography } from '@mui/material';
 import { useAddQuickNoteMutation, useAddQuickNoteAssetMutation } from './quickNotesApi';
 import { useUploadImageMutation } from '../notes/notesApi';
-import { useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
+import { activeSubjects, isSubjectArchived, useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
 import type { Subject, Topic } from '@chatorama/chatalog-shared';
 import { sortByStringKeyCI } from '../../utils/sort';
 
@@ -173,10 +173,18 @@ export default function QuickCaptureDialog({
 
   // simple subject→topic select data
   const selectedSubject = subjects.find(s => s.id === subjectId) as (Subject & { topics?: Topic[] }) | undefined;
+  // Archived subjects aren't offered: nothing new goes into them
   const sortedSubjects = useMemo(
-    () => sortByStringKeyCI(subjects, (s) => s.name),
+    () => sortByStringKeyCI(activeSubjects(subjects), (s) => s.name),
     [subjects],
   );
+  // A default from an archived subject's page falls back to Unfiled
+  const selectedIsArchived = isSubjectArchived(selectedSubject);
+  useEffect(() => {
+    if (!selectedIsArchived) return;
+    setSubjectId(undefined);
+    setTopicId(undefined);
+  }, [selectedIsArchived]);
   const topics = selectedSubject?.topics ?? [];
   const sortedTopics = useMemo(
     () => sortByStringKeyCI(topics, (t) => t.name),

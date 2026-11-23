@@ -47,6 +47,7 @@ export function buildSearchRequestV1(spec: SearchSpec): SearchRequestV1 {
       createdAtFrom: undefined,
       createdAtTo: undefined,
       importedOnly: f.importedOnly ? true : undefined,
+      archivedSubjects: f.archivedSubjects,
       sourceType: undefined,
       importBatchId: undefined,
       chatworthyChatId: undefined,

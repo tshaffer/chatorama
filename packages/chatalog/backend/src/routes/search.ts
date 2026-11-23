@@ -21,6 +21,7 @@ import { buildCookedHistoryFilter } from '../utils/search/cookedFilters';
 import { canonicalizeFilterTokens } from '../utils/ingredientTokens';
 import { canonicalizeIngredient } from '../utils/ingredientTokens';
 import { parsePowerQuery } from '../utils/search/powerQueryParser';
+import { getArchivedSubjectIds } from '../utilities/archivedSubjects';
 
 export const searchRouter = Router();
 
@@ -68,6 +69,7 @@ type ParsedQueryOperators = {
   topic?: string;
   tags: string[];
   importedOnly?: boolean;
+  archivedSubjects?: 'include' | 'exclude' | 'only';
 };
 
 function parseQueryOperators(input: string): ParsedQueryOperators {
@@ -75,8 +77,9 @@ function parseQueryOperators(input: string): ParsedQueryOperators {
   let subject: string | undefined;
   let topic: string | undefined;
   let importedOnly: boolean | undefined;
+  let archivedSubjects: ParsedQueryOperators['archivedSubjects'];
 
-  const re = /(^|\s)(subject|topic|tag|imported):\s*(?:"([^"]+)"|'([^']+)'|([^\s]+))/gi;
+  const re = /(^|\s)(subject|topic|tag|imported|archived):\s*(?:"([^"]+)"|'([^']+)'|([^\s]+))/gi;
   const stripped = input.replace(re, (_match, prefix, key, v1, v2, v3) => {
     const value = String(v1 ?? v2 ?? v3 ?? '').trim();
     if (!value) return ' ';
@@ -88,11 +91,18 @@ function parseQueryOperators(input: string): ParsedQueryOperators {
       const v = value.toLowerCase();
       if (v === 'true' || v === '1' || v === 'yes') importedOnly = true;
     }
+    if (k === 'archived') {
+      // archived:no leaves out notes in archived subjects; archived:only shows just those
+      const v = value.toLowerCase();
+      if (v === 'no' || v === 'false' || v === '0' || v === 'exclude') archivedSubjects = 'exclude';
+      else if (v === 'only') archivedSubjects = 'only';
+      else if (v === 'yes' || v === 'true' || v === '1' || v === 'include') archivedSubjects = 'include';
+    }
     return prefix && String(prefix).trim() ? ' ' : ' ';
   });
 
   const text = stripped.replace(/\s+/g, ' ').trim();
-  return { text, subject, topic, tags, importedOnly };
+  return { text, subject, topic, tags, importedOnly, archivedSubjects };
 }
 
 async function resolveSubjectId(value: string): Promise<string | undefined> {
@@ -762,6 +772,9 @@ searchRouter.post('/', async (req, res, next) => {
     if (parsedOps.importedOnly) {
       filters.importedOnly = true;
     }
+    if (parsedOps.archivedSubjects) {
+      filters.archivedSubjects = parsedOps.archivedSubjects;
+    }
     if (parsedOps.subject) {
       const resolved = await resolveSubjectId(parsedOps.subject);
       if (resolved) {
@@ -788,6 +801,15 @@ searchRouter.post('/', async (req, res, next) => {
 
     if (filters.importedOnly) {
       and.push({ importBatchId: { $exists: true, $nin: [null, ''] } });
+    }
+
+    if (filters.archivedSubjects === 'exclude' || filters.archivedSubjects === 'only') {
+      const archivedIds = await getArchivedSubjectIds();
+      and.push(
+        filters.archivedSubjects === 'exclude'
+          ? { subjectId: { $nin: archivedIds } }
+          : { subjectId: { $in: archivedIds } },
+      );
     }
 
     const tagsAll =

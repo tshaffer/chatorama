@@ -3,7 +3,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   Button, Stack, FormControl, InputLabel, Select, MenuItem,
 } from '@mui/material';
-import { useMoveTopicMutation, useGetSubjectsQuery } from './subjectsApi';
+import { useMoveTopicMutation, useGetSubjectsQuery, isSubjectArchived } from './subjectsApi';
 import { sortByStringKeyCI } from '../../utils/sort';
 
 type Props = {
@@ -18,7 +18,8 @@ export default function MoveTopicDialog({ open, onClose, topicId, topicName, sou
   const { data: subjects } = useGetSubjectsQuery();
   const sortedSubjects = useMemo(
     () => sortByStringKeyCI(
-      (subjects ?? []).filter((s) => s.id !== sourceSubjectId),
+      // Archived subjects aren't offered as a destination
+      (subjects ?? []).filter((s) => s.id !== sourceSubjectId && !isSubjectArchived(s)),
       (s) => s.name,
     ),
     [subjects, sourceSubjectId],

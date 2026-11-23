@@ -5,7 +5,7 @@ export const searching: HelpTopic = {
   title: 'Searching',
   category: 'Finding Things',
   order: 1,
-  keywords: ['search', 'filter', 'find', 'query', 'tag', 'scope', 'date', 'subject', 'topic'],
+  keywords: ['search', 'filter', 'find', 'query', 'tag', 'scope', 'date', 'subject', 'topic', 'archived'],
   body: `The search bar at the top of every page lets you find notes quickly across your entire archive.
 
 ## Basic search
@@ -35,6 +35,10 @@ When you're already on a subject or topic page and trigger a search, the scope i
 ## Filtering by status
 
 Use \`status:draft\` or \`status:published\` to filter by note status.
+
+## Archived subjects
+
+Notes in archived subjects are included and tagged **archived**. Use \`archived:no\` to leave them out, or \`archived:only\` to show only them. The same choice is under **Add filters… → Archived subjects**.
 
 ## Date filters
 

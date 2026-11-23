@@ -61,7 +61,15 @@ import {
   useCreateSubjectMutation,
   useCreateTopicMutation,
   resolveSubjectAndTopicNames,
+  activeSubjects,
+  isSubjectArchived,
 } from '../subjects/subjectsApi';
+import {
+  ArchivedSubjectTargetError,
+  archivedSubjectMessage,
+  useArchivedSubjectNamed,
+} from '../subjects/useArchivedSubjectNamed';
+import ArchivedSubjectBanner from '../../components/ArchivedSubjectBanner';
 import Autocomplete from '@mui/material/Autocomplete';
 import { useGetAllTopicsQuery } from '../topics/topicsApi';
 import NotePropertiesDialog from './NotePropertiesDialog';
@@ -598,9 +606,12 @@ export default function NoteEditor({
     !!(note as Note | undefined)?.recipe?.stepsRaw?.length;
 
   // Subject/topic editing helpers
+  const archivedSubjectName = useArchivedSubjectNamed(subjectLabel);
+  const subjectMoveBlocked = !!archivedSubjectName && archivedSubjectName !== noteSubject?.name;
   const subjectLabelOptions = useMemo(() => {
     const set = new Set<string>();
-    (subjectsWithTopics as (Subject & { topics?: Topic[] })[]).forEach((s) => {
+    // Archived subjects aren't offered (the note's own subject still shows as the current value)
+    activeSubjects(subjectsWithTopics as (Subject & { topics?: Topic[] })[]).forEach((s) => {
       if (s.name?.trim()) set.add(s.name.trim());
     });
     if (subjectLabel.trim()) set.add(subjectLabel.trim());
@@ -636,6 +647,10 @@ export default function NoteEditor({
       const existingSubject = (
         subjectsWithTopics as (Subject & { topics?: Topic[] })[]
       ).find((s) => s.name?.trim() === trimmedSubject);
+      // A note already in an archived subject can be edited, but none can be moved into one
+      if (existingSubject && isSubjectArchived(existingSubject) && existingSubject.id !== note?.subjectId) {
+        throw new ArchivedSubjectTargetError(existingSubject.name);
+      }
       if (existingSubject) {
         subjectId = existingSubject.id;
       } else {
@@ -663,7 +678,7 @@ export default function NoteEditor({
     }
 
     return { subjectId: subjectId || undefined, topicId: topicId || undefined };
-  }, [subjectLabel, topicLabel, subjectsWithTopics, createSubject, createTopic]);
+  }, [subjectLabel, topicLabel, subjectsWithTopics, createSubject, createTopic, note?.subjectId]);
 
   // Load note -> form (initialize once per note id)
   useEffect(() => {
@@ -709,8 +724,9 @@ export default function NoteEditor({
         }).unwrap();
         setSnack({ open: true, msg: 'Saved', sev: 'success' });
         setDirty(false);
-      } catch {
-        setSnack({ open: true, msg: 'Save failed', sev: 'error' });
+      } catch (err) {
+        const msg = err instanceof ArchivedSubjectTargetError ? err.message : 'Save failed';
+        setSnack({ open: true, msg, sev: 'error' });
       }
     }, debounceMs);
 
@@ -756,8 +772,9 @@ export default function NoteEditor({
           }).unwrap();
           setSnack({ open: true, msg: 'Saved', sev: 'success' });
           setDirty(false);
-        } catch {
-          setSnack({ open: true, msg: 'Save failed', sev: 'error' });
+        } catch (err) {
+          const msg = err instanceof ArchivedSubjectTargetError ? err.message : 'Save failed';
+          setSnack({ open: true, msg, sev: 'error' });
         }
       }
     };
@@ -1218,6 +1235,7 @@ export default function NoteEditor({
         style={{ display: 'none' }}
         onChange={handleImageFilePicked}
       />
+      <ArchivedSubjectBanner subjectId={(note as Note | undefined)?.subjectId} sx={{ flexShrink: 0 }} />
       {/* Top bar: label + save status + Edit/Done + Prev/Next + Delete */}
       <Stack
         direction="row"
@@ -1493,6 +1511,8 @@ export default function NoteEditor({
                 label="Subject"
                 size="small"
                 fullWidth
+                error={subjectMoveBlocked}
+                helperText={subjectMoveBlocked && archivedSubjectName ? archivedSubjectMessage(archivedSubjectName) : undefined}
               />
             )}
           />

@@ -129,6 +129,15 @@ export default function AppShell() {
         status: parsed.params.status?.trim() || undefined,
         updatedFrom: parsed.params.updatedFrom?.trim() || undefined,
         updatedTo: parsed.params.updatedTo?.trim() || undefined,
+        // archived:no / archived:only in the box; otherwise keep the Filters choice
+        archivedSubjects:
+          'archived' in parsed.params
+            ? parsed.params.archived === 'no'
+              ? ('exclude' as const)
+              : parsed.params.archived === 'only'
+                ? ('only' as const)
+                : undefined
+            : searchDraft.filters.archivedSubjects,
       },
     };
 

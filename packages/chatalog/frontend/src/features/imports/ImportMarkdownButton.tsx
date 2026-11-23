@@ -26,6 +26,7 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 
 import { useApplyMarkdownImportMutation } from './importsApi';
 import SubjectTopicPickerFields from './SubjectTopicPickerFields';
+import { useArchivedSubjectNamed } from '../subjects/useArchivedSubjectNamed';
 
 // Must match MARKDOWN_EMBEDDING_CHAR_LIMIT in imports.markdown.ts
 const EMBEDDING_CHAR_LIMIT = 8_000;
@@ -178,8 +179,11 @@ function ImportMarkdownButton({
     }
   }, [applyMarkdown, dialogState, navigate, onDone]);
 
+  const archivedSubjectName = useArchivedSubjectNamed(dialogState?.subjectLabel);
+
   const canSubmit =
     !!dialogState &&
+    !archivedSubjectName &&
     dialogState.subjectLabel.trim().length > 0 &&
     dialogState.topicLabel.trim().length > 0 &&
     !isLoading;

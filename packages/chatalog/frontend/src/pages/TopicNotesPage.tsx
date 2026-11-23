@@ -58,6 +58,7 @@ import { selectNoteStatusVisibility } from '../features/settings/settingsSlice';
 import ConfirmIconButton from '../components/ConfirmIconButton';
 import DeleteIcon from '@mui/icons-material/Delete';
 import NotePropertiesDialog from '../features/notes/NotePropertiesDialog';
+import ArchivedSubjectBanner from '../components/ArchivedSubjectBanner';
 import ImportFileButton from '../features/imports/ImportFileButton';
 
 // Extract leading ObjectId from "<id>" or "<id>-<slug>"
@@ -364,6 +365,7 @@ export default function TopicNotesPage() {
           </Box>
         ) : (
           <>
+            <ArchivedSubjectBanner subjectId={subjectId} sx={{ mb: 1 }} />
             {/* Header + toolbar */}
             <Box
               sx={{

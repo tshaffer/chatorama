@@ -5,7 +5,7 @@ export const manageHierarchy: HelpTopic = {
   title: 'Manage Hierarchy',
   category: 'Organization',
   order: 1,
-  keywords: ['manage', 'hierarchy', 'create', 'rename', 'delete', 'reorder', 'subject', 'topic', 'move topic'],
+  keywords: ['manage', 'hierarchy', 'create', 'rename', 'delete', 'reorder', 'subject', 'topic', 'move topic', 'archive', 'unarchive', 'hide'],
   body: `The **Manage Hierarchy** page (toolbar → grid icon) is the central place to administer your subjects and topics.
 
 ## Subjects
@@ -14,6 +14,7 @@ export const manageHierarchy: HelpTopic = {
 - **Rename** — double-click a subject title to edit it inline.
 - **Reorder** — click **Reorder subjects…** to drag subjects into your preferred order.
 - **Delete** — click the trash icon on a subject card. Deleting a subject also deletes all its topics and notes.
+- **Archive / Unarchive** — click the box icon on a subject card. Archived subjects are listed last, dimmed. See "Archiving subjects" in the Subjects & Topics help topic.
 
 ## Topics
 

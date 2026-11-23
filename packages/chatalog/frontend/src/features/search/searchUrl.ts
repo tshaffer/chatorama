@@ -92,6 +92,8 @@ export function parseSearchQueryFromUrl(
     status: (sp.get('status') ?? '').trim() || undefined,
     tags: splitCsv(sp.get('tags')),
     importedOnly: boolOrUndef(sp.get('importedOnly')),
+    archivedSubjects:
+      sp.get('archived') === 'no' ? 'exclude' : sp.get('archived') === 'only' ? 'only' : undefined,
 
     updatedFrom: (sp.get('updatedFrom') ?? '').trim() || undefined,
     updatedTo: (sp.get('updatedTo') ?? '').trim() || undefined,
@@ -142,6 +144,7 @@ export function buildSearchUrlFromQuery(q: SearchQuery): string {
   if (tags) sp.set('tags', tags);
 
   if (f.importedOnly) sp.set('importedOnly', '1');
+  if (f.archivedSubjects) sp.set('archived', f.archivedSubjects === 'exclude' ? 'no' : 'only');
 
   if (f.updatedFrom) sp.set('updatedFrom', f.updatedFrom);
   if (f.updatedTo) sp.set('updatedTo', f.updatedTo);

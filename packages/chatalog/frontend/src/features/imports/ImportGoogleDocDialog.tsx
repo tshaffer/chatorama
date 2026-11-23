@@ -11,6 +11,7 @@ import {
 } from '@mui/material';
 import { useImportGoogleDocFromDriveMutation, useGetGoogleOAuthStatusQuery } from '../notes/notesApi';
 import SubjectTopicPickerFields from './SubjectTopicPickerFields';
+import { useArchivedSubjectNamed } from '../subjects/useArchivedSubjectNamed';
 import { useGetSubjectsWithTopicsQuery, useCreateSubjectMutation, useCreateTopicMutation } from '../subjects/subjectsApi';
 import type { Subject, Topic } from '@chatorama/chatalog-shared';
 
@@ -57,7 +58,10 @@ export default function ImportGoogleDocDialog({
 
   const driveFileId = useMemo(() => extractDriveFileId(input), [input]);
   const connected = Boolean(oauthStatus?.connected);
-  const canSubmit = Boolean(driveFileId && connected && subjectLabel.trim() && topicLabel.trim());
+  const archivedSubjectName = useArchivedSubjectNamed(subjectLabel);
+  const canSubmit = Boolean(
+    driveFileId && connected && subjectLabel.trim() && topicLabel.trim() && !archivedSubjectName,
+  );
   const { data: subjectsWithTopics = [] } = useGetSubjectsWithTopicsQuery();
   const [createSubject] = useCreateSubjectMutation();
   const [createTopic] = useCreateTopicMutation();

@@ -8,6 +8,8 @@ export interface SubjectDoc extends Document {
   name: string;
   slug?: string;
   order?: number;
+  /** Set when the subject is archived: hidden from the tree and pickers, kept otherwise. */
+  archivedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 
@@ -21,6 +23,7 @@ const SubjectSchema = new Schema<SubjectDoc>(
     slug: { type: String, trim: true },
     // lower numbers appear earlier in UI; optional for legacy rows
     order: { type: Number, index: true },
+    archivedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

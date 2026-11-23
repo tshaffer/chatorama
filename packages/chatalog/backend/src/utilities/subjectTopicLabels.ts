@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 import { SubjectModel } from '../models/Subject';
 import { TopicModel } from '../models/Topic';
 import { slugifyAscentStripping } from '@chatorama/chatalog-shared';
+import { assertSubjectNotArchived } from './archivedSubjects';
 
 // Find or create a Subject from a free-form label (like ImportResultsDialog)
 export async function findOrCreateSubjectByLabel(
@@ -14,6 +15,7 @@ export async function findOrCreateSubjectByLabel(
     // try existing subject by name (lean result)
     const existing = await SubjectModel.findOne({ name }).lean();
     if (existing) {
+      assertSubjectNotArchived(existing);
       return existing._id as Types.ObjectId | string;
     }
 

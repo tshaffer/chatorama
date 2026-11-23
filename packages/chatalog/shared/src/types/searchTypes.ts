@@ -120,6 +120,9 @@ export interface SearchFiltersV1 {
   importBatchId?: string;    // exact match
   chatworthyChatId?: string; // exact match
 
+  /** Notes in archived subjects: included by default, or left out / the only ones */
+  archivedSubjects?: ArchivedSubjectsFilter;
+
   // Recipe scope filters
   prepTimeMax?: number;
   cookTimeMax?: number;
@@ -134,6 +137,8 @@ export interface SearchFiltersV1 {
   cookedWithinDays?: number;
   minAvgCookedRating?: number;
 }
+
+export type ArchivedSubjectsFilter = 'include' | 'exclude' | 'only';
 
 export interface SearchRequestV1 {
   version: 1;
@@ -190,6 +195,7 @@ export type SearchQueryFilters = {
   status?: string;
   tags: string[];
   importedOnly?: boolean;
+  archivedSubjects?: 'exclude' | 'only';
   updatedFrom?: string;
   updatedTo?: string;
   minSemanticScore?: number;

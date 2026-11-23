@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { NoteModel } from '../models/Note';
 import { SubjectModel } from '../models/Subject';
+import { assertSubjectNotArchived } from '../utilities/archivedSubjects';
 import { TopicModel } from '../models/Topic';
 import { slugifyStandard } from '@chatorama/chatalog-shared';
 import {
@@ -162,7 +163,10 @@ function normalizeStringList(value: any): string[] | undefined {
 
 async function getOrCreateSubject(name: string) {
   const existing = await SubjectModel.findOne({ name }).exec();
-  if (existing) return existing;
+  if (existing) {
+    assertSubjectNotArchived(existing);
+    return existing;
+  }
   try {
     return await SubjectModel.create({ name });
   } catch (err: any) {

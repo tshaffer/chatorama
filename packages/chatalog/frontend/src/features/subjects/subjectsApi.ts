@@ -152,6 +152,19 @@ export const subjectsApi = baseApi.injectEndpoints({
       invalidatesTags: [{ type: 'Subject', id: 'LIST' }],
     }),
 
+    /** Archive (hide) or unarchive a subject; its topics and notes are untouched */
+    setSubjectArchived: build.mutation<Subject, { subjectId: string; archived: boolean }>({
+      query: ({ subjectId, archived }) => ({
+        url: `subjects/${subjectId}/archive`,
+        method: 'PATCH',
+        body: { archived },
+      }),
+      invalidatesTags: (_r, _e, { subjectId }) => [
+        { type: 'Subject', id: 'LIST' },
+        { type: 'Subject', id: subjectId },
+      ],
+    }),
+
     createTopic: build.mutation<Topic, { subjectId: string; name: string }>({
       query: ({ subjectId, name }) => ({
         url: `subjects/${subjectId}/topics`,
@@ -251,6 +264,16 @@ export const subjectsApi = baseApi.injectEndpoints({
   overrideExisting: true,
 });
 
+/** True when the subject is archived (hidden from the tree and pickers). */
+export function isSubjectArchived(subject: { archivedAt?: string | null } | null | undefined): boolean {
+  return !!subject?.archivedAt;
+}
+
+/** The subjects that aren't archived, for pickers and other lists of places to put things. */
+export function activeSubjects<T extends { archivedAt?: string | null }>(subjects: T[] | undefined): T[] {
+  return (subjects ?? []).filter((s) => !isSubjectArchived(s));
+}
+
 export function resolveSubjectAndTopicNames(
   subjects: (Subject & { topics: Topic[] })[] | undefined,
   subjectId?: string,
@@ -291,4 +314,5 @@ export const {
   useReorderSubjectsMutation,
   useReorderTopicsMutation,
   useMoveTopicMutation,
+  useSetSubjectArchivedMutation,
 } = subjectsApi;

@@ -12,7 +12,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { useGetSubjectsQuery, useGetTopicsForSubjectQuery } from '../features/subjects/subjectsApi';
+import { activeSubjects, useGetSubjectsQuery, useGetTopicsForSubjectQuery } from '../features/subjects/subjectsApi';
 import type { Topic } from '@chatorama/chatalog-shared';
 import { sortByStringKeyCI } from '../utils/sort';
 
@@ -25,7 +25,7 @@ const safeId = (o: { id?: string } | undefined) => o?.id ?? '';
 export default function Home() {
   const { data: subjects = [], isLoading } = useGetSubjectsQuery();
 
-  const topSubjects = sortByStringKeyCI(subjects, (s) => s.name).slice(0, 3);
+  const topSubjects = sortByStringKeyCI(activeSubjects(subjects), (s) => s.name).slice(0, 3);
 
   return (
     <Box

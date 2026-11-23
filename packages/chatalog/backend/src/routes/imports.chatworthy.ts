@@ -13,6 +13,7 @@ import type { NoteDoc } from '../models/Note';
 import { slugifyStandard, type ApplyImportRequest, type ApplyNoteImportCommand, type ApplyImportResponse, type CleanupNeededItem, extractPromptResponseTurns } from '@chatorama/chatalog-shared';
 import { ImportBatchModel } from '../models/ImportBatch';
 import { PendingImportModel } from '../models/PendingImport';
+import { assertSubjectNotArchived, findArchivedSubjectNames } from '../utilities/archivedSubjects';
 import { hashPromptResponsePair } from '../utils/textHash';
 import { TurnFingerprintModel } from '../models/TurnFingerprintModel';
 import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
@@ -438,6 +439,7 @@ async function ensureSubjectTopic(
   if (subjectName) {
     const name = subjectName.trim();
     let subj = await SubjectModel.findOne({ name }).exec();
+    assertSubjectNotArchived(subj);
     if (!subj) {
       const slug = await dedupeSubjectSlug(slugifyStandard(name));
       try {
@@ -901,6 +903,18 @@ router.post('/chatworthy/apply', async (req, res, next) => {
           commandMap.set(cmd.importedNoteId, cmd);
         }
       });
+    }
+
+    // Refuse up front, before any note is created, if a row targets an archived subject.
+    const archivedNames = await findArchivedSubjectNames(
+      rows
+        .filter((row) => commandMap.get(row.importKey)?.include ?? true)
+        .map((row) => row.subjectLabel ?? ''),
+    );
+    if (archivedNames.length) {
+      const list = archivedNames.map((n) => `“${n}”`).join(', ');
+      const message = `${archivedNames.length === 1 ? 'Subject' : 'Subjects'} ${list} ${archivedNames.length === 1 ? 'is' : 'are'} archived. Unarchive in Manage Hierarchy first.`;
+      return res.status(409).json({ message, error: message });
     }
 
     const cleanupNeeded: CleanupNeededItem[] = [];

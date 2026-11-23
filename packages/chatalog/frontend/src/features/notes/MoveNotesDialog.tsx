@@ -4,7 +4,7 @@ import {
   Button, Stack, FormControl, InputLabel, Select, MenuItem, CircularProgress
 } from '@mui/material';
 import { useMoveNotesMutation } from './notesApi';
-import { subjectsApi } from '../subjects/subjectsApi';
+import { isSubjectArchived, subjectsApi } from '../subjects/subjectsApi';
 import { skipToken } from '@reduxjs/toolkit/query/react';
 import { sortByStringKeyCI } from '../../utils/sort';
 
@@ -18,9 +18,15 @@ type Props = {
 
 export default function MoveNotesDialog({ open, onClose, noteIds, source }: Props) {
   const { data: subjects } = subjectsApi.useGetSubjectsQuery();
+  // Archived subjects aren't offered, except the notes' own subject, so notes can
+  // still move between its topics or out of it
   const sortedSubjects = useMemo(
-    () => sortByStringKeyCI(subjects ?? [], (s) => s.name),
-    [subjects],
+    () =>
+      sortByStringKeyCI(
+        (subjects ?? []).filter((s) => !isSubjectArchived(s) || s.id === source?.subjectId),
+        (s) => s.name,
+      ),
+    [subjects, source?.subjectId],
   );
   const [subjectId, setSubjectId] = useState<string>('');
   const [topicId, setTopicId] = useState<string>('');
@@ -88,6 +94,7 @@ export default function MoveNotesDialog({ open, onClose, noteIds, source }: Prop
               {sortedSubjects.map((s) => (
                 <MenuItem key={s.id} value={s.id}>
                   {s.name}
+                  {isSubjectArchived(s) ? ' (archived)' : ''}
                 </MenuItem>
               ))}
             </Select>

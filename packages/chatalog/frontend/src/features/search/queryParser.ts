@@ -11,6 +11,8 @@ export type ParsedSearch = {
  * - status:UNREVIEWED       -> params.status="UNREVIEWED"
  * - after:YYYY-MM-DD        -> params.updatedFrom="YYYY-MM-DD"
  * - before:YYYY-MM-DD       -> params.updatedTo="YYYY-MM-DD"
+ * - archived:no            -> params.archived="no"   (leave out notes in archived subjects)
+ * - archived:only          -> params.archived="only" (only notes in archived subjects)
  *
  * Quoted phrases are preserved as part of q:
  *   "rsync backup" tag:backup
@@ -67,6 +69,14 @@ export function parseSearchInput(input: string): ParsedSearch {
     if (lower.startsWith('after:')) {
       const rest = token.slice(6).trim();
       if (rest) params.updatedFrom = rest;
+      continue;
+    }
+
+    if (lower.startsWith('archived:')) {
+      const rest = token.slice(9).trim().toLowerCase();
+      if (rest === 'no' || rest === 'exclude' || rest === 'false') params.archived = 'no';
+      else if (rest === 'only') params.archived = 'only';
+      else if (rest === 'yes' || rest === 'include' || rest === 'true') params.archived = '';
       continue;
     }
 

@@ -7,6 +7,8 @@ export type SearchFilters = {
   status?: string;
   tags: string[];
   importedOnly?: boolean;
+  /** Notes in archived subjects are included unless this says otherwise */
+  archivedSubjects?: 'exclude' | 'only';
   updatedFrom?: string; // YYYY-MM-DD
   updatedTo?: string; // YYYY-MM-DD
   minSemanticScore?: number;

@@ -10,6 +10,7 @@ import {
   findOrCreateSubjectByLabel,
   findOrCreateTopicByLabel,
 } from '../utilities/subjectTopicLabels';
+import { ArchivedSubjectError, findArchivedSubjectNames } from '../utilities/archivedSubjects';
 import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
 
 const router = Router();
@@ -95,6 +96,11 @@ router.post('/markdown/apply', upload.single('file'), async (req, res, next) => 
 
     if (!subjectLabelRaw || !topicLabelRaw) {
       return res.status(400).json({ error: 'subjectLabel and topicLabel are required' });
+    }
+    // Before anything is stored: archived subjects take no new notes
+    const [archivedName] = await findArchivedSubjectNames([subjectLabelRaw]);
+    if (archivedName) {
+      return res.status(409).json({ error: new ArchivedSubjectError(archivedName).message });
     }
 
     const content = file.buffer.toString('utf8');

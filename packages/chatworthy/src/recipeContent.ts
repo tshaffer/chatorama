@@ -99,7 +99,10 @@ function ensureUi() {
       if (res.ok) {
         setStatus('Imported ✅');
       } else if (res.status === 409) {
-        setStatus('Already imported (duplicate)');
+        // 409 is a duplicate, or the Recipes subject is archived in Chatalog
+        const body = await res.json().catch(() => ({}));
+        if (body?.error === 'DUPLICATE_RECIPE') setStatus('Already imported (duplicate)');
+        else setStatus(body?.error || 'Import failed: 409', true);
       } else {
         setStatus(`Import failed: ${res.status}`, true);
       }

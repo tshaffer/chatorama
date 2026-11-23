@@ -98,6 +98,31 @@ export async function renameSubject(req: Request, res: Response) {
 }
 
 /**
+ * PATCH /api/v1/subjects/:subjectId/archive
+ * Body: { archived: boolean }
+ *
+ * Archiving only hides the subject (tree, pickers, Ask Claude); its topics and
+ * notes are untouched, and unarchiving restores it exactly as it was.
+ */
+export async function setSubjectArchived(req: Request, res: Response) {
+  const { subjectId } = req.params;
+  const { archived } = req.body as { archived?: unknown };
+  if (typeof archived !== 'boolean') {
+    return res.status(400).json({ message: 'archived must be true or false.' });
+  }
+  if (!Types.ObjectId.isValid(subjectId)) {
+    return res.status(404).json({ message: 'Subject not found.' });
+  }
+  const subject = await SubjectModel.findByIdAndUpdate(
+    subjectId,
+    { $set: { archivedAt: archived ? new Date() : null } },
+    { new: true },
+  ).exec();
+  if (!subject) return res.status(404).json({ message: 'Subject not found.' });
+  return res.json(subject.toJSON());
+}
+
+/**
  * PATCH /api/v1/subjects/reorder
  * Body: { orderedIds: string[] }
  *

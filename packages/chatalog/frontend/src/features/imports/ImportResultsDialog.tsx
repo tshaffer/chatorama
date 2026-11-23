@@ -31,7 +31,7 @@ import Autocomplete from '@mui/material/Autocomplete';
 import { SimpleTreeView } from '@mui/x-tree-view/SimpleTreeView';
 import { TreeItem } from '@mui/x-tree-view/TreeItem';
 import type { ImportedNoteSummary } from '../imports/importsApi';
-import { subjectsApi, useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
+import { isSubjectArchived, subjectsApi, useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
 import { useGetNoteQuery } from '../notes/notesApi';
 import MarkdownBody from '../../components/MarkdownBody';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
@@ -301,6 +301,11 @@ export function ImportResultsDialog({
     setPreviewMode('imported');
   }, [activeRows, rows]);
 
+  const archivedSubjectNames = useMemo(
+    () => new Set(subjects.filter((s) => isSubjectArchived(s)).map((s) => s.name.trim())),
+    [subjects],
+  );
+
   const subjectOptions = useMemo(() => {
     const set = new Set<string>();
 
@@ -321,8 +326,11 @@ export function ImportResultsDialog({
       .filter(Boolean)
       .forEach((name) => set.add(name as string));
 
+    // Archived subjects aren't offered, even when the file names one
+    archivedSubjectNames.forEach((name) => set.delete(name));
+
     return sortStringsCI(Array.from(set));
-  }, [defaultSubjectLabel, importedNotes, activeRows, subjects]);
+  }, [defaultSubjectLabel, importedNotes, activeRows, subjects, archivedSubjectNames]);
 
   const topicOptionsForSubject = (subjectLabel: string, currentTopicLabel: string) => {
     const trimmedSubject = subjectLabel.trim();
@@ -386,8 +394,26 @@ export function ImportResultsDialog({
 
   const missingDefaultLabels = !defaultSubjectLabel.trim() || !defaultTopicLabel.trim();
 
+  // Archived subjects named by the default label or a selected row block the import
+  const blockedArchivedNames = useMemo(() => {
+    const base = importMode === 'perTurn' ? rows : singleRows.length ? singleRows : rows;
+    const names = new Set<string>();
+    const check = (label?: string) => {
+      const trimmed = label?.trim();
+      if (trimmed && archivedSubjectNames.has(trimmed)) names.add(trimmed);
+    };
+    check(defaultSubjectLabel);
+    base.filter((r) => r.selected).forEach((r) => check(r.subjectLabel));
+    return Array.from(names);
+  }, [importMode, rows, singleRows, defaultSubjectLabel, archivedSubjectNames]);
+  const archivedBlockMessage = blockedArchivedNames.length
+    ? `${blockedArchivedNames.map((n) => `“${n}”`).join(', ')} ${blockedArchivedNames.length === 1 ? 'is' : 'are'} archived. Unarchive in Manage Hierarchy first.`
+    : '';
+
+  const importDisabled = missingDefaultLabels || blockedArchivedNames.length > 0;
+
   const handleApply = () => {
-    if (missingDefaultLabels) return;
+    if (importDisabled) return;
     const base = importMode === 'perTurn' ? rows : singleRows.length ? singleRows : rows;
     const commands: ApplyNoteImportCommand[] = base.map((r) => {
       const resolution = duplicateResolutions[r.importKey];
@@ -1430,11 +1456,22 @@ export function ImportResultsDialog({
         </Box>
       </DialogContent>
       <DialogActions>
+        {archivedBlockMessage && (
+          <Typography variant="body2" color="error" sx={{ mr: 'auto', pl: 1 }}>
+            {archivedBlockMessage}
+          </Typography>
+        )}
         <Button onClick={onClose}>Cancel</Button>
-        <Tooltip title={missingDefaultLabels ? 'Enter a Default Subject label and a Default Topic label to import' : ''}>
+        <Tooltip
+          title={
+            missingDefaultLabels
+              ? 'Enter a Default Subject label and a Default Topic label to import'
+              : archivedBlockMessage
+          }
+        >
           {/* span so the tooltip still shows while the button is disabled */}
           <span>
-            <Button variant="contained" onClick={handleApply} disabled={missingDefaultLabels}>
+            <Button variant="contained" onClick={handleApply} disabled={importDisabled}>
               Import
             </Button>
           </span>

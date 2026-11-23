@@ -17,6 +17,7 @@ import {
 } from '@chatorama/chatalog-shared';
 import { NoteModel } from '../models/Note';
 import { SubjectModel } from '../models/Subject';
+import { getArchivedSubjectIds } from '../utilities/archivedSubjects';
 import { TopicModel } from '../models/Topic';
 import { getClaudeClient } from '../ai/claudeClient';
 import { computeAndPersistEmbeddings } from '../search/embeddingUpdates';
@@ -204,10 +205,12 @@ export async function streamAskAll(req: Request, res: Response) {
     const query = typeof input?.query === 'string' ? input.query.trim() : '';
     if (!query) return 'Error: query is required.';
     const limit = Math.min(Math.max(Number(input?.limit) || SEARCH_LIMIT, 1), MAX_SEARCH_LIMIT);
+    // Archived notes, and notes in archived subjects, are left out of Ask Claude
+    const archivedSubjectIds = await getArchivedSubjectIds();
     const { docs } = await buildNoteResultsByMode({
       mode: 'auto',
       q: query,
-      baseFilter: { archived: { $ne: true } },
+      baseFilter: { archived: { $ne: true }, subjectId: { $nin: archivedSubjectIds } },
       offset: 0,
       limit,
     });

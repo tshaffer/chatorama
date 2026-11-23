@@ -9,7 +9,7 @@ import {
   useGetSavedSearchesQuery,
   useSearchMutation,
 } from './searchApi';
-import { useGetSubjectsWithTopicsQuery, resolveSubjectAndTopicNames } from '../subjects/subjectsApi';
+import { useGetSubjectsWithTopicsQuery, resolveSubjectAndTopicNames, isSubjectArchived } from '../subjects/subjectsApi';
 import { useAppDispatch, useAppSelector } from '../../store';
 import {
   hydrateFromUrl,
@@ -133,6 +133,7 @@ export default function SearchPage() {
   const [draftSubjectId, setDraftSubjectId] = useState<string>('');
   const [draftTopicId, setDraftTopicId] = useState<string>('');
   const [draftImportedOnly, setDraftImportedOnly] = useState(false);
+  const [draftArchivedSubjects, setDraftArchivedSubjects] = useState<'include' | 'exclude' | 'only'>('include');
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [selectedSavedSearchId, setSelectedSavedSearchId] = useState<string>('');
   const [manageSavedSearchesOpen, setManageSavedSearchesOpen] = useState(false);
@@ -157,6 +158,7 @@ export default function SearchPage() {
   const maxCookMinutes = committed.filters.cookTimeMax;
   const maxTotalMinutes = committed.filters.totalTimeMax;
   const importedOnlyFromQuery = Boolean(committed.filters.importedOnly);
+  const archivedSubjectsFromQuery = committed.filters.archivedSubjects;
   const cuisineValues = (committed.filters.cuisine ?? []).map((t) => t.trim()).filter(Boolean);
   const categoryValues = (committed.filters.category ?? []).map((t) => t.trim()).filter(Boolean);
   const keywordValues = (committed.filters.keywords ?? []).map((t) => t.trim()).filter(Boolean);
@@ -512,11 +514,13 @@ export default function SearchPage() {
     setDraftSubjectId(subjectIdFromQuery || '');
     setDraftTopicId(topicIdFromQuery || '');
     setDraftImportedOnly(importedOnlyFromQuery);
+    setDraftArchivedSubjects(archivedSubjectsFromQuery ?? 'include');
     dispatch(setFiltersDialogOpen(true));
   };
 
   const applyDraftFilters = () => {
     const nextFilters = { ...draft.filters };
+    nextFilters.archivedSubjects = draftArchivedSubjects === 'include' ? undefined : draftArchivedSubjects;
     if (isRecipeScope) {
       const cuisine = draftCuisine.trim();
       nextFilters.cuisine = cuisine ? [cuisine] : [];
@@ -562,6 +566,7 @@ export default function SearchPage() {
         minSemanticScore: undefined,
         updatedFrom: undefined,
         updatedTo: undefined,
+        archivedSubjects: undefined,
         ...(isRecipeScope
           ? {
             cuisine: [],
@@ -600,6 +605,7 @@ export default function SearchPage() {
     setDraftSubjectId('');
     setDraftTopicId('');
     setDraftImportedOnly(false);
+    setDraftArchivedSubjects('include');
     applyCommitted(nextQuery);
     dispatch(setFiltersDialogOpen(false));
   };
@@ -613,6 +619,7 @@ export default function SearchPage() {
     updatedTo ||
     minSemanticScore !== undefined ||
     (isNotesScope && importedOnlyFromQuery) ||
+    !!archivedSubjectsFromQuery ||
     (isRecipeScope &&
       (maxPrepMinutes != null || maxCookMinutes != null || maxTotalMinutes != null)) ||
     (isRecipeScope &&
@@ -937,6 +944,24 @@ export default function SearchPage() {
                       />
                     ))}
 
+                    {archivedSubjectsFromQuery ? (
+                      <Chip
+                        label={
+                          archivedSubjectsFromQuery === 'exclude'
+                            ? 'Excluding archived subjects'
+                            : 'Archived subjects only'
+                        }
+                        onDelete={() =>
+                          applyCommitted({
+                            ...committed,
+                            filters: { ...committed.filters, archivedSubjects: undefined },
+                          })
+                        }
+                        size="small"
+                        variant="outlined"
+                      />
+                    ) : null}
+
                     {updatedFrom ? (
                       <Chip
                         label={`Content updated from: ${updatedFrom}`}
@@ -1125,6 +1150,9 @@ export default function SearchPage() {
                     r.topicId,
                   );
                   const locationLabel = [subjectName, topicName].filter(Boolean).join(' / ');
+                  const inArchivedSubject = isSubjectArchived(
+                    subjectsWithTopics.find((s) => s.id === r.subjectId),
+                  );
 
                   return (
                     <Box key={row.id}>
@@ -1164,6 +1192,9 @@ export default function SearchPage() {
                                 <Typography variant="caption" color="text.secondary">
                                   • {locationLabel}
                                 </Typography>
+                              ) : null}
+                              {inArchivedSubject ? (
+                                <Chip size="small" variant="outlined" label="archived" sx={{ height: 18 }} />
                               ) : null}
                               {canExplain ? (
                                 <Button
@@ -1415,6 +1446,24 @@ export default function SearchPage() {
                 </Stack>
               </Box>
             ) : null}
+
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                Archived subjects
+              </Typography>
+              <TextField
+                select
+                label="Notes in archived subjects"
+                value={draftArchivedSubjects}
+                onChange={(e) => setDraftArchivedSubjects(e.target.value as 'include' | 'exclude' | 'only')}
+                size="small"
+                fullWidth
+              >
+                <MenuItem value="include">Include</MenuItem>
+                <MenuItem value="exclude">Exclude</MenuItem>
+                <MenuItem value="only">Only these</MenuItem>
+              </TextField>
+            </Box>
 
             {isRecipeScope ? (
               <Box>

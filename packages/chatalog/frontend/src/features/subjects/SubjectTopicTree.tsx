@@ -7,6 +7,7 @@ import { TreeItem } from '@mui/x-tree-view/TreeItem';
 
 import type { Subject, Topic } from '@chatorama/chatalog-shared';
 import {
+  isSubjectArchived,
   useGetSubjectsQuery,
   useGetTopicsForSubjectQuery,
 } from './subjectsApi';
@@ -21,6 +22,7 @@ const takeObjectId = (slug?: string) => slug?.match(/^[a-f0-9]{24}/i)?.[0];
 
 const subjectItemId = (subjectId: string) => `subject:${subjectId}`;
 const topicItemId = (topicId: string) => `topic:${topicId}`;
+const ARCHIVED_GROUP_ID = 'archived-subjects';
 
 type SubjectTopicTreeProps = {
   width?: number | string;
@@ -67,10 +69,23 @@ export default function SubjectTopicTree({
     () => sortByStringKeyCI(subjects, (s) => s.name),
     [subjects],
   );
+  // Archived subjects live in a collapsed "Archived" branch at the bottom
+  const activeSorted = useMemo(() => subjectsSorted.filter((s) => !isSubjectArchived(s)), [subjectsSorted]);
+  const archivedSorted = useMemo(() => subjectsSorted.filter((s) => isSubjectArchived(s)), [subjectsSorted]);
 
   const [expanded, setExpanded] = React.useState<string[]>(() =>
     selectedSubjectId ? [subjectItemId(selectedSubjectId)] : [],
   );
+
+  // Opening an archived subject (from a link or search) reveals it in the Archived branch
+  const selectedIsArchived = archivedSorted.some((s) => s.id === selectedSubjectId);
+  React.useEffect(() => {
+    if (!selectedIsArchived || !selectedSubjectId) return;
+    setExpanded((prev) => {
+      const needed = [ARCHIVED_GROUP_ID, subjectItemId(selectedSubjectId)].filter((id) => !prev.includes(id));
+      return needed.length ? [...prev, ...needed] : prev;
+    });
+  }, [selectedIsArchived, selectedSubjectId]);
 
   return (
     <CallbacksContext.Provider value={{ onSubjectSelected, onTopicSelected }}>
@@ -131,9 +146,23 @@ export default function SubjectTopicTree({
               }}
               selectedItems={selectedItemId}
           >
-              {subjectsSorted.map((s) => (
+              {activeSorted.map((s) => (
                 <SubjectNode key={s.id} subject={s} />
               ))}
+              {archivedSorted.length > 0 && (
+                <TreeItem
+                  itemId={ARCHIVED_GROUP_ID}
+                  label={
+                    <Box component="span" sx={{ color: 'text.secondary' }}>
+                      Archived ({archivedSorted.length})
+                    </Box>
+                  }
+                >
+                  {archivedSorted.map((s) => (
+                    <SubjectNode key={s.id} subject={s} />
+                  ))}
+                </TreeItem>
+              )}
             </SimpleTreeView>
           </Box>
         )}

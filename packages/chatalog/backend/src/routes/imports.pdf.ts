@@ -11,6 +11,7 @@ import { extractPdfText } from '../services/pdfText';
 import { slugifyStandard } from '@chatorama/chatalog-shared';
 import { dedupeSlug } from '../utilities';
 import { findOrCreateSubjectByLabel, findOrCreateTopicByLabel } from '../utilities/subjectTopicLabels';
+import { ArchivedSubjectError, findArchivedSubjectNames } from '../utilities/archivedSubjects';
 
 const router = Router();
 const upload = multer({
@@ -27,6 +28,11 @@ router.post('/pdf', upload.single('file'), async (req, res, next) => {
     const topicLabelRaw = String(req.body?.topicLabel ?? '').trim();
     if (!subjectLabelRaw || !topicLabelRaw) {
       return res.status(400).json({ error: 'subjectLabel and topicLabel are required' });
+    }
+    // Before anything is stored: archived subjects take no new notes
+    const [archivedName] = await findArchivedSubjectNames([subjectLabelRaw]);
+    if (archivedName) {
+      return res.status(409).json({ error: new ArchivedSubjectError(archivedName).message });
     }
     const pdfSummaryMarkdown = String(req.body?.pdfSummaryMarkdown ?? '').trim();
     if (!pdfSummaryMarkdown) {

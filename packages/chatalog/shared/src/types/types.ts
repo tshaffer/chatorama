@@ -5,6 +5,8 @@ export interface Subject {
   id: string;
   name: string;
   slug: string;
+  /** ISO time the subject was archived; null/absent when it isn't */
+  archivedAt?: string | null;
   createdAt?: string; // ISO
   updatedAt?: string; // ISO
 }

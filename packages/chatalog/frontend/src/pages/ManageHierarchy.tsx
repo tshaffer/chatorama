@@ -18,10 +18,13 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  Alert,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove';
+import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
+import UnarchiveOutlinedIcon from '@mui/icons-material/UnarchiveOutlined';
 import { IconButton } from '@mui/material';
 import { skipToken } from '@reduxjs/toolkit/query';
 import {
@@ -36,6 +39,8 @@ import {
   useReorderSubjectsMutation,
   useReorderTopicsMutation,
   useGetTopicNoteCountQuery,
+  useSetSubjectArchivedMutation,
+  isSubjectArchived,
 } from '../features/subjects/subjectsApi';
 import type { Topic } from '@chatorama/chatalog-shared';
 import InlineEditableName from '../components/InlineEditableName';
@@ -57,6 +62,7 @@ export default function ManageHierarchyPage() {
   const { data: subjects = [], isLoading } = useGetSubjectsQuery();
   const [newSubjectName, setNewSubjectName] = useState('');
   const [createSubject, { isLoading: creatingSubject }] = useCreateSubjectMutation();
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const [reorderSubjectsOpen, setReorderSubjectsOpen] = useState(false);
   const [reorderSubjects, { isLoading: reorderingSubjects }] = useReorderSubjectsMutation();
@@ -64,8 +70,13 @@ export default function ManageHierarchyPage() {
   const handleCreateSubject = async () => {
     const name = newSubjectName.trim();
     if (!name) return;
-    await createSubject({ name }).unwrap();
-    setNewSubjectName('');
+    try {
+      await createSubject({ name }).unwrap();
+      setNewSubjectName('');
+      setCreateError(null);
+    } catch (err: any) {
+      setCreateError(err?.data?.message ?? err?.data?.error ?? 'Couldn’t create the subject.');
+    }
   };
 
   const handleSaveReorderSubjects = async (orderedIds: string[]) => {
@@ -110,6 +121,8 @@ export default function ManageHierarchyPage() {
             • Double-click a subject title to rename it.
             <br />
             • Click a topic chip to open it; double-click to rename it.
+            <br />
+            • Archive a subject to hide it from the Subjects &amp; Topics list and the subject pickers. Nothing in it is deleted.
           </Typography>
         </Box>
 
@@ -118,7 +131,10 @@ export default function ManageHierarchyPage() {
             size="small"
             placeholder="New subject"
             value={newSubjectName}
-            onChange={(e) => setNewSubjectName(e.target.value)}
+            onChange={(e) => {
+              setNewSubjectName(e.target.value);
+              setCreateError(null);
+            }}
             onKeyDown={(e) => e.key === 'Enter' && handleCreateSubject()}
           />
           <Button
@@ -139,6 +155,12 @@ export default function ManageHierarchyPage() {
         </Stack>
       </Stack>
 
+      {createError && (
+        <Alert severity="error" onClose={() => setCreateError(null)} sx={{ mb: 1.5 }}>
+          {createError}
+        </Alert>
+      )}
+
       <Divider sx={{ mb: 2 }} />
 
       <Box
@@ -158,12 +180,17 @@ export default function ManageHierarchyPage() {
             </>
           )}
 
+          {/* Archived subjects come last, dimmed */}
           {!isLoading &&
-            sortByStringKeyCI(subjects, (s) => s.name).map((s) => (
+            [
+              ...sortByStringKeyCI(subjects.filter((s) => !isSubjectArchived(s)), (s) => s.name),
+              ...sortByStringKeyCI(subjects.filter((s) => isSubjectArchived(s)), (s) => s.name),
+            ].map((s) => (
               <SubjectCard
                 key={safeId(s)}
                 subjectId={safeId(s)}
                 subjectName={s.name}
+                archived={isSubjectArchived(s)}
               />
             ))}
 
@@ -192,11 +219,13 @@ export default function ManageHierarchyPage() {
 const SubjectCard = memo(function SubjectCard(props: {
   subjectId: string;
   subjectName: string;
+  archived: boolean;
 }) {
   const navigate = useNavigate();
 
   // queries/mutations for subject
   const [deleteSubject] = useDeleteSubjectMutation();
+  const [setSubjectArchived, { isLoading: archiving }] = useSetSubjectArchivedMutation();
   const [renameSubject] = useRenameSubjectMutation();
 
   // topics for this subject
@@ -291,7 +320,7 @@ const SubjectCard = memo(function SubjectCard(props: {
   return (
     <Card
       variant="outlined"
-      sx={{ cursor: 'default' }}
+      sx={{ cursor: 'default', ...(props.archived ? { opacity: 0.6, bgcolor: 'action.hover' } : {}) }}
     >
       <CardContent sx={{ pb: 2 }}>
         {/* Header row */}
@@ -302,21 +331,42 @@ const SubjectCard = memo(function SubjectCard(props: {
           sx={{ mb: 1 }}
         >
           {/* Subject title: double-click to rename */}
-          <Tooltip title="Double-click to rename subject">
-            <Box sx={{ fontWeight: 600, cursor: 'text' }}>
-              <InlineEditableName
-                value={props.subjectName}
-                startEditingOn="doubleClick"
-                onSave={async (name) => {
-                  await renameSubject({
-                    subjectId: props.subjectId,
-                    name,
-                  }).unwrap();
-                }}
-              />
-            </Box>
-          </Tooltip>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Tooltip title="Double-click to rename subject">
+              <Box sx={{ fontWeight: 600, cursor: 'text' }}>
+                <InlineEditableName
+                  value={props.subjectName}
+                  startEditingOn="doubleClick"
+                  onSave={async (name) => {
+                    await renameSubject({
+                      subjectId: props.subjectId,
+                      name,
+                    }).unwrap();
+                  }}
+                />
+              </Box>
+            </Tooltip>
+            {props.archived && <Chip size="small" label="Archived" />}
+          </Stack>
 
+          <Stack direction="row" alignItems="center">
+          <Tooltip
+            title={
+              props.archived
+                ? 'Unarchive subject: show it in Subjects & Topics and the subject pickers again'
+                : 'Archive subject: hide it from Subjects & Topics and the subject pickers. Nothing is deleted.'
+            }
+          >
+            <span>
+              <IconButton
+                aria-label={props.archived ? 'Unarchive subject' : 'Archive subject'}
+                disabled={archiving}
+                onClick={() => setSubjectArchived({ subjectId: props.subjectId, archived: !props.archived })}
+              >
+                {props.archived ? <UnarchiveOutlinedIcon /> : <ArchiveOutlinedIcon />}
+              </IconButton>
+            </span>
+          </Tooltip>
           <ConfirmIconButton
             title="Delete subject?"
             message="This will delete the subject and all its topics/notes."
@@ -326,6 +376,7 @@ const SubjectCard = memo(function SubjectCard(props: {
               await deleteSubject({ subjectId: props.subjectId }).unwrap();
             }}
           />
+          </Stack>
         </Stack>
 
         <Stack

@@ -1,7 +1,8 @@
 import { useMemo, useEffect } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import { TextField, Stack } from '@mui/material';
-import { useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
+import { activeSubjects, useGetSubjectsWithTopicsQuery } from '../subjects/subjectsApi';
+import { archivedSubjectMessage, useArchivedSubjectNamed } from '../subjects/useArchivedSubjectNamed';
 import type { Subject, Topic } from '@chatorama/chatalog-shared';
 import { sortStringsCI } from '../../utils/sort';
 
@@ -22,9 +23,12 @@ export default function SubjectTopicPickerFields({
 }: Props) {
   const { data: subjects = [] } = useGetSubjectsWithTopicsQuery();
 
+  const archivedSubjectName = useArchivedSubjectNamed(subjectLabel);
+
+  // Archived subjects aren't offered: nothing can be added to them
   const subjectOptions = useMemo(() => {
     const set = new Set<string>();
-    subjects
+    activeSubjects(subjects)
       .map((s: Subject) => s.name?.trim())
       .filter(Boolean)
       .forEach((name) => set.add(name as string));
@@ -81,6 +85,8 @@ export default function SubjectTopicPickerFields({
             label="Subject label"
             placeholder="Subject label"
             size="small"
+            error={!!archivedSubjectName}
+            helperText={archivedSubjectName ? archivedSubjectMessage(archivedSubjectName) : undefined}
           />
         )}
       />

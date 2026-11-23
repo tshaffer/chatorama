@@ -54,7 +54,7 @@ Every view is encoded in the URL, so refresh, bookmarks and deep links all work:
 ## 2. Organizing: Subjects, Topics, Notes
 
 ### Notes page (tree + note list)
-The left panel has the **Subjects & Topics** tree (alphabetical) and **Import History**. Click a subject to open its overview, or a topic to list its notes on the right.
+The left panel has the **Subjects & Topics** tree (alphabetical) and **Import History**. Click a subject to open its overview, or a topic to list its notes on the right. Archived subjects are in a collapsed **Archived (n)** group at the bottom of the tree ([Archiving subjects](#archiving-subjects)).
 
 In a topic's note list:
 - **Click a note** to open it.
@@ -78,13 +78,25 @@ The left panel lists past imports, newest first, with "N imported, M remaining" 
 - Click the trash icon on an entry to remove that history record. **Clear history…** removes all records. Neither deletes the notes themselves.
 
 ### Subject overview
-`/s/<subject>` shows **Topics in this subject** and **Subject relations** (related topics and notes that reference the subject). **Link note to subject** adds a relation from any note to this subject.
+`/s/<subject>` shows **Topics in this subject** and **Subject relations** (related topics and notes that reference the subject). **Link note to subject** adds a relation from any note to this subject. **Archive subject** archives it ([Archiving subjects](#archiving-subjects)).
 
 ### Manage Hierarchy
 - **New subject** / **New topic**: type a name and press Enter or click the add button.
 - **Rename**: double-click a subject or topic name. Enter saves, Escape cancels.
 - **Reorder subjects…** / **Reorder…** (topics): drag items into a new order, then save.
 - **Delete**: deleting a subject removes its topics and notes. Deleting a topic removes all its notes. Both ask for confirmation first.
+- **Archive / Unarchive**: the box icon next to a subject's delete button. Archived subjects are listed last, dimmed and marked **Archived**.
+
+### Archiving subjects
+Archive a subject you don't need for now to keep it out of the way. Nothing is deleted or moved, and **Unarchive** puts it back exactly as it was. Archive from the subject's overview page (**Archive subject**) or from Manage Hierarchy.
+
+An archived subject, with its topics and notes:
+- **Left panel**: moves into the collapsed **Archived (n)** group at the bottom of the Subjects & Topics tree.
+- **Subject pickers**: isn't offered when choosing where to import, move, capture, or file something. Typing its name shows *“…” is archived. Unarchive it in Manage Hierarchy first.* and blocks the action. A note already in an archived subject can still be edited, and its notes can still be moved to another topic or out of it.
+- **Imports**: nothing can be imported into it. **Review Imported Notes** disables **Import** while a selected row or the default subject names it, and Chatworthy's **Capture Recipe** reports the same message if **Recipes** is archived. A new subject can't take its name either.
+- **Search**: its notes still appear, tagged **archived**. Use **Add filters… → Archived subjects** or `archived:no` / `archived:only` to leave them out or show only them.
+- **Ask Claude (all notes)**: leaves its notes out.
+- **Links**: links, relations, and bookmarked URLs to it keep working. Its overview, topic, and note pages show an *Archived subject* banner with an **Unarchive** button.
 
 ### Working with a note
 A note opens in **preview** mode. Toolbar:
@@ -225,6 +237,7 @@ Type in the top-bar search box and press Enter. An empty search browses everythi
 | `subject:<name-or-slug>` | Limit to a subject (quote names with spaces: `subject:"Travel Planning"`) |
 | `topic:<name-or-slug>` | Limit to a topic (scoped to `subject:` if both are given) |
 | `imported:true` | Only notes created by an import |
+| `archived:no` / `archived:only` | Leave out notes in archived subjects, or show only those ([Archiving subjects](#archiving-subjects)) |
 
 Operators can appear anywhere in the query and are case-insensitive.
 
@@ -248,6 +261,7 @@ Operators can appear anywhere in the query and are case-insensitive.
   - **Content updated from / to**
   - **Subject** / **Topic**
   - **Imported only**
+  - **Archived subjects**: include (default), exclude, or only notes in archived subjects
 - **Recipes scope** also adds:
   - **Cuisine**, **Category**, **Keywords**
   - **Include ingredients** / **Exclude ingredients** (comma- or newline-separated)

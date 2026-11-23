@@ -10,6 +10,7 @@ import {
   TextField,
 } from '@mui/material';
 import SubjectTopicPickerFields from './SubjectTopicPickerFields';
+import { useArchivedSubjectNamed } from '../subjects/useArchivedSubjectNamed';
 
 type Props = {
   open: boolean;
@@ -47,8 +48,11 @@ export default function ImportPdfDialog({
     setPdfSummaryMarkdown(defaultSummaryFromFileName(fileName));
   }, [open, fileName]);
 
+  const archivedSubjectName = useArchivedSubjectNamed(subjectLabel);
+
   const isConfirmDisabled =
     busy ||
+    !!archivedSubjectName ||
     !subjectLabel.trim() ||
     !topicLabel.trim() ||
     !pdfSummaryMarkdown.trim();

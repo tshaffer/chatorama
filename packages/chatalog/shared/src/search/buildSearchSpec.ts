@@ -12,6 +12,7 @@ export type BuildSearchSpecInput = {
   status?: unknown;
   tags?: unknown;
   importedOnly?: unknown;
+  archivedSubjects?: unknown;
   updatedFrom?: unknown;
   updatedTo?: unknown;
   minSemanticScore?: unknown;
@@ -99,6 +100,10 @@ export function buildSearchSpec(input: BuildSearchSpecInput): SearchSpec {
       status: normalizeString(input.status) || undefined,
       tags: normalizeStringArray(input.tags),
       importedOnly: normalizeBool(input.importedOnly),
+      archivedSubjects:
+        input.archivedSubjects === 'exclude' || input.archivedSubjects === 'only'
+          ? input.archivedSubjects
+          : undefined,
       updatedFrom: normalizeString(input.updatedFrom) || undefined,
       updatedTo: normalizeString(input.updatedTo) || undefined,
       minSemanticScore: normalizeNumber(input.minSemanticScore),

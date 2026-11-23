@@ -14,10 +14,18 @@ import {
   ListItemText,
   Divider,
   Button,
+  Tooltip,
 } from '@mui/material';
 
 import { useGetTopicsForSubjectQuery } from '../features/subjects/subjectsApi';
-import { useGetSubjectsQuery, useGetSubjectRelationsSummaryQuery } from '../features/subjects/subjectsApi';
+import {
+  isSubjectArchived,
+  useGetSubjectsQuery,
+  useGetSubjectRelationsSummaryQuery,
+  useSetSubjectArchivedMutation,
+} from '../features/subjects/subjectsApi';
+import ArchivedSubjectBanner from '../components/ArchivedSubjectBanner';
+import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { sortByStringKeyCI } from '../utils/sort';
 
@@ -46,6 +54,7 @@ export default function SubjectIndex() {
     () => subjects.find((s) => s.id === subjectId),
     [subjects, subjectId],
   );
+  const [setSubjectArchived, { isLoading: archiving }] = useSetSubjectArchivedMutation();
 
   // Topics for this subject (same as before)
   const {
@@ -126,12 +135,32 @@ export default function SubjectIndex() {
           pt: 1,
         }}
       >
-        <Typography variant="h4" sx={{ mb: 0.5 }}>
-          {subjectName}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Subject overview
-        </Typography>
+        <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={2}>
+          <Box>
+            <Typography variant="h4" sx={{ mb: 0.5 }}>
+              {subjectName}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Subject overview
+            </Typography>
+          </Box>
+          {subject && !isSubjectArchived(subject) && (
+            <Tooltip title="Hide this subject from Subjects & Topics and the subject pickers. Nothing is deleted.">
+              <span>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<ArchiveOutlinedIcon />}
+                  disabled={archiving}
+                  onClick={() => setSubjectArchived({ subjectId: subject.id, archived: true })}
+                >
+                  Archive subject
+                </Button>
+              </span>
+            </Tooltip>
+          )}
+        </Stack>
+        <ArchivedSubjectBanner subjectId={subjectId} sx={{ mt: 1 }} />
       </Box>
 
       <Divider />

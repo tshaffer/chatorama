@@ -5,6 +5,7 @@ import {
   renameSubject,
   reorderSubjects,
   listSubjectsWithTopics, // <-- ADD THIS
+  setSubjectArchived,
 } from '../controllers/subjectsController';
 import {
   listTopicsForSubjectId,
@@ -38,6 +39,9 @@ subjectsRouter.patch('/reorder', reorderSubjects);
 // /api/v1/subjects/:subjectId
 subjectsRouter.get('/:subjectId', getSubjectById);
 subjectsRouter.patch('/:subjectId', renameSubject);
+
+// PATCH /api/v1/subjects/:subjectId/archive  { archived: boolean }
+subjectsRouter.patch('/:subjectId/archive', setSubjectArchived);
 
 // ---------- Topics under a Subject ----------
 
@@ -79,6 +83,14 @@ subjectsRouter.post('/', async (req, res, next) => {
     const { name } = req.body ?? {};
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
+    }
+
+    const existing = await SubjectModel.findOne({ name: name.trim() }).select({ name: 1, archivedAt: 1 }).lean();
+    if (existing) {
+      const message = existing.archivedAt
+        ? `Subject “${existing.name}” already exists and is archived. Unarchive it in Manage Hierarchy instead.`
+        : `Subject “${existing.name}” already exists.`;
+      return res.status(409).json({ error: message, message });
     }
 
     const created = await SubjectModel.create({ name });
