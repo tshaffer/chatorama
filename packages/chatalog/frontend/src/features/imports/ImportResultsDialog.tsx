@@ -311,10 +311,14 @@ export function ImportResultsDialog({
 
     if (defaultSubjectLabel?.trim()) set.add(defaultSubjectLabel.trim());
 
-    importedNotes
-      .map((n) => n.subjectName?.trim())
-      .filter(Boolean)
-      .forEach((name) => set.add(name as string));
+    // The file's own subject (e.g. the chat title) is only suggested when labels
+    // are prefilled from the file; toolbar imports start from existing subjects.
+    if (prefillLabelsFromFile) {
+      importedNotes
+        .map((n) => n.subjectName?.trim())
+        .filter(Boolean)
+        .forEach((name) => set.add(name as string));
+    }
 
     activeRows
       .map((r) => r.subjectLabel?.trim())
@@ -330,7 +334,7 @@ export function ImportResultsDialog({
     archivedSubjectNames.forEach((name) => set.delete(name));
 
     return sortStringsCI(Array.from(set));
-  }, [defaultSubjectLabel, importedNotes, activeRows, subjects, archivedSubjectNames]);
+  }, [defaultSubjectLabel, importedNotes, activeRows, subjects, archivedSubjectNames, prefillLabelsFromFile]);
 
   const topicOptionsForSubject = (subjectLabel: string, currentTopicLabel: string) => {
     const trimmedSubject = subjectLabel.trim();
